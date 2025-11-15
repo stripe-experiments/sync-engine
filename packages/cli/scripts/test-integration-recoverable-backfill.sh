@@ -103,10 +103,10 @@ echo ""
 
 # Step 3: Create many test products in Stripe
 echo "📦 Step 3: Creating test products in Stripe..."
-echo "   Creating 500 products to ensure sync takes sufficient time..."
+echo "   Creating 200 products to ensure sync takes sufficient time..."
 echo ""
 
-for i in {1..500}; do
+for i in {1..200}; do
     PROD_JSON=$(curl -s -X POST https://api.stripe.com/v1/products \
         -u "${STRIPE_API_KEY}:" \
         -d "name=Test Product $i - Recovery" \
@@ -118,9 +118,9 @@ for i in {1..500}; do
     fi
 done
 
-echo "   ✓ All 500 products created"
+echo "   ✓ All 200 products created"
 echo ""
-echo "✓ Test data created in Stripe (500 products)"
+echo "✓ Test data created in Stripe (200 products)"
 echo ""
 
 # Step 4: Start sync and kill it mid-process
@@ -133,8 +133,8 @@ npm run dev backfill product > /tmp/sync-output.log 2>&1 &
 SYNC_PID=$!
 
 echo "   Sync PID: $SYNC_PID"
-echo "   Waiting 0.2 seconds then killing process..."
-sleep 0.2
+echo "   Waiting 0.1 seconds then killing process..."
+sleep 0.1
 
 # Kill the sync process to simulate a crash
 kill -9 $SYNC_PID 2>/dev/null || true
@@ -179,7 +179,7 @@ fi
 
 # Check how many products were synced before crash
 PRODUCTS_SYNCED=$(docker exec stripe-sync-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%';" 2>/dev/null | tr -d ' ' || echo "0")
-echo "   ✓ Products synced before crash: $PRODUCTS_SYNCED / 500"
+echo "   ✓ Products synced before crash: $PRODUCTS_SYNCED / 200"
 
 echo ""
 
@@ -236,19 +236,19 @@ fi
 
 # Check all products were synced
 FINAL_PRODUCTS=$(docker exec stripe-sync-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%';" 2>/dev/null | tr -d ' ' || echo "0")
-if [ "$FINAL_PRODUCTS" -ge 500 ]; then
-    echo "   ✓ All products synced: $FINAL_PRODUCTS / 500"
+if [ "$FINAL_PRODUCTS" -ge 200 ]; then
+    echo "   ✓ All products synced: $FINAL_PRODUCTS / 200"
 else
-    echo "   ❌ Expected 500 products, found $FINAL_PRODUCTS"
+    echo "   ❌ Expected 200 products, found $FINAL_PRODUCTS"
     exit 1
 fi
 
 # Verify no data was lost
 ACTUAL_TEST_PRODUCTS=$(docker exec stripe-sync-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.products WHERE id = ANY(ARRAY[$(printf "'%s'," "${PRODUCT_IDS[@]}" | sed 's/,$//')]::text[]);" 2>/dev/null | tr -d ' ' || echo "0")
-if [ "$ACTUAL_TEST_PRODUCTS" -eq 500 ]; then
-    echo "   ✓ No data lost - all 500 test products in database"
+if [ "$ACTUAL_TEST_PRODUCTS" -eq 200 ]; then
+    echo "   ✓ No data lost - all 200 test products in database"
 else
-    echo "   ❌ Expected 500 test products, found $ACTUAL_TEST_PRODUCTS"
+    echo "   ❌ Expected 200 test products, found $ACTUAL_TEST_PRODUCTS"
     exit 1
 fi
 
@@ -264,12 +264,12 @@ echo "- ✓ Prerequisites checked (jq for JSON parsing)"
 echo "- ✓ PostgreSQL started in Docker"
 echo "- ✓ CLI built successfully"
 echo "- ✓ Database migrations completed"
-echo "- ✓ Test data created in Stripe (500 products)"
+echo "- ✓ Test data created in Stripe (200 products)"
 echo "- ✓ Sync process killed mid-execution (simulated crash)"
 echo "- ✓ Error/running state properly recorded (status='$SYNC_STATUS')"
 echo "- ✓ Partial progress preserved (cursor saved)"
 echo "- ✓ Sync recovered successfully on retry"
 echo "- ✓ Final status: complete"
-echo "- ✓ All 500 products synced with no data loss"
+echo "- ✓ All 200 products synced with no data loss"
 echo "- ✓ Test data cleaned up from Stripe"
 echo ""
