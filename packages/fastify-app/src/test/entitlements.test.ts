@@ -36,6 +36,7 @@ afterAll(async () => {
 
 describe('entitlements', () => {
   test('should sync active entitlements for a customer', async () => {
+    const accountId = await stripeSync.getAccountId()
     const customer = [
       {
         id: customerId,
@@ -44,7 +45,7 @@ describe('entitlements', () => {
         name: 'Test Customer 1',
       } as Stripe.Customer,
     ]
-    await stripeSync.upsertCustomers(customer)
+    await stripeSync.upsertCustomers(customer, accountId)
 
     const activeEntitlements = [
       {
