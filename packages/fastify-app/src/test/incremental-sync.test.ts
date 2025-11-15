@@ -20,6 +20,7 @@ beforeAll(async () => {
     poolConfig: {
       connectionString: config.databaseUrl,
     },
+    stripeAccountId: 'acct_test_account',
   })
 })
 
