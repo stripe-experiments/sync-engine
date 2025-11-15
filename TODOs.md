@@ -1,1 +1,1 @@
-- [ ] Add integration test for _managed_webhooks table
+- [ ] Add integration test for \_managed_webhooks table

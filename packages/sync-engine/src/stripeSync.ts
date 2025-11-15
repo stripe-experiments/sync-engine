@@ -181,7 +181,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for charge ${charge.id}`
         )
 
-        await this.upsertCharges([charge], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertCharges(
+          [charge],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
       case 'customer.deleted': {
@@ -308,7 +313,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for invoice ${invoice.id}`
         )
 
-        await this.upsertInvoices([invoice], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertInvoices(
+          [invoice],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
       case 'product.created':
@@ -356,7 +366,12 @@ export class StripeSync {
             `Received webhook ${event.id}: ${event.type} for price ${price.id}`
           )
 
-          await this.upsertPrices([price], accountId, false, this.getSyncTimestamp(event, refetched))
+          await this.upsertPrices(
+            [price],
+            accountId,
+            false,
+            this.getSyncTimestamp(event, refetched)
+          )
         } catch (err) {
           if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
             await this.deletePrice(event.data.object.id)
@@ -423,7 +438,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for setupIntent ${setupIntent.id}`
         )
 
-        await this.upsertSetupIntents([setupIntent], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertSetupIntents(
+          [setupIntent],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
       case 'subscription_schedule.aborted':
@@ -487,7 +507,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for dispute ${dispute.id}`
         )
 
-        await this.upsertDisputes([dispute], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertDisputes(
+          [dispute],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
       case 'payment_intent.amount_capturable_updated':
@@ -531,7 +556,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for creditNote ${creditNote.id}`
         )
 
-        await this.upsertCreditNotes([creditNote], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertCreditNotes(
+          [creditNote],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
 
@@ -569,7 +599,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for refund ${refund.id}`
         )
 
-        await this.upsertRefunds([refund], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertRefunds(
+          [refund],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
         break
       }
 
@@ -584,7 +619,12 @@ export class StripeSync {
           `Received webhook ${event.id}: ${event.type} for review ${review.id}`
         )
 
-        await this.upsertReviews([review], accountId, false, this.getSyncTimestamp(event, refetched))
+        await this.upsertReviews(
+          [review],
+          accountId,
+          false,
+          this.getSyncTimestamp(event, refetched)
+        )
 
         break
       }
@@ -660,25 +700,35 @@ export class StripeSync {
         return this.upsertCustomers([it], accountId)
       })
     } else if (stripeId.startsWith('in_')) {
-      return this.stripe.invoices.retrieve(stripeId).then((it) => this.upsertInvoices([it], accountId))
+      return this.stripe.invoices
+        .retrieve(stripeId)
+        .then((it) => this.upsertInvoices([it], accountId))
     } else if (stripeId.startsWith('price_')) {
       return this.stripe.prices.retrieve(stripeId).then((it) => this.upsertPrices([it], accountId))
     } else if (stripeId.startsWith('prod_')) {
-      return this.stripe.products.retrieve(stripeId).then((it) => this.upsertProducts([it], accountId))
+      return this.stripe.products
+        .retrieve(stripeId)
+        .then((it) => this.upsertProducts([it], accountId))
     } else if (stripeId.startsWith('sub_')) {
       return this.stripe.subscriptions
         .retrieve(stripeId)
         .then((it) => this.upsertSubscriptions([it], accountId))
     } else if (stripeId.startsWith('seti_')) {
-      return this.stripe.setupIntents.retrieve(stripeId).then((it) => this.upsertSetupIntents([it], accountId))
+      return this.stripe.setupIntents
+        .retrieve(stripeId)
+        .then((it) => this.upsertSetupIntents([it], accountId))
     } else if (stripeId.startsWith('pm_')) {
       return this.stripe.paymentMethods
         .retrieve(stripeId)
         .then((it) => this.upsertPaymentMethods([it], accountId))
     } else if (stripeId.startsWith('dp_') || stripeId.startsWith('du_')) {
-      return this.stripe.disputes.retrieve(stripeId).then((it) => this.upsertDisputes([it], accountId))
+      return this.stripe.disputes
+        .retrieve(stripeId)
+        .then((it) => this.upsertDisputes([it], accountId))
     } else if (stripeId.startsWith('ch_')) {
-      return this.stripe.charges.retrieve(stripeId).then((it) => this.upsertCharges([it], accountId, true))
+      return this.stripe.charges
+        .retrieve(stripeId)
+        .then((it) => this.upsertCharges([it], accountId, true))
     } else if (stripeId.startsWith('pi_')) {
       return this.stripe.paymentIntents
         .retrieve(stripeId)
@@ -686,15 +736,21 @@ export class StripeSync {
     } else if (stripeId.startsWith('txi_')) {
       return this.stripe.taxIds.retrieve(stripeId).then((it) => this.upsertTaxIds([it], accountId))
     } else if (stripeId.startsWith('cn_')) {
-      return this.stripe.creditNotes.retrieve(stripeId).then((it) => this.upsertCreditNotes([it], accountId))
+      return this.stripe.creditNotes
+        .retrieve(stripeId)
+        .then((it) => this.upsertCreditNotes([it], accountId))
     } else if (stripeId.startsWith('issfr_')) {
       return this.stripe.radar.earlyFraudWarnings
         .retrieve(stripeId)
         .then((it) => this.upsertEarlyFraudWarning([it], accountId))
     } else if (stripeId.startsWith('prv_')) {
-      return this.stripe.reviews.retrieve(stripeId).then((it) => this.upsertReviews([it], accountId))
+      return this.stripe.reviews
+        .retrieve(stripeId)
+        .then((it) => this.upsertReviews([it], accountId))
     } else if (stripeId.startsWith('re_')) {
-      return this.stripe.refunds.retrieve(stripeId).then((it) => this.upsertRefunds([it], accountId))
+      return this.stripe.refunds
+        .retrieve(stripeId)
+        .then((it) => this.upsertRefunds([it], accountId))
     } else if (stripeId.startsWith('feat_')) {
       return this.stripe.entitlements.features
         .retrieve(stripeId)
@@ -901,7 +957,8 @@ export class StripeSync {
 
     return this.fetchAndUpsert(
       () => this.stripe.subscriptionSchedules.list(params),
-      (items) => this.upsertSubscriptionSchedules(items, accountId, syncParams?.backfillRelatedEntities),
+      (items) =>
+        this.upsertSubscriptionSchedules(items, accountId, syncParams?.backfillRelatedEntities),
       accountId
     )
   }
@@ -1006,7 +1063,8 @@ export class StripeSync {
                 limit: 100,
                 customer: customerId,
               }),
-            (items) => this.upsertPaymentMethods(items, accountId, syncParams?.backfillRelatedEntities),
+            (items) =>
+              this.upsertPaymentMethods(items, accountId, syncParams?.backfillRelatedEntities),
             accountId
           )
 
@@ -1039,7 +1097,8 @@ export class StripeSync {
 
     return this.fetchAndUpsert(
       () => this.stripe.radar.earlyFraudWarnings.list(params),
-      (items) => this.upsertEarlyFraudWarning(items, accountId, syncParams?.backfillRelatedEntities),
+      (items) =>
+        this.upsertEarlyFraudWarning(items, accountId, syncParams?.backfillRelatedEntities),
       accountId
     )
   }
@@ -1165,7 +1224,12 @@ export class StripeSync {
       this.stripe.refunds.list({ charge: id, limit: 100 })
     )
 
-    return this.postgresClient.upsertManyWithTimestampProtection(charges, 'charges', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      charges,
+      'charges',
+      accountId,
+      syncTimestamp
+    )
   }
 
   private async backfillCharges(chargeIds: string[], accountId: string) {
@@ -1278,7 +1342,12 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(refunds, 'refunds', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      refunds,
+      'refunds',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async upsertReviews(
@@ -1294,7 +1363,12 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(reviews, 'reviews', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      reviews,
+      'reviews',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async upsertCustomers(
@@ -1399,7 +1473,12 @@ export class StripeSync {
       await this.backfillProducts(getUniqueIds(plans, 'product'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(plans, 'plans', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      plans,
+      'plans',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async deletePlan(id: string): Promise<boolean> {
@@ -1416,7 +1495,12 @@ export class StripeSync {
       await this.backfillProducts(getUniqueIds(prices, 'product'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(prices, 'prices', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      prices,
+      'prices',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async deletePrice(id: string): Promise<boolean> {
@@ -1515,7 +1599,12 @@ export class StripeSync {
       await this.backfillCustomers(getUniqueIds(taxIds, 'customer'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(taxIds, 'tax_ids', accountId, syncTimestamp)
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      taxIds,
+      'tax_ids',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async deleteTaxId(id: string): Promise<boolean> {
@@ -1550,7 +1639,11 @@ export class StripeSync {
     )
   }
 
-  async fillCheckoutSessionsLineItems(checkoutSessionIds: string[], accountId: string, syncTimestamp?: string) {
+  async fillCheckoutSessionsLineItems(
+    checkoutSessionIds: string[],
+    accountId: string,
+    syncTimestamp?: string
+  ) {
     for (const checkoutSessionId of checkoutSessionIds) {
       const lineItemResponses: Stripe.LineItem[] = []
 
@@ -1560,7 +1653,12 @@ export class StripeSync {
         lineItemResponses.push(lineItem)
       }
 
-      await this.upsertCheckoutSessionLineItems(lineItemResponses, checkoutSessionId, accountId, syncTimestamp)
+      await this.upsertCheckoutSessionLineItems(
+        lineItemResponses,
+        checkoutSessionId,
+        accountId,
+        syncTimestamp
+      )
     }
   }
 
@@ -1709,7 +1807,11 @@ export class StripeSync {
     return { rowCount: rowCount || 0 }
   }
 
-  async upsertFeatures(features: Stripe.Entitlements.Feature[], accountId: string, syncTimestamp?: string) {
+  async upsertFeatures(
+    features: Stripe.Entitlements.Feature[],
+    accountId: string,
+    syncTimestamp?: string
+  ) {
     return this.postgresClient.upsertManyWithTimestampProtection(
       features,
       'features',
@@ -1903,7 +2005,9 @@ export class StripeSync {
 
     await this.fetchMissingEntities(missingSubscriptionIds, (id) =>
       this.stripe.subscriptionSchedules.retrieve(id)
-    ).then((subscriptionSchedules) => this.upsertSubscriptionSchedules(subscriptionSchedules, accountId))
+    ).then((subscriptionSchedules) =>
+      this.upsertSubscriptionSchedules(subscriptionSchedules, accountId)
+    )
   }
 
   /**
