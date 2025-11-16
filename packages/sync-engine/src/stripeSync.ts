@@ -916,6 +916,9 @@ export class StripeSync {
       earlyFraudWarnings,
       refunds
 
+    // Ensure account exists before syncing (required for _sync_status foreign key)
+    await this.getCurrentAccount()
+
     switch (object) {
       case 'all':
         products = await this.syncProducts(params)
