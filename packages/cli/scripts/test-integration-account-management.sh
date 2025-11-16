@@ -120,7 +120,7 @@ echo ""
 
 # Test 1.1: First API Fetch
 echo "TEST 1.1: First API Fetch"
-ACCOUNT_JSON=$(tsx scripts/test-account-methods.ts get-account 2>&1 || echo "{}")
+ACCOUNT_JSON=$(npx tsx scripts/test-account-methods.ts get-account 2>&1 || echo "{}")
 
 ACCOUNT_ID=$(echo "$ACCOUNT_JSON" | jq -r '.id' 2>/dev/null || echo "")
 
@@ -184,7 +184,7 @@ echo ""
 
 # Test 2.1: Single Account Retrieval
 echo "TEST 2.1: Single Account Retrieval"
-ACCOUNTS_JSON=$(tsx scripts/test-account-methods.ts list-accounts 2>&1 || echo "[]")
+ACCOUNTS_JSON=$(npx tsx scripts/test-account-methods.ts list-accounts 2>&1 || echo "[]")
 
 ACCOUNT_COUNT=$(echo "$ACCOUNTS_JSON" | jq 'length' 2>/dev/null || echo "0")
 
@@ -280,7 +280,7 @@ echo ""
 
 # Test 3.1: Dry-Run Preview
 echo "TEST 3.1: Dry-Run Preview"
-DRY_RUN_JSON=$(tsx scripts/test-account-methods.ts delete-account "$ACCOUNT_ID" --dry-run 2>/dev/null || echo "{}")
+DRY_RUN_JSON=$(npx tsx scripts/test-account-methods.ts delete-account "$ACCOUNT_ID" --dry-run 2>/dev/null || echo "{}")
 
 # Verify dry-run returns deletion counts
 DELETED_PRODUCTS=$(echo "$DRY_RUN_JSON" | jq -r '.deletedRecordCounts.products // 0' 2>/dev/null)
@@ -318,7 +318,7 @@ echo ""
 
 # Test 3.2: Actual Deletion with Transaction
 echo "TEST 3.2: Actual Deletion with Transaction"
-DELETE_JSON=$(tsx scripts/test-account-methods.ts delete-account "$ACCOUNT_ID" 2>/dev/null || echo "{}")
+DELETE_JSON=$(npx tsx scripts/test-account-methods.ts delete-account "$ACCOUNT_ID" 2>/dev/null || echo "{}")
 
 FINAL_DELETED_PRODUCTS=$(echo "$DELETE_JSON" | jq -r '.deletedRecordCounts.products // 0' 2>/dev/null)
 FINAL_DELETED_CUSTOMERS=$(echo "$DELETE_JSON" | jq -r '.deletedRecordCounts.customers // 0' 2>/dev/null)
@@ -387,7 +387,7 @@ echo ""
 
 # Test 3.4: Delete Non-Existent Account
 echo "TEST 3.4: Delete Non-Existent Account Error Handling"
-NONEXISTENT_JSON=$(tsx scripts/test-account-methods.ts delete-account "acct_nonexistent" 2>&1 || echo "{}")
+NONEXISTENT_JSON=$(npx tsx scripts/test-account-methods.ts delete-account "acct_nonexistent" 2>&1 || echo "{}")
 DELETED_ACCOUNT_COUNT=$(echo "$NONEXISTENT_JSON" | jq -r '.deletedRecordCounts.accounts // 0' 2>/dev/null)
 
 if [ "$DELETED_ACCOUNT_COUNT" -eq 0 ]; then

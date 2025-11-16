@@ -108,9 +108,7 @@ export class StripeSync {
         : await this.stripe.accounts.retrieve()
     } catch (error) {
       this.config.logger?.error(error, 'Failed to retrieve account from Stripe API')
-      throw new Error(
-        'Failed to retrieve Stripe account. Please ensure API key is valid.'
-      )
+      throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
     }
 
     this.cachedAccountId = account.id
@@ -133,11 +131,8 @@ export class StripeSync {
       })
     } catch (error) {
       this.config.logger?.error(error, 'Failed to upsert account to database')
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(
-        `Failed to upsert account to database: ${errorMessage}`
-      )
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      throw new Error(`Failed to upsert account to database: ${errorMessage}`)
     }
   }
 
@@ -246,7 +241,9 @@ export class StripeSync {
         this.cachedAccount = null
       }
 
-      this.config.logger?.info(`Successfully deleted account ${accountId} with ${totalRecords} total records`)
+      this.config.logger?.info(
+        `Successfully deleted account ${accountId} with ${totalRecords} total records`
+      )
 
       return {
         deletedAccountId: accountId,

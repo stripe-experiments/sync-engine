@@ -67,7 +67,6 @@ async function main() {
 
       const account = await stripeSync.getCurrentAccount()
       console.log(JSON.stringify(account, null, 2))
-
     } else if (method === 'list-accounts') {
       // List all synced accounts
       const stripeSync = new StripeSync({
@@ -80,12 +79,13 @@ async function main() {
 
       const accounts = await stripeSync.getAllSyncedAccounts()
       console.log(JSON.stringify(accounts, null, 2))
-
     } else if (method === 'delete-account') {
       // Delete account
       if (args.length < 2) {
         console.error('Error: delete-account requires an account ID')
-        console.error('Usage: tsx scripts/test-account-methods.ts delete-account <accountId> [--dry-run] [--no-transaction]')
+        console.error(
+          'Usage: tsx scripts/test-account-methods.ts delete-account <accountId> [--dry-run] [--no-transaction]'
+        )
         process.exit(1)
       }
 
@@ -107,7 +107,6 @@ async function main() {
       })
 
       console.log(JSON.stringify(result, null, 2))
-
     } else {
       console.error(`Error: Unknown method '${method}'`)
       console.error('Valid methods: get-account, list-accounts, delete-account')
