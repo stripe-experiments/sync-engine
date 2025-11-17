@@ -71,6 +71,7 @@ describe('entitlements', () => {
     expect(entitlements.rows).toEqual([
       {
         ...activeEntitlements[0],
+        _id: activeEntitlements[0].id,
         customer: customerId,
         _account_id: accountId,
         _raw_data: expect.objectContaining({
@@ -115,6 +116,7 @@ describe('entitlements', () => {
     expect(updatedEntitlements.rows).toEqual(
       newActiveEntitlements.map((entitlement) => ({
         ...entitlement,
+        _id: entitlement.id,
         customer: customerId,
         _account_id: accountId,
         _raw_data: expect.objectContaining({

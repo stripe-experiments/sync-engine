@@ -43,7 +43,12 @@ ALTER TABLE "stripe"."checkout_sessions" RENAME COLUMN "updated_at" TO "_updated
 ALTER TABLE "stripe"."credit_notes" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."credit_notes" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."credit_notes" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."credit_notes" RENAME COLUMN "updated_at" TO "_updated_at";
+
+-- coupons
+ALTER TABLE "stripe"."coupons" RENAME COLUMN "id" TO "_id";
+ALTER TABLE "stripe"."coupons" RENAME COLUMN "raw_data" TO "_raw_data";
+ALTER TABLE "stripe"."coupons" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
+ALTER TABLE "stripe"."coupons" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- customers
 ALTER TABLE "stripe"."customers" RENAME COLUMN "id" TO "_id";
@@ -62,6 +67,12 @@ ALTER TABLE "stripe"."early_fraud_warnings" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."early_fraud_warnings" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."early_fraud_warnings" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
 ALTER TABLE "stripe"."early_fraud_warnings" RENAME COLUMN "updated_at" TO "_updated_at";
+
+-- events
+ALTER TABLE "stripe"."events" RENAME COLUMN "id" TO "_id";
+ALTER TABLE "stripe"."events" RENAME COLUMN "raw_data" TO "_raw_data";
+ALTER TABLE "stripe"."events" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
+ALTER TABLE "stripe"."events" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- features
 ALTER TABLE "stripe"."features" RENAME COLUMN "id" TO "_id";
@@ -84,13 +95,17 @@ ALTER TABLE "stripe"."_managed_webhooks" RENAME COLUMN "updated_at" TO "_updated
 ALTER TABLE "stripe"."payment_intents" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."payment_intents" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."payment_intents" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."payment_intents" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- payment_methods
 ALTER TABLE "stripe"."payment_methods" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."payment_methods" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."payment_methods" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."payment_methods" RENAME COLUMN "updated_at" TO "_updated_at";
+
+-- payouts
+ALTER TABLE "stripe"."payouts" RENAME COLUMN "id" TO "_id";
+ALTER TABLE "stripe"."payouts" RENAME COLUMN "raw_data" TO "_raw_data";
+ALTER TABLE "stripe"."payouts" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
+ALTER TABLE "stripe"."payouts" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- plans
 ALTER TABLE "stripe"."plans" RENAME COLUMN "id" TO "_id";
@@ -126,19 +141,16 @@ ALTER TABLE "stripe"."reviews" RENAME COLUMN "updated_at" TO "_updated_at";
 ALTER TABLE "stripe"."setup_intents" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."setup_intents" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."setup_intents" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."setup_intents" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- subscription_items
 ALTER TABLE "stripe"."subscription_items" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."subscription_items" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."subscription_items" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."subscription_items" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- subscription_schedules
 ALTER TABLE "stripe"."subscription_schedules" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."subscription_schedules" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."subscription_schedules" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."subscription_schedules" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- subscriptions
 ALTER TABLE "stripe"."subscriptions" RENAME COLUMN "id" TO "_id";
@@ -150,7 +162,6 @@ ALTER TABLE "stripe"."subscriptions" RENAME COLUMN "updated_at" TO "_updated_at"
 ALTER TABLE "stripe"."tax_ids" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."tax_ids" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."tax_ids" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
-ALTER TABLE "stripe"."tax_ids" RENAME COLUMN "updated_at" TO "_updated_at";
 
 -- Metadata Tables
 
@@ -164,6 +175,20 @@ ALTER TABLE "stripe"."accounts" RENAME COLUMN "id" TO "_id";
 ALTER TABLE "stripe"."accounts" RENAME COLUMN "raw_data" TO "_raw_data";
 ALTER TABLE "stripe"."accounts" RENAME COLUMN "last_synced_at" TO "_last_synced_at";
 ALTER TABLE "stripe"."accounts" RENAME COLUMN "updated_at" TO "_updated_at";
+
+-- ============================================================================
+-- STEP 1.5: UPDATE TRIGGER FUNCTION TO USE NEW COLUMN NAME
+-- ============================================================================
+
+-- Now that all columns are renamed, update the trigger function to reference _updated_at
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+AS $$
+begin
+  new._updated_at = now();
+  return NEW;
+end;
+$$;
 
 -- ============================================================================
 -- STEP 2: RECREATE GENERATED COLUMNS TO REFERENCE _raw_data
