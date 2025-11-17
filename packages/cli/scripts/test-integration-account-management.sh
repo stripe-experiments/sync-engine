@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # End-to-end integration test for Account Management Methods
-# Tests getCurrentAccount(), getAllSyncedAccounts(), and dangerouslyDeleteAccount()
+# Tests getCurrentAccount(), getAllSyncedAccounts(), and dangerouslyDeleteSyncedAccountData()
 
 set -e  # Exit on error
 
@@ -228,10 +228,10 @@ echo "✅ TEST SUITE 2 PASSED"
 echo ""
 
 # ============================================================================
-# TEST SUITE 3: dangerouslyDeleteAccount()
+# TEST SUITE 3: dangerouslyDeleteSyncedAccountData()
 # ============================================================================
 
-echo "📋 TEST SUITE 3: dangerouslyDeleteAccount()"
+echo "📋 TEST SUITE 3: dangerouslyDeleteSyncedAccountData()"
 echo "────────────────────────────────────"
 echo ""
 
@@ -424,7 +424,7 @@ echo "  - ✓ Account retrieval working"
 echo "  - ✓ JSON format validation"
 echo "  - ✓ Ordering verified"
 echo ""
-echo "TEST SUITE 3: dangerouslyDeleteAccount()"
+echo "TEST SUITE 3: dangerouslyDeleteSyncedAccountData()"
 echo "  - ✓ Dry-run preview working (no actual deletion)"
 echo "  - ✓ Actual deletion with transaction working"
 echo "  - ✓ Cascade deletion verified"

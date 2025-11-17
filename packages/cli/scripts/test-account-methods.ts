@@ -7,7 +7,7 @@
  * Supports:
  * - getCurrentAccount()
  * - getAllSyncedAccounts()
- * - dangerouslyDeleteAccount()
+ * - dangerouslyDeleteSyncedAccountData()
  */
 
 import dotenv from 'dotenv'
@@ -101,7 +101,7 @@ async function main() {
         poolConfig,
       })
 
-      const result = await stripeSync.dangerouslyDeleteAccount(accountId, {
+      const result = await stripeSync.dangerouslyDeleteSyncedAccountData(accountId, {
         dryRun,
         useTransaction,
       })

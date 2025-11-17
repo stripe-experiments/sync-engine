@@ -6,6 +6,36 @@ type PostgresConfig = {
   poolConfig: PoolConfig
 }
 
+// All Stripe tables that store account-related data.
+// Ordered for safe cascade deletion: dependencies first, then accounts last.
+// Note: 'customers' is near the end because other tables reference it.
+const ORDERED_STRIPE_TABLES = [
+  'subscription_items',
+  'subscriptions',
+  'subscription_schedules',
+  'checkout_session_line_items',
+  'checkout_sessions',
+  'tax_ids',
+  'charges',
+  'refunds',
+  'credit_notes',
+  'disputes',
+  'early_fraud_warnings',
+  'invoices',
+  'payment_intents',
+  'payment_methods',
+  'setup_intents',
+  'prices',
+  'plans',
+  'products',
+  'features',
+  'active_entitlements',
+  'reviews',
+  '_managed_webhooks',
+  'customers',
+  '_sync_status',
+] as const
+
 export class PostgresClient {
   pool: pg.Pool
 
@@ -263,36 +293,9 @@ export class PostgresClient {
   }
 
   async getAccountRecordCounts(accountId: string): Promise<{ [tableName: string]: number }> {
-    const tables = [
-      'subscription_items',
-      'subscriptions',
-      'subscription_schedules',
-      'checkout_session_line_items',
-      'checkout_sessions',
-      'tax_ids',
-      'customers',
-      'charges',
-      'refunds',
-      'credit_notes',
-      'disputes',
-      'early_fraud_warnings',
-      'invoices',
-      'payment_intents',
-      'payment_methods',
-      'setup_intents',
-      'prices',
-      'plans',
-      'products',
-      'features',
-      'active_entitlements',
-      'reviews',
-      '_managed_webhooks',
-      '_sync_status',
-    ]
-
     const counts: { [tableName: string]: number } = {}
 
-    for (const table of tables) {
+    for (const table of ORDERED_STRIPE_TABLES) {
       const result = await this.query(
         `SELECT COUNT(*) as count FROM "${this.config.schema}"."${table}"
          WHERE "_account_id" = $1`,
@@ -308,34 +311,6 @@ export class PostgresClient {
     accountId: string,
     useTransaction: boolean
   ): Promise<{ [tableName: string]: number }> {
-    // Deletion order: dependencies first, then accounts last
-    const deletionOrder = [
-      'subscription_items',
-      'subscriptions',
-      'subscription_schedules',
-      'checkout_session_line_items',
-      'checkout_sessions',
-      'tax_ids',
-      'charges',
-      'refunds',
-      'credit_notes',
-      'disputes',
-      'early_fraud_warnings',
-      'invoices',
-      'payment_intents',
-      'payment_methods',
-      'setup_intents',
-      'prices',
-      'plans',
-      'products',
-      'features',
-      'active_entitlements',
-      'reviews',
-      '_managed_webhooks',
-      'customers',
-      '_sync_status',
-    ]
-
     const deletionCounts: { [tableName: string]: number } = {}
 
     try {
@@ -344,7 +319,7 @@ export class PostgresClient {
       }
 
       // Delete from all dependent tables
-      for (const table of deletionOrder) {
+      for (const table of ORDERED_STRIPE_TABLES) {
         const result = await this.query(
           `DELETE FROM "${this.config.schema}"."${table}"
            WHERE "_account_id" = $1`,

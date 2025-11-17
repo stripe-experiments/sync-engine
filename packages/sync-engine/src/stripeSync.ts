@@ -48,7 +48,6 @@ export interface StripSyncInfo {
 export class StripeSync {
   stripe: Stripe
   postgresClient: PostgresClient
-  private cachedAccountId: string | null = null
   private cachedAccount: Stripe.Account | null = null
 
   constructor(private config: StripeSyncConfig) {
@@ -95,8 +94,8 @@ export class StripeSync {
    */
   async getAccountId(objectAccountId?: string): Promise<string> {
     // If we have a cached account, use it
-    if (this.cachedAccountId) {
-      return this.cachedAccountId
+    if (this.cachedAccount?.id) {
+      return this.cachedAccount.id
     }
 
     // Retrieve from Stripe API to get full account details
@@ -111,7 +110,6 @@ export class StripeSync {
       throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
     }
 
-    this.cachedAccountId = account.id
     this.cachedAccount = account
 
     // Upsert account info to database
@@ -173,7 +171,7 @@ export class StripeSync {
    * @param options.useTransaction - If true, use transaction for atomic deletion (default: true)
    * @returns Deletion summary with counts and warnings
    */
-  async dangerouslyDeleteAccount(
+  async dangerouslyDeleteSyncedAccountData(
     accountId: string,
     options?: {
       dryRun?: boolean
@@ -213,7 +211,7 @@ export class StripeSync {
       }
 
       // If deleting current account, warn about cache invalidation
-      if (this.cachedAccountId === accountId) {
+      if (this.cachedAccount?.id === accountId) {
         warnings.push(
           'Warning: Deleting the current account. Cache will be cleared after deletion.'
         )
@@ -236,8 +234,7 @@ export class StripeSync {
       )
 
       // Clear cache if we deleted the current account
-      if (this.cachedAccountId === accountId) {
-        this.cachedAccountId = null
+      if (this.cachedAccount?.id === accountId) {
         this.cachedAccount = null
       }
 
