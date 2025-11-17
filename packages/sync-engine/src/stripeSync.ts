@@ -297,6 +297,9 @@ export class StripeSync {
         : undefined
     const accountId = await this.getAccountId(objectAccountId)
 
+    // Ensure account exists before processing event (required for foreign key constraints)
+    await this.getCurrentAccount()
+
     switch (event.type) {
       case 'charge.captured':
       case 'charge.expired':
