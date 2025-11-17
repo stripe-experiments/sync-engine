@@ -30,7 +30,7 @@ afterAll(async () => {
     stripeSync.postgresClient.query(
       `delete from stripe.active_entitlements where customer = '${customerId}'`
     ),
-    stripeSync.postgresClient.query(`delete from stripe.customers where id = '${customerId}'`),
+    stripeSync.postgresClient.query(`delete from stripe.customers where _id = '${customerId}'`),
   ])
 })
 
@@ -73,12 +73,12 @@ describe('entitlements', () => {
         ...activeEntitlements[0],
         customer: customerId,
         _account_id: accountId,
-        raw_data: expect.objectContaining({
+        _raw_data: expect.objectContaining({
           id: activeEntitlements[0].id,
           feature: activeEntitlements[0].feature,
         }),
-        updated_at: expect.any(Date),
-        last_synced_at: expect.any(Date),
+        _updated_at: expect.any(Date),
+        _last_synced_at: expect.any(Date),
       },
     ])
 
@@ -117,12 +117,12 @@ describe('entitlements', () => {
         ...entitlement,
         customer: customerId,
         _account_id: accountId,
-        raw_data: expect.objectContaining({
+        _raw_data: expect.objectContaining({
           id: entitlement.id,
           feature: entitlement.feature,
         }),
-        updated_at: expect.any(Date),
-        last_synced_at: expect.any(Date),
+        _updated_at: expect.any(Date),
+        _last_synced_at: expect.any(Date),
       }))
     )
   })
