@@ -54,6 +54,8 @@ describe('Incremental Sync', () => {
       'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
       ['test_%', 'products']
     )
+    // Clear cached account so it re-fetches using the mock
+    stripeSync.cachedAccount = null
   })
 
   test('should only fetch new products on second sync', async () => {
