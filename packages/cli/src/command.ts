@@ -113,6 +113,19 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     console.log(chalk.blue(`Backfilling ${entityName} from Stripe in 'stripe' schema...`))
     console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
+    // Run migrations first
+    try {
+      await runMigrations({
+        databaseUrl: config.databaseUrl,
+      })
+    } catch (migrationError) {
+      console.error(chalk.red('Failed to run migrations:'))
+      console.error(
+        migrationError instanceof Error ? migrationError.message : String(migrationError)
+      )
+      throw migrationError
+    }
+
     // Create StripeSync instance
     const poolConfig: PoolConfig = {
       max: 10,
