@@ -1,6 +1,14 @@
 import { type PoolConfig } from 'pg'
-import pino from 'pino'
 import Stripe from 'stripe'
+
+/**
+ * Simple logger interface compatible with both pino and console
+ */
+export interface Logger {
+  info(...args: any[]): void
+  warn(...args: any[]): void
+  error(...args: any[]): void
+}
 
 export type RevalidateEntity =
   | 'charge'
@@ -65,7 +73,7 @@ export type StripeSyncConfig = {
 
   poolConfig: PoolConfig
 
-  logger?: pino.Logger
+  logger?: Logger
 
   /**
    * Maximum number of retry attempts for 429 rate limit errors.

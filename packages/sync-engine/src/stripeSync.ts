@@ -13,7 +13,6 @@ import {
 import { managedWebhookSchema } from './schemas/managed_webhook'
 import { randomUUID } from 'node:crypto'
 import { type PoolConfig } from 'pg'
-import pino from 'pino'
 import { withRetry } from './utils/retry'
 import { hashApiKey } from './utils/hashApiKey'
 
@@ -62,7 +61,7 @@ export class StripeSync {
       },
     })
     this.config.schema = config.schema ?? DEFAULT_SCHEMA
-    this.config.logger = config.logger ?? pino()
+    this.config.logger = config.logger ?? console
     this.config.logger?.info(
       { autoExpandLists: config.autoExpandLists, stripeApiVersion: config.stripeApiVersion },
       'StripeSync initialized'
