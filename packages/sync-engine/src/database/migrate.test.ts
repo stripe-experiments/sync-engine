@@ -43,12 +43,15 @@ describe('runMigrations', () => {
     `)
     expect(result.rows[0].count).toBe('0')
 
-    result = await client.query(`
+    result = await client.query(
+      `
       SELECT EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = $1 AND table_name = 'dummy_table'
       )
-    `, [testSchema])
+    `,
+      [testSchema]
+    )
     expect(result.rows[0].exists).toBe(true)
 
     // Execute: Run migrations with empty table
@@ -63,12 +66,15 @@ describe('runMigrations', () => {
     })
 
     // Verify: Schema was recreated (dummy table should be gone)
-    result = await client.query(`
+    result = await client.query(
+      `
       SELECT EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = $1 AND table_name = 'dummy_table'
       )
-    `, [testSchema])
+    `,
+      [testSchema]
+    )
     expect(result.rows[0].exists).toBe(false)
 
     // Verify: Migrations ran successfully (migrations table should have entries)
@@ -120,12 +126,15 @@ describe('runMigrations', () => {
     // Setup: Schema already exists from beforeEach, but no migrations table
 
     // Verify setup: migrations table doesn't exist
-    let result = await client.query(`
+    let result = await client.query(
+      `
       SELECT EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = $1 AND table_name = '_migrations'
       )
-    `, [testSchema])
+    `,
+      [testSchema]
+    )
     expect(result.rows[0].exists).toBe(false)
 
     // Execute: Run migrations
@@ -140,12 +149,15 @@ describe('runMigrations', () => {
     })
 
     // Verify: Migrations table was created
-    result = await client.query(`
+    result = await client.query(
+      `
       SELECT EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = $1 AND table_name = '_migrations'
       )
-    `, [testSchema])
+    `,
+      [testSchema]
+    )
     expect(result.rows[0].exists).toBe(true)
 
     // Verify: Migrations ran successfully
