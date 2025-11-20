@@ -35,9 +35,6 @@ ALTER TABLE "stripe"."subscription_schedules" DROP CONSTRAINT IF EXISTS fk_subsc
 ALTER TABLE "stripe"."subscriptions" DROP CONSTRAINT IF EXISTS fk_subscriptions_account;
 ALTER TABLE "stripe"."tax_ids" DROP CONSTRAINT IF EXISTS fk_tax_ids_account;
 ALTER TABLE "stripe"."_sync_status" DROP CONSTRAINT IF EXISTS fk_sync_status_account;
-ALTER TABLE "stripe"."coupons" DROP CONSTRAINT IF EXISTS fk_coupons_account;
-ALTER TABLE "stripe"."events" DROP CONSTRAINT IF EXISTS fk_events_account;
-ALTER TABLE "stripe"."payouts" DROP CONSTRAINT IF EXISTS fk_payouts_account;
 
 -- ============================================================================
 -- Step 2: Convert accounts._id to generated column accounts.id
@@ -240,6 +237,3 @@ ALTER TABLE "stripe"."subscription_schedules" ADD CONSTRAINT fk_subscription_sch
 ALTER TABLE "stripe"."subscriptions" ADD CONSTRAINT fk_subscriptions_account FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id);
 ALTER TABLE "stripe"."tax_ids" ADD CONSTRAINT fk_tax_ids_account FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id);
 ALTER TABLE "stripe"."_sync_status" ADD CONSTRAINT fk_sync_status_account FOREIGN KEY ("account_id") REFERENCES "stripe"."accounts" (id);
-ALTER TABLE "stripe"."coupons" ADD CONSTRAINT fk_coupons_account FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id);
-ALTER TABLE "stripe"."events" ADD CONSTRAINT fk_events_account FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id);
-ALTER TABLE "stripe"."payouts" ADD CONSTRAINT fk_payouts_account FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id);
