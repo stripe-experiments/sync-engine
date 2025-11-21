@@ -5,6 +5,10 @@
 
 set -e  # Exit on error
 
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
 echo "🧪 Stripe Sync Engine Integration Test"
 echo "======================================="
 echo ""
@@ -19,7 +23,7 @@ fi
 echo "✓ Stripe CLI found"
 
 # Load environment variables
-if [ -f .env ]; then
+load_env_file; check_env_vars DATABASE_URL STRIPE_API_KEY NGROK_AUTH_TOKEN 2>/dev/null || check_env_vars DATABASE_URL STRIPE_API_KEY; if false; then
     echo "✓ Loading environment variables from .env"
     export $(cat .env | grep -v '^#' | xargs)
 else

@@ -2301,10 +2301,12 @@ export class StripeSync {
       for (const stripeWebhook of stripeWebhooks.data) {
         // Check if this webhook was created by us
         // Method 1 (preferred): Check metadata for managed_by field
-        const isManagedByMetadata = stripeWebhook.metadata?.managed_by?.toLowerCase().replace(/[\s\-]+/g, '') === 'stripesync'
+        const isManagedByMetadata =
+          stripeWebhook.metadata?.managed_by?.toLowerCase().replace(/[\s\-]+/g, '') === 'stripesync'
 
         // Method 2 (backwards compatible): Check if description includes 'stripesync' (spaces/hyphens removed)
-        const normalizedDescription = stripeWebhook.description?.toLowerCase().replace(/[\s\-]+/g, '') || ''
+        const normalizedDescription =
+          stripeWebhook.description?.toLowerCase().replace(/[\s\-]+/g, '') || ''
         const isManagedByDescription = normalizedDescription.includes('stripesync')
 
         if (isManagedByMetadata || isManagedByDescription) {
@@ -2313,7 +2315,9 @@ export class StripeSync {
 
           // Check if this webhook matches our base URL but isn't in our database
           if (stripeBaseUrl === baseUrl) {
-            const existsInDb = existingWebhooks.some(dbWebhook => dbWebhook.id === stripeWebhook.id)
+            const existsInDb = existingWebhooks.some(
+              (dbWebhook) => dbWebhook.id === stripeWebhook.id
+            )
 
             if (!existsInDb) {
               // This is an orphaned managed webhook - delete it from Stripe

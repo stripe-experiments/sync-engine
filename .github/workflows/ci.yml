@@ -144,4 +144,5 @@ jobs:
       - name: Run Webhook Reuse Verification Test
         run: |
           cd packages/cli
-          npx tsx scripts/verify-webhook-reuse.ts
+          chmod +x ./scripts/test-integration-webhook-reuse.sh
+          ./scripts/test-integration-webhook-reuse.sh

@@ -162,7 +162,9 @@ async function main() {
     const newWebhookId = result4b.webhook.id
 
     if (newWebhookId !== orphanedWebhookId) {
-      console.log(chalk.green('   ✓ SUCCESS: Orphaned webhook was cleaned up and new webhook created!'))
+      console.log(
+        chalk.green('   ✓ SUCCESS: Orphaned webhook was cleaned up and new webhook created!')
+      )
       console.log(chalk.cyan(`   - Old (orphaned) Webhook ID: ${orphanedWebhookId}`))
       console.log(chalk.cyan(`   - New Webhook ID: ${newWebhookId}`))
       createdWebhookIds.push(newWebhookId)
@@ -177,14 +179,18 @@ async function main() {
       }
     } else {
       hasFailures = true
-      console.log(chalk.red('   ❌ FAIL: Same webhook was reused (orphaned webhook not cleaned up)'))
+      console.log(
+        chalk.red('   ❌ FAIL: Same webhook was reused (orphaned webhook not cleaned up)')
+      )
     }
     console.log()
 
     // Test 5: Backwards compatibility - orphaned webhook with old description format
     console.log(chalk.blue('📝 Test 5: Backwards compatibility with old description formats'))
     console.log(chalk.gray('   Testing cleanup of webhooks with old description formats'))
-    console.log(chalk.gray('   Expected: Should delete orphaned webhooks with various description formats'))
+    console.log(
+      chalk.gray('   Expected: Should delete orphaned webhooks with various description formats')
+    )
 
     // Create webhooks with different old description formats directly via Stripe API
     const oldDescriptions = [
@@ -203,7 +209,9 @@ async function main() {
       })
       oldWebhookIds.push(oldWebhook.id)
       createdWebhookIds.push(oldWebhook.id)
-      console.log(chalk.gray(`   - Created old-format webhook: ${oldWebhook.id} (description: "${desc}")`))
+      console.log(
+        chalk.gray(`   - Created old-format webhook: ${oldWebhook.id} (description: "${desc}")`)
+      )
     }
 
     // Now call findOrCreateManagedWebhook - it should clean up all old webhooks
