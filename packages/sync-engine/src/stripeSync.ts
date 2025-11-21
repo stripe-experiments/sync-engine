@@ -2240,7 +2240,6 @@ export class StripeSync {
     const webhook = await this.stripe.webhookEndpoints.create({
       ...params,
       url: webhookUrl,
-      description: 'stripe sync',
       metadata: {
         ...params.metadata,
         managed_by: 'stripe-sync',
