@@ -140,3 +140,8 @@ jobs:
           cd packages/cli
           chmod +x ./scripts/test-integration-account-management.sh
           ./scripts/test-integration-account-management.sh
+
+      - name: Run Webhook Reuse Verification Test
+        run: |
+          cd packages/cli
+          npx tsx scripts/verify-webhook-reuse.ts
