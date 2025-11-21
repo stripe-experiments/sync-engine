@@ -2382,6 +2382,12 @@ export class StripeSync {
     return result.rows.length > 0 ? (result.rows[0] as Stripe.WebhookEndpoint) : null
   }
 
+  /**
+   * Get a managed webhook by URL and account ID.
+   * Used for race condition recovery: when createManagedWebhook hits a unique constraint
+   * violation (another instance created the webhook), we need to fetch the existing webhook
+   * by URL since we only know the URL, not the ID of the webhook that won the race.
+   */
   async getManagedWebhookByUrl(url: string): Promise<Stripe.WebhookEndpoint | null> {
     const accountId = await this.getAccountId()
     const result = await this.postgresClient.query(
