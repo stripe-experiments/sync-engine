@@ -459,7 +459,9 @@ async function main() {
       } else {
         hasFailures = true
         console.log(
-          chalk.red(`   ❌ FAIL: Found ${matchingWebhooks.length} webhooks in database (expected 1)`)
+          chalk.red(
+            `   ❌ FAIL: Found ${matchingWebhooks.length} webhooks in database (expected 1)`
+          )
         )
       }
 
@@ -484,7 +486,9 @@ async function main() {
     } else {
       hasFailures = true
       console.log(
-        chalk.red(`   ❌ FAIL: Concurrent calls created ${uniqueIds.size} different webhooks (expected 1)`)
+        chalk.red(
+          `   ❌ FAIL: Concurrent calls created ${uniqueIds.size} different webhooks (expected 1)`
+        )
       )
       console.log(chalk.yellow(`   - Unique webhook IDs: ${Array.from(uniqueIds).join(', ')}`))
       // Add all unique IDs for cleanup
