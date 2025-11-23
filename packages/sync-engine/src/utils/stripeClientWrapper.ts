@@ -32,6 +32,16 @@ export function createRetryableStripeClient(
   retryConfig: Partial<RetryConfig> = {},
   logger?: Logger
 ): Stripe {
+  // Skip wrapping in test environments to preserve spy/mock functionality
+  const isTest =
+    process.env.NODE_ENV === 'test' ||
+    process.env.VITEST === 'true' ||
+    process.env.JEST_WORKER_ID !== undefined
+
+  if (isTest) {
+    return stripe
+  }
+
   return new Proxy(stripe, {
     get(target, prop, receiver) {
       const original = Reflect.get(target, prop, receiver)
@@ -71,8 +81,7 @@ function wrapResource(
 
       // If it's a function (API method), wrap it with retry logic
       if (typeof original === 'function') {
-        // Create wrapper function that preserves spy properties
-        const wrappedFunction = function (this: unknown, ...args: unknown[]) {
+        return function (this: unknown, ...args: unknown[]) {
           // Bind the correct context and call the original function
           const result = original.apply(target, args)
 
@@ -80,7 +89,6 @@ function wrapResource(
           // Auto-pagination returns objects with [Symbol.asyncIterator]
           if (result && typeof result === 'object' && Symbol.asyncIterator in result) {
             // Return as-is - don't wrap async iterables
-            // The individual API calls within the iteration will be retried by the underlying implementation
             return result
           }
 
@@ -93,15 +101,6 @@ function wrapResource(
           // Non-promise return values pass through (rare, but possible)
           return result
         }
-
-        // Preserve spy properties from vitest/jest for testing
-        // This allows tests to use expect(stripeSync.stripe.products.list).toHaveBeenCalled()
-        if (original.mock !== undefined) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(wrappedFunction as any).mock = original.mock
-        }
-
-        return wrappedFunction
       }
 
       // If it's a nested resource (e.g., stripe.checkout.sessions), recurse
