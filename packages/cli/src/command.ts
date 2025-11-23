@@ -368,85 +368,9 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       server = app.listen(port, '0.0.0.0', () => {
         resolve()
       })
-<<<<<<< HEAD
       server.on('error', reject)
     })
     console.log(chalk.green(`✓ Server started on port ${port}`))
-=======
-      webhookId = webhook.id
-      console.log(chalk.green(`✓ Webhook created: ${webhook.id}`))
-      console.log(chalk.cyan(`  URL: ${webhook.url}`))
-      console.log(chalk.cyan(`  Events: All events (*)`))
-
-      // Create Express app and mount webhook handler
-      const app = express()
-
-      // Mount webhook handler with raw body parser (BEFORE any other body parsing)
-      const webhookRoute = webhookPath
-      app.use(webhookRoute, express.raw({ type: 'application/json' }))
-
-      app.post(webhookRoute, async (req, res) => {
-        console.log('[Webhook] Received webhook request')
-        const sig = req.headers['stripe-signature']
-        if (!sig || typeof sig !== 'string') {
-          console.error('[Webhook] Missing stripe-signature header')
-          return res.status(400).send({ error: 'Missing stripe-signature header' })
-        }
-        console.log('[Webhook] Signature present, processing...')
-
-        const rawBody = req.body
-
-        if (!rawBody || !Buffer.isBuffer(rawBody)) {
-          console.error('[Webhook] Body is not a Buffer!')
-          return res.status(400).send({ error: 'Missing raw body for signature verification' })
-        }
-
-        try {
-          await stripeSync!.processWebhook(rawBody, sig)
-          return res.status(200).send({ received: true })
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-          console.error('[Webhook] Processing error:', errorMessage)
-          return res.status(400).send({ error: errorMessage })
-        }
-      })
-
-      // Apply body parsing middleware for other routes (after webhook handler)
-      app.use(express.json())
-      app.use(express.urlencoded({ extended: false }))
-
-      // Health check endpoint
-      app.get('/health', async (req, res) => {
-        return res.status(200).json({ status: 'ok' })
-      })
-
-      // Start Express server
-      console.log(chalk.blue(`\nStarting server on port ${port}...`))
-      await new Promise<void>((resolve, reject) => {
-        server = app.listen(port, '0.0.0.0', () => {
-          resolve()
-        })
-        server.on('error', reject)
-      })
-      console.log(chalk.green(`✓ Server started on port ${port}`))
-    } else {
-      // WEBSOCKET MODE (no ngrok)
-      console.log(chalk.blue('\nStarting Stripe event listener via WebSocket...'))
-      websocketClient = await createStripeWebSocketClient({
-        stripeApiKey: config.stripeApiKey,
-        onEvent: async (event) => {
-          // Process the event through the sync engine
-          await stripeSync.processEvent(event)
-        },
-        onReady: () => {
-          console.log(chalk.green('✓ Connected to Stripe - listening for events'))
-        },
-        onError: (error) => {
-          console.error(chalk.red('WebSocket error:'), error.message)
-        },
-      })
-    }
->>>>>>> 3155787 (add more robust multi-account testing)
 
     // Run initial backfill of all Stripe data (unless disabled)
     if (process.env.SKIP_BACKFILL !== 'true') {
