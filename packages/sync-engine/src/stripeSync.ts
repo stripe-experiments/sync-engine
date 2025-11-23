@@ -445,8 +445,10 @@ export class StripeSync {
    * Returns an array of all webhook event types that this sync engine can handle.
    * Useful for configuring webhook endpoints with specific event subscriptions.
    */
-  public getSupportedEventTypes(): string[] {
-    return Object.keys(this.eventHandlers).sort()
+  public getSupportedEventTypes(): Stripe.WebhookEndpointCreateParams.EnabledEvent[] {
+    return Object.keys(
+      this.eventHandlers
+    ).sort() as Stripe.WebhookEndpointCreateParams.EnabledEvent[]
   }
 
   // Event handler methods
@@ -2175,8 +2177,13 @@ export class StripeSync {
 
   async findOrCreateManagedWebhook(
     url: string,
-    params: Omit<Stripe.WebhookEndpointCreateParams, 'url'>
+    params?: Omit<Stripe.WebhookEndpointCreateParams, 'url'>
   ): Promise<Stripe.WebhookEndpoint> {
+    // Default to supported event types if not specified
+    const webhookParams = {
+      enabled_events: this.getSupportedEventTypes(),
+      ...params,
+    }
     // Use advisory lock to prevent race conditions when multiple instances
     // try to create webhooks for the same URL simultaneously
     // Lock is acquired at beginning and released at end via withAdvisoryLock wrapper
@@ -2287,11 +2294,11 @@ export class StripeSync {
       // Advisory lock ensures only one instance reaches here for this URL
       // Create webhook at the exact URL
       const webhook = await this.stripe.webhookEndpoints.create({
-        ...params,
+        ...webhookParams,
         url,
         // Always set metadata to identify managed webhooks
         metadata: {
-          ...params.metadata,
+          ...webhookParams.metadata,
           managed_by: 'stripe-sync',
         },
       })
