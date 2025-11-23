@@ -573,6 +573,384 @@ async function main() {
       console.log()
     }
 
+    // Test 9: Multi-Account with Shared Tunnel & Server
+    console.log(chalk.blue('📝 Test 9: Multi-Account with Shared Tunnel & Server'))
+    console.log(
+      chalk.gray('   Testing realistic multi-account scenario with shared infrastructure')
+    )
+    console.log(
+      chalk.gray('   Expected: Both accounts use same tunnel/server, webhooks isolated correctly')
+    )
+
+    if (!STRIPE_API_KEY_2) {
+      hasFailures = true
+      console.log(chalk.red('   ❌ SKIP: STRIPE_API_KEY_2 environment variable is required'))
+      console.log(chalk.yellow('   Set STRIPE_API_KEY_2 to run shared tunnel multi-account test'))
+      console.log()
+    } else {
+      // Declare resources outside try block for cleanup
+      let server: any = null
+      let tunnel: any = null
+      let stripeSync2: any = null
+
+      try {
+        // Import Express and ngrok
+        const express = (await import('express')).default
+        const { createTunnel } = await import('../src/ngrok')
+
+        // Create single ngrok tunnel
+        const port = 3000
+        tunnel = await createTunnel(port, process.env.NGROK_AUTH_TOKEN!)
+        console.log(chalk.gray(`   - Created tunnel: ${tunnel.url}`))
+
+        // Create Express server
+        const app = express()
+        const webhookPath = '/stripe-webhooks'
+
+        // Track processed events for both accounts
+        const processedEvents = {
+          account1: [] as string[],
+          account2: [] as string[],
+        }
+
+        // Create StripeSync instances for both accounts
+        stripeSync2 = new StripeSync({
+          databaseUrl: DATABASE_URL!,
+          stripeSecretKey: STRIPE_API_KEY_2,
+          stripeApiVersion: '2020-08-27',
+          poolConfig,
+        })
+
+        const account1Id = await stripeSync['getAccountId']()
+        const account2Id = await stripeSync2['getAccountId']()
+
+        console.log(chalk.gray(`   - Account 1 ID: ${account1Id}`))
+        console.log(chalk.gray(`   - Account 2 ID: ${account2Id}`))
+
+        // Mount webhook handler for both accounts
+        app.use(webhookPath, express.raw({ type: 'application/json' }))
+        app.post(webhookPath, async (req, res) => {
+          const sig = req.headers['stripe-signature']
+          if (!sig || typeof sig !== 'string') {
+            return res.status(400).send({ error: 'Missing stripe-signature header' })
+          }
+
+          const rawBody = req.body
+          if (!rawBody || !Buffer.isBuffer(rawBody)) {
+            return res.status(400).send({ error: 'Missing raw body' })
+          }
+
+          try {
+            // Try account 1 first
+            try {
+              await stripeSync.processWebhook(rawBody, sig)
+              const event = JSON.parse(rawBody.toString())
+              processedEvents.account1.push(event.type)
+              return res.status(200).send({ received: true, account: 'account1' })
+            } catch (err1) {
+              // Try account 2
+              try {
+                await stripeSync2.processWebhook(rawBody, sig)
+                const event = JSON.parse(rawBody.toString())
+                processedEvents.account2.push(event.type)
+                return res.status(200).send({ received: true, account: 'account2' })
+              } catch (err2) {
+                throw err2
+              }
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+            return res.status(400).send({ error: errorMessage })
+          }
+        })
+
+        // Start server
+        server = await new Promise<any>((resolve, reject) => {
+          const s = app.listen(port, '0.0.0.0', () => resolve(s))
+          s.on('error', reject)
+        })
+        console.log(chalk.gray(`   - Started server on port ${port}`))
+
+        // Create webhooks for both accounts using same tunnel URL
+        const sharedUrl = `${tunnel.url}${webhookPath}`
+        console.log(chalk.gray(`   - Creating webhooks with shared URL: ${sharedUrl}`))
+
+        const webhook9a1 = await stripeSync.findOrCreateManagedWebhook(sharedUrl, {
+          enabled_events: [
+            'customer.created',
+            'customer.updated',
+            'product.created',
+            'product.updated',
+            'price.created',
+          ],
+        })
+        createdWebhookIds.push(webhook9a1.id)
+
+        const webhook9a2 = await stripeSync2.findOrCreateManagedWebhook(sharedUrl, {
+          enabled_events: [
+            'customer.created',
+            'customer.updated',
+            'product.created',
+            'product.updated',
+            'price.created',
+          ],
+        })
+        createdWebhookIds.push(webhook9a2.id)
+
+        console.log(chalk.gray(`   - Account 1 Webhook: ${webhook9a1.id}`))
+        console.log(chalk.gray(`   - Account 2 Webhook: ${webhook9a2.id}`))
+
+        if (webhook9a1.id !== webhook9a2.id) {
+          console.log(chalk.green('   ✓ SUCCESS: Each account created independent webhook'))
+        } else {
+          hasFailures = true
+          console.log(chalk.red('   ❌ FAIL: Both accounts got same webhook ID'))
+        }
+
+        // Create test resources to trigger webhook events
+        console.log(chalk.gray('   - Creating test resources to trigger webhooks...'))
+
+        // Account 1: Create customer, product, and price
+        const customer1 = await stripeSync['stripe'].customers.create({
+          email: 'test-account1@example.com',
+          name: 'Test Account 1 Customer',
+        })
+
+        const product1 = await stripeSync['stripe'].products.create({
+          name: 'Test Product Account 1',
+        })
+
+        await stripeSync['stripe'].prices.create({
+          product: product1.id,
+          unit_amount: 1000,
+          currency: 'usd',
+        })
+
+        // Account 2: Create customer, product, and price
+        const customer2 = await stripeSync2['stripe'].customers.create({
+          email: 'test-account2@example.com',
+          name: 'Test Account 2 Customer',
+        })
+
+        const product2 = await stripeSync2['stripe'].products.create({
+          name: 'Test Product Account 2',
+        })
+
+        await stripeSync2['stripe'].prices.create({
+          product: product2.id,
+          unit_amount: 2000,
+          currency: 'usd',
+        })
+
+        // Update customers to trigger customer.updated events
+        await stripeSync['stripe'].customers.update(customer1.id, {
+          description: 'Updated customer 1',
+        })
+
+        await stripeSync2['stripe'].customers.update(customer2.id, {
+          description: 'Updated customer 2',
+        })
+
+        // Wait for webhook processing
+        await new Promise((resolve) => setTimeout(resolve, 4000))
+
+        // Verify initial events were processed
+        const expectedEventTypes = [
+          'customer.created',
+          'customer.updated',
+          'product.created',
+          'price.created',
+        ]
+        const account1HasAllEvents = expectedEventTypes.every((et) =>
+          processedEvents.account1.includes(et)
+        )
+        const account2HasAllEvents = expectedEventTypes.every((et) =>
+          processedEvents.account2.includes(et)
+        )
+
+        if (account1HasAllEvents && account2HasAllEvents) {
+          console.log(chalk.green('   ✓ SUCCESS: Both accounts processed all event types'))
+          console.log(
+            chalk.cyan(
+              `   - Account 1 events (${processedEvents.account1.length}): ${processedEvents.account1.join(', ')}`
+            )
+          )
+          console.log(
+            chalk.cyan(
+              `   - Account 2 events (${processedEvents.account2.length}): ${processedEvents.account2.join(', ')}`
+            )
+          )
+        } else {
+          hasFailures = true
+          console.log(chalk.red('   ❌ FAIL: Not all events were processed'))
+          console.log(
+            chalk.yellow(
+              `   - Account 1 events (${processedEvents.account1.length}): ${processedEvents.account1.join(', ') || 'none'}`
+            )
+          )
+          console.log(
+            chalk.yellow(
+              `   - Account 2 events (${processedEvents.account2.length}): ${processedEvents.account2.join(', ') || 'none'}`
+            )
+          )
+        }
+
+        // Verify data isolation in database
+        const account1Customers = await stripeSync['postgresClient'].query(
+          `SELECT COUNT(*) FROM "stripe"."customers" WHERE _account_id = $1`,
+          [account1Id]
+        )
+        const account2Customers = await stripeSync2['postgresClient'].query(
+          `SELECT COUNT(*) FROM "stripe"."customers" WHERE _account_id = $1`,
+          [account2Id]
+        )
+
+        const count1 = parseInt(account1Customers.rows[0].count, 10)
+        const count2 = parseInt(account2Customers.rows[0].count, 10)
+
+        if (count1 > 0 && count2 > 0) {
+          console.log(chalk.green('   ✓ SUCCESS: Data correctly isolated per account in database'))
+          console.log(chalk.cyan(`   - Account 1 customers: ${count1}`))
+          console.log(chalk.cyan(`   - Account 2 customers: ${count2}`))
+        } else {
+          hasFailures = true
+          console.log(chalk.red('   ❌ FAIL: Data not found or not properly isolated'))
+        }
+
+        // Test webhook independence: Delete Account 1 webhook, verify Account 2 still works
+        console.log(chalk.gray('   - Testing webhook independence...'))
+        console.log(chalk.gray('   - Deleting Account 1 webhook...'))
+
+        const account1EventCountBefore = processedEvents.account1.length
+        const account2EventCountBefore = processedEvents.account2.length
+
+        // Delete Account 1's webhook
+        await stripeSync.deleteManagedWebhook(webhook9a1.id)
+
+        // Verify webhook was deleted from Stripe
+        try {
+          await stripeSync['stripe'].webhookEndpoints.retrieve(webhook9a1.id)
+          hasFailures = true
+          console.log(chalk.red('   ❌ FAIL: Account 1 webhook still exists in Stripe'))
+        } catch (error) {
+          console.log(chalk.green('   ✓ Account 1 webhook deleted from Stripe'))
+        }
+
+        // Create new resources in Account 2 ONLY (Account 1 should not receive events)
+        console.log(
+          chalk.gray('   - Creating new resources in Account 2 (Account 1 webhook deleted)...')
+        )
+
+        const customer2b = await stripeSync2['stripe'].customers.create({
+          email: 'test-account2-second@example.com',
+          name: 'Test Account 2 Second Customer',
+        })
+
+        await stripeSync2['stripe'].products.update(product2.id, {
+          description: 'Updated product description',
+        })
+
+        // Wait for webhook processing
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+
+        const account1EventCountAfter = processedEvents.account1.length
+        const account2EventCountAfter = processedEvents.account2.length
+
+        // Verify Account 1 received NO new events (webhook deleted)
+        if (account1EventCountAfter === account1EventCountBefore) {
+          console.log(
+            chalk.green(
+              `   ✓ SUCCESS: Account 1 received no new events after webhook deletion (count: ${account1EventCountAfter})`
+            )
+          )
+        } else {
+          hasFailures = true
+          console.log(
+            chalk.red(
+              `   ❌ FAIL: Account 1 received events after deletion (before: ${account1EventCountBefore}, after: ${account1EventCountAfter})`
+            )
+          )
+        }
+
+        // Verify Account 2 DID receive new events (webhook still active)
+        if (account2EventCountAfter > account2EventCountBefore) {
+          console.log(
+            chalk.green(
+              `   ✓ SUCCESS: Account 2 continued processing events after Account 1 deletion (before: ${account2EventCountBefore}, after: ${account2EventCountAfter})`
+            )
+          )
+          console.log(
+            chalk.cyan(
+              `   - New Account 2 events: ${processedEvents.account2.slice(account2EventCountBefore).join(', ')}`
+            )
+          )
+        } else {
+          hasFailures = true
+          console.log(
+            chalk.red(
+              `   ❌ FAIL: Account 2 did not receive new events (before: ${account2EventCountBefore}, after: ${account2EventCountAfter})`
+            )
+          )
+        }
+      } catch (error) {
+        hasFailures = true
+        console.log(chalk.red('   ❌ FAIL: Error during shared tunnel multi-account test'))
+        console.log(chalk.red(`   - ${error}`))
+      } finally {
+        // Cleanup - always runs even if test fails
+        console.log(chalk.gray('   - Cleaning up shared tunnel test...'))
+
+        // Close server
+        if (server) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('Server close timeout'))
+              }, 5000)
+              server.close((err: any) => {
+                clearTimeout(timeout)
+                if (err) reject(err)
+                else resolve()
+              })
+            })
+          } catch (error) {
+            console.log(chalk.yellow(`   - Warning: Failed to close server: ${error}`))
+          }
+        }
+
+        // Close tunnel
+        if (tunnel) {
+          try {
+            await tunnel.close()
+          } catch (error) {
+            console.log(chalk.yellow(`   - Warning: Failed to close tunnel: ${error}`))
+          }
+        }
+
+        // Delete account 2 webhooks
+        if (stripeSync2) {
+          try {
+            const account2Webhooks = await stripeSync2['listManagedWebhooks']()
+            for (const webhook of account2Webhooks) {
+              try {
+                await stripeSync2.deleteManagedWebhook((webhook as any).id)
+              } catch (error) {
+                console.log(
+                  chalk.yellow(`   - Warning: Failed to delete webhook ${(webhook as any).id}`)
+                )
+              }
+            }
+          } catch (error) {
+            console.log(
+              chalk.yellow(`   - Warning: Failed to cleanup account 2 webhooks: ${error}`)
+            )
+          }
+        }
+      }
+
+      console.log()
+    }
+
     console.log(chalk.blue('====================================='))
 
     if (hasFailures) {
