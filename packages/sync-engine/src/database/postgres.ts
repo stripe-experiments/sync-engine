@@ -465,4 +465,347 @@ export class PostgresClient {
       }
     }
   }
+
+  // =============================================================================
+  // Observable Sync System Methods
+  // =============================================================================
+  // These methods support long-running syncs with full observability.
+  // Uses two tables: _sync_run (parent) and _sync_obj_run (children)
+  // RunKey = (accountId, runStartedAt) - natural composite key
+
+  /**
+   * Cancel stale runs (running but no object updated in 5 minutes).
+   * Called before creating a new run to clean up crashed syncs.
+   * Only cancels runs that have objects AND none have recent activity.
+   * Runs without objects yet (just created) are not considered stale.
+   */
+  async cancelStaleRuns(accountId: string): Promise<void> {
+    // Find runs where:
+    // 1. Run has at least one object
+    // 2. None of those objects have been updated in the last 5 minutes
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_run" r
+       SET status = 'error',
+           error_message = 'Auto-cancelled: stale (no update in 5 min)',
+           completed_at = now()
+       WHERE r."_account_id" = $1
+         AND r.status = 'running'
+         AND EXISTS (
+           SELECT 1 FROM "${this.config.schema}"."_sync_obj_run" o
+           WHERE o."_account_id" = r."_account_id"
+             AND o.run_started_at = r.started_at
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM "${this.config.schema}"."_sync_obj_run" o
+           WHERE o."_account_id" = r."_account_id"
+             AND o.run_started_at = r.started_at
+             AND o.updated_at >= now() - interval '5 minutes'
+         )`,
+      [accountId]
+    )
+  }
+
+  /**
+   * Get or create a sync run for this account.
+   * Returns existing run if one is active, otherwise creates new one.
+   * Auto-cancels stale runs before checking.
+   *
+   * @returns RunKey with isNew flag, or null if constraint violation (race condition)
+   */
+  async getOrCreateSyncRun(
+    accountId: string,
+    triggeredBy?: string
+  ): Promise<{ accountId: string; runStartedAt: Date; isNew: boolean } | null> {
+    // 1. Auto-cancel stale runs
+    await this.cancelStaleRuns(accountId)
+
+    // 2. Check for existing active run
+    const existing = await this.query(
+      `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_run"
+       WHERE "_account_id" = $1 AND status = 'running'`,
+      [accountId]
+    )
+
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0]
+      return { accountId: row._account_id, runStartedAt: row.started_at, isNew: false }
+    }
+
+    // 3. Try to create new run (EXCLUDE constraint prevents duplicates)
+    // Use date_trunc to ensure millisecond precision for JavaScript Date compatibility
+    try {
+      const result = await this.query(
+        `INSERT INTO "${this.config.schema}"."_sync_run" ("_account_id", triggered_by, started_at)
+         VALUES ($1, $2, date_trunc('milliseconds', now()))
+         RETURNING "_account_id", started_at`,
+        [accountId, triggeredBy ?? null]
+      )
+      const row = result.rows[0]
+      return { accountId: row._account_id, runStartedAt: row.started_at, isNew: true }
+    } catch (error: unknown) {
+      // Only return null for exclusion constraint violation (concurrent run)
+      if (error instanceof Error && 'code' in error && error.code === '23P01') {
+        return null
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Get the active sync run for an account (if any).
+   */
+  async getActiveSyncRun(
+    accountId: string
+  ): Promise<{ accountId: string; runStartedAt: Date } | null> {
+    const result = await this.query(
+      `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_run"
+       WHERE "_account_id" = $1 AND status = 'running'`,
+      [accountId]
+    )
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return { accountId: row._account_id, runStartedAt: row.started_at }
+  }
+
+  /**
+   * Get full sync run details.
+   */
+  async getSyncRun(
+    accountId: string,
+    runStartedAt: Date
+  ): Promise<{
+    accountId: string
+    runStartedAt: Date
+    status: string
+    maxConcurrent: number
+  } | null> {
+    const result = await this.query(
+      `SELECT "_account_id", started_at, status, max_concurrent
+       FROM "${this.config.schema}"."_sync_run"
+       WHERE "_account_id" = $1 AND started_at = $2`,
+      [accountId, runStartedAt]
+    )
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return {
+      accountId: row._account_id,
+      runStartedAt: row.started_at,
+      status: row.status,
+      maxConcurrent: row.max_concurrent,
+    }
+  }
+
+  /**
+   * Mark a sync run as complete.
+   */
+  async completeSyncRun(accountId: string, runStartedAt: Date): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_run"
+       SET status = 'complete', completed_at = now()
+       WHERE "_account_id" = $1 AND started_at = $2`,
+      [accountId, runStartedAt]
+    )
+  }
+
+  /**
+   * Mark a sync run as failed.
+   */
+  async failSyncRun(accountId: string, runStartedAt: Date, errorMessage: string): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_run"
+       SET status = 'error', error_message = $3, completed_at = now()
+       WHERE "_account_id" = $1 AND started_at = $2`,
+      [accountId, runStartedAt, errorMessage]
+    )
+  }
+
+  /**
+   * Create object run entries for a sync run.
+   * All objects start as 'pending'.
+   */
+  async createObjectRuns(accountId: string, runStartedAt: Date, objects: string[]): Promise<void> {
+    if (objects.length === 0) return
+
+    const values = objects.map((_, i) => `($1, $2, $${i + 3})`).join(', ')
+    await this.query(
+      `INSERT INTO "${this.config.schema}"."_sync_obj_run" ("_account_id", run_started_at, object)
+       VALUES ${values}
+       ON CONFLICT ("_account_id", run_started_at, object) DO NOTHING`,
+      [accountId, runStartedAt, ...objects]
+    )
+  }
+
+  /**
+   * Try to start an object sync (respects max_concurrent).
+   * Returns true if claimed, false if already running or at concurrency limit.
+   *
+   * Note: There's a small race window where concurrent calls could result in
+   * max_concurrent + 1 objects running. This is acceptable behavior.
+   */
+  async tryStartObjectSync(
+    accountId: string,
+    runStartedAt: Date,
+    object: string
+  ): Promise<boolean> {
+    // 1. Check object concurrency limit
+    const run = await this.getSyncRun(accountId, runStartedAt)
+    if (!run) return false
+
+    const runningCount = await this.countRunningObjects(accountId, runStartedAt)
+    if (runningCount >= run.maxConcurrent) return false
+
+    // 2. Try to claim this object (atomic)
+    const result = await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_run"
+       SET status = 'running', started_at = now(), updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND status = 'pending'
+       RETURNING *`,
+      [accountId, runStartedAt, object]
+    )
+
+    return (result.rowCount ?? 0) > 0
+  }
+
+  /**
+   * Get object run details.
+   */
+  async getObjectRun(
+    accountId: string,
+    runStartedAt: Date,
+    object: string
+  ): Promise<{
+    object: string
+    status: string
+    processedCount: number
+    cursor: string | null
+  } | null> {
+    const result = await this.query(
+      `SELECT object, status, processed_count, cursor
+       FROM "${this.config.schema}"."_sync_obj_run"
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object]
+    )
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return {
+      object: row.object,
+      status: row.status,
+      processedCount: row.processed_count,
+      cursor: row.cursor,
+    }
+  }
+
+  /**
+   * Update progress for an object sync.
+   * Also touches updated_at for stale detection.
+   */
+  async incrementObjectProgress(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    count: number
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_run"
+       SET processed_count = processed_count + $4, updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object, count]
+    )
+  }
+
+  /**
+   * Update the cursor for an object sync.
+   */
+  async updateObjectCursor(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    cursor: string | null
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_run"
+       SET cursor = $4, updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object, cursor]
+    )
+  }
+
+  /**
+   * Mark an object sync as complete.
+   */
+  async completeObjectSync(accountId: string, runStartedAt: Date, object: string): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_run"
+       SET status = 'complete', completed_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object]
+    )
+  }
+
+  /**
+   * Mark an object sync as failed.
+   */
+  async failObjectSync(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    errorMessage: string
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_run"
+       SET status = 'error', error_message = $4, completed_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object, errorMessage]
+    )
+  }
+
+  /**
+   * Count running objects in a run.
+   */
+  async countRunningObjects(accountId: string, runStartedAt: Date): Promise<number> {
+    const result = await this.query(
+      `SELECT COUNT(*) as count FROM "${this.config.schema}"."_sync_obj_run"
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = 'running'`,
+      [accountId, runStartedAt]
+    )
+    return parseInt(result.rows[0].count)
+  }
+
+  /**
+   * Get the next pending object to process.
+   * Returns null if no pending objects or at concurrency limit.
+   */
+  async getNextPendingObject(accountId: string, runStartedAt: Date): Promise<string | null> {
+    // Check concurrency limit first
+    const run = await this.getSyncRun(accountId, runStartedAt)
+    if (!run) return null
+
+    const runningCount = await this.countRunningObjects(accountId, runStartedAt)
+    if (runningCount >= run.maxConcurrent) return null
+
+    const result = await this.query(
+      `SELECT object FROM "${this.config.schema}"."_sync_obj_run"
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = 'pending'
+       ORDER BY object
+       LIMIT 1`,
+      [accountId, runStartedAt]
+    )
+
+    return result.rows.length > 0 ? result.rows[0].object : null
+  }
+
+  /**
+   * Check if all objects in a run are complete (or error).
+   */
+  async areAllObjectsComplete(accountId: string, runStartedAt: Date): Promise<boolean> {
+    const result = await this.query(
+      `SELECT COUNT(*) as count FROM "${this.config.schema}"."_sync_obj_run"
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status IN ('pending', 'running')`,
+      [accountId, runStartedAt]
+    )
+    return parseInt(result.rows[0].count) === 0
+  }
 }

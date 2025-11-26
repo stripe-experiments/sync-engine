@@ -7,6 +7,9 @@ describe('Postgres Sync Status Methods', () => {
   let postgresClient: PostgresClient
   let pool: pg.Pool
   const testAccountId = 'acct_test_123'
+  // Additional test accounts for multi-account tests
+  const testAccount1 = 'acct_test_1'
+  const testAccount2 = 'acct_test_2'
 
   beforeAll(async () => {
     const databaseUrl =
@@ -95,6 +98,7 @@ describe('Postgres Sync Status Methods', () => {
       const resource = 'test_products_timestamp'
       const cursor = 1704902400
 
+      // Allow 1 second tolerance for clock skew between client and database
       const beforeTime = new Date()
       await postgresClient.updateSyncCursor(resource, testAccountId, cursor)
       const afterTime = new Date()
@@ -160,6 +164,7 @@ describe('Postgres Sync Status Methods', () => {
     it('should clear error_message when marking complete', async () => {
       const resource = 'test_products_clear_error'
 
+      // First create the entry, then mark error, then complete
       await postgresClient.markSyncRunning(resource, testAccountId)
       await postgresClient.markSyncError(resource, testAccountId, 'Test error')
       await postgresClient.markSyncComplete(resource, testAccountId)
@@ -250,18 +255,16 @@ describe('Postgres Sync Status Methods', () => {
 
     it('should isolate cursors between different accounts', async () => {
       const resource = 'test_multi_account'
-      const account1 = 'acct_test_1'
-      const account2 = 'acct_test_2'
       const cursor1 = 1704902400
       const cursor2 = 1705000000
 
       // Set different cursors for same resource but different accounts
-      await postgresClient.updateSyncCursor(resource, account1, cursor1)
-      await postgresClient.updateSyncCursor(resource, account2, cursor2)
+      await postgresClient.updateSyncCursor(resource, testAccount1, cursor1)
+      await postgresClient.updateSyncCursor(resource, testAccount2, cursor2)
 
       // Verify each account has its own cursor
-      const retrievedCursor1 = await postgresClient.getSyncCursor(resource, account1)
-      const retrievedCursor2 = await postgresClient.getSyncCursor(resource, account2)
+      const retrievedCursor1 = await postgresClient.getSyncCursor(resource, testAccount1)
+      const retrievedCursor2 = await postgresClient.getSyncCursor(resource, testAccount2)
 
       expect(retrievedCursor1).toBe(cursor1)
       expect(retrievedCursor2).toBe(cursor2)

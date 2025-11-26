@@ -367,3 +367,169 @@ describe('Incremental Sync', () => {
     })
   })
 })
+
+describe('processNext', () => {
+  beforeEach(async () => {
+    // Clean up test data before each test
+    await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
+      'test_prod_%',
+    ])
+    await stripeSync.postgresClient.pool.query(
+      'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
+      ['test_%', 'products']
+    )
+    // Clear cached account so it re-fetches using the mock
+    stripeSync.cachedAccount = null
+  })
+
+  test('should return hasMore: true when more pages exist', async () => {
+    const products: Stripe.Product[] = [
+      {
+        id: 'test_prod_page_1',
+        object: 'product',
+        created: 1704902400,
+        name: 'Product 1',
+      } as Stripe.Product,
+    ]
+
+    // Mock list to return a response with has_more: true
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockResolvedValue({
+      object: 'list',
+      data: products,
+      has_more: true,
+      url: '/v1/products',
+    } as Stripe.ApiList<Stripe.Product>)
+
+    const result = await stripeSync.processNext('product')
+
+    expect(result.processed).toBe(1)
+    expect(result.hasMore).toBe(true)
+  })
+
+  test('should return hasMore: false when no more pages', async () => {
+    const products: Stripe.Product[] = [
+      {
+        id: 'test_prod_page_2',
+        object: 'product',
+        created: 1704902400,
+        name: 'Product 2',
+      } as Stripe.Product,
+    ]
+
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockResolvedValue({
+      object: 'list',
+      data: products,
+      has_more: false,
+      url: '/v1/products',
+    } as Stripe.ApiList<Stripe.Product>)
+
+    const result = await stripeSync.processNext('product')
+
+    expect(result.processed).toBe(1)
+    expect(result.hasMore).toBe(false)
+  })
+
+  test('should use cursor for incremental sync on second call', async () => {
+    // First page
+    const firstPageProducts: Stripe.Product[] = [
+      {
+        id: 'test_prod_inc_1',
+        object: 'product',
+        created: 1704902400,
+        name: 'Product 1',
+      } as Stripe.Product,
+    ]
+
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockResolvedValue({
+      object: 'list',
+      data: firstPageProducts,
+      has_more: true,
+      url: '/v1/products',
+    } as Stripe.ApiList<Stripe.Product>)
+
+    await stripeSync.processNext('product')
+
+    // Second page
+    const secondPageProducts: Stripe.Product[] = [
+      {
+        id: 'test_prod_inc_2',
+        object: 'product',
+        created: 1704988800,
+        name: 'Product 2',
+      } as Stripe.Product,
+    ]
+
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockResolvedValue({
+      object: 'list',
+      data: secondPageProducts,
+      has_more: false,
+      url: '/v1/products',
+    } as Stripe.ApiList<Stripe.Product>)
+
+    await stripeSync.processNext('product')
+
+    // Should have been called with created filter using cursor
+    expect(stripeSync.stripe.products.list).toHaveBeenLastCalledWith({
+      limit: 100,
+      created: { gte: 1704902400 },
+    })
+  })
+
+  test('should handle empty response', async () => {
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockResolvedValue({
+      object: 'list',
+      data: [],
+      has_more: false,
+      url: '/v1/products',
+    } as Stripe.ApiList<Stripe.Product>)
+
+    const result = await stripeSync.processNext('product')
+
+    expect(result.processed).toBe(0)
+    expect(result.hasMore).toBe(false)
+  })
+
+  test('should throw on API error', async () => {
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockRejectedValue(new Error('API Error'))
+
+    await expect(stripeSync.processNext('product')).rejects.toThrow('API Error')
+  })
+})
+
+describe('processUntilDone', () => {
+  beforeEach(async () => {
+    // Clean up test data before each test
+    await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
+      'test_prod_%',
+    ])
+    await stripeSync.postgresClient.pool.query(
+      'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
+      ['test_%', 'products']
+    )
+    // Clear cached account so it re-fetches using the mock
+    stripeSync.cachedAccount = null
+  })
+
+  test('should be an alias for syncBackfill', async () => {
+    const products: Stripe.Product[] = [
+      {
+        id: 'test_prod_alias_1',
+        object: 'product',
+        created: 1704902400,
+        name: 'Product 1',
+      } as Stripe.Product,
+    ]
+
+    const mockList = vitest.fn(async function* () {
+      for (const product of products) {
+        yield product
+      }
+    })
+
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockReturnValue(mockList() as unknown)
+
+    const result = await stripeSync.processUntilDone({ object: 'product' })
+
+    expect(result.products?.synced).toBe(1)
+  })
+})
