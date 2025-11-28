@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { PostgresClient } from './postgres'
+import { runMigrations } from './migrate'
 import pg from 'pg'
 
 describe('Postgres Sync Status Methods', () => {
@@ -10,6 +11,9 @@ describe('Postgres Sync Status Methods', () => {
   beforeAll(async () => {
     const databaseUrl =
       process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
+
+    // Run migrations to ensure schema and tables exist
+    await runMigrations({ databaseUrl })
 
     postgresClient = new PostgresClient({
       schema: 'stripe',
