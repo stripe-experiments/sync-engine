@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { PostgresClient } from './postgres'
 import pg from 'pg'
 
 describe('Postgres Sync Status Methods', () => {
   let postgresClient: PostgresClient
   let pool: pg.Pool
-  let schemaReady = false
   const testAccountId = 'acct_test_123'
 
   beforeAll(async () => {
@@ -20,33 +19,14 @@ describe('Postgres Sync Status Methods', () => {
     })
     pool = postgresClient.pool
 
-    // Check if database and schema are available before running tests
-    try {
-      const schemaCheck = await pool.query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'stripe' AND table_name = '_sync_status')`
-      )
-      if (!schemaCheck.rows[0].exists) {
-        console.warn('Skipping Postgres Sync Status tests - stripe schema not set up')
-        return
-      }
-      schemaReady = true
-      // Clean up test data before running tests
-      await pool.query('DELETE FROM stripe._sync_status WHERE resource LIKE $1', ['test_%'])
-    } catch {
-      console.warn('Skipping Postgres Sync Status tests - database not available')
-    }
+    // Clean up test data before running tests
+    await pool.query('DELETE FROM stripe._sync_status WHERE resource LIKE $1', ['test_%'])
   })
 
   afterAll(async () => {
-    if (!schemaReady) return
     // Clean up test data
     await pool.query('DELETE FROM stripe._sync_status WHERE resource LIKE $1', ['test_%'])
     await pool.end()
-  })
-
-  // Skip all tests if schema isn't ready
-  beforeEach(({ skip }) => {
-    if (!schemaReady) skip()
   })
 
   describe('getSyncCursor', () => {

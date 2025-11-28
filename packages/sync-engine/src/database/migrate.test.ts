@@ -1,29 +1,14 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Client } from 'pg'
 import { runMigrations } from './migrate'
 
 describe('runMigrations', () => {
   let client: Client
-  let dbAvailable = false
   const testSchema = 'stripe'
   const databaseUrl =
     process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
 
-  beforeAll(async () => {
-    // Check if database is available before running tests
-    try {
-      const testClient = new Client({ connectionString: databaseUrl })
-      await testClient.connect()
-      await testClient.end()
-      dbAvailable = true
-    } catch {
-      console.warn('Skipping runMigrations tests - database not available')
-    }
-  })
-
-  beforeEach(async ({ skip }) => {
-    if (!dbAvailable) skip()
-
+  beforeEach(async () => {
     client = new Client({ connectionString: databaseUrl })
     await client.connect()
 
@@ -33,7 +18,6 @@ describe('runMigrations', () => {
   })
 
   afterEach(async () => {
-    if (!dbAvailable) return
     // Clean up test schema after each test
     await client.query(`DROP SCHEMA IF EXISTS "${testSchema}" CASCADE`)
     await client.end()
