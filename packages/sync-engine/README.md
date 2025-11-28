@@ -194,12 +194,12 @@ await sync.syncSingleEntity('cus_12345')
 
 The entity type is detected automatically based on the Stripe ID prefix (e.g., `cus_` for customer, `prod_` for product). `ent_` is not supported at the moment.
 
-### Backfilling Data
+### Syncing Data
 
-To backfill Stripe data (e.g., all products created after a certain date), use the `syncBackfill` method:
+To sync Stripe data (e.g., all products created after a certain date), use the `processUntilDone` method:
 
 ```ts
-await sync.syncBackfill({
+await sync.processUntilDone({
   object: 'product',
   created: { gte: 1643872333 }, // Unix timestamp
 })

@@ -5,7 +5,7 @@ import {
   StripeSyncConfig,
   Sync,
   SyncBackfill,
-  SyncBackfillParams,
+  SyncParams,
   SyncEntitlementsParams,
   SyncFeaturesParams,
   ProcessNextResult,
@@ -974,7 +974,7 @@ export class StripeSync {
    */
   async processNext(
     object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
-    params?: SyncBackfillParams
+    params?: SyncParams
   ): Promise<ProcessNextResult> {
     // Ensure account exists before syncing
     await this.getCurrentAccount()
@@ -1029,7 +1029,7 @@ export class StripeSync {
     accountId: string,
     resourceName: string,
     cursor: number | null,
-    params?: SyncBackfillParams
+    params?: SyncParams
   ): Promise<ProcessNextResult> {
     const limit = 100 // Stripe page size
 
@@ -1097,12 +1097,11 @@ export class StripeSync {
 
   /**
    * Process all pages for all (or specified) object types until complete.
-   * This is the renamed version of syncBackfill() with a more descriptive name.
    *
    * @param params - Optional parameters for filtering and specifying object types
    * @returns SyncBackfill with counts for each synced resource type
    */
-  async processUntilDone(params?: SyncBackfillParams): Promise<SyncBackfill> {
+  async processUntilDone(params?: SyncParams): Promise<SyncBackfill> {
     const { object } = params ?? { object: this.getSupportedEventTypes }
     let products,
       prices,
@@ -1220,14 +1219,7 @@ export class StripeSync {
     }
   }
 
-  /**
-   * @deprecated Use processUntilDone() instead. This method will be removed in a future version.
-   */
-  async syncBackfill(params?: SyncBackfillParams): Promise<SyncBackfill> {
-    return this.processUntilDone(params)
-  }
-
-  async syncProducts(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncProducts(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing products')
     const accountId = await this.getAccountId()
 
@@ -1250,7 +1242,7 @@ export class StripeSync {
     )
   }
 
-  async syncPrices(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncPrices(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing prices')
     const accountId = await this.getAccountId()
 
@@ -1273,7 +1265,7 @@ export class StripeSync {
     )
   }
 
-  async syncPlans(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncPlans(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing plans')
     const accountId = await this.getAccountId()
 
@@ -1296,7 +1288,7 @@ export class StripeSync {
     )
   }
 
-  async syncCustomers(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncCustomers(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing customers')
     const accountId = await this.getAccountId()
 
@@ -1320,7 +1312,7 @@ export class StripeSync {
     )
   }
 
-  async syncSubscriptions(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncSubscriptions(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing subscriptions')
     const accountId = await this.getAccountId()
 
@@ -1343,7 +1335,7 @@ export class StripeSync {
     )
   }
 
-  async syncSubscriptionSchedules(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncSubscriptionSchedules(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing subscription schedules')
     const accountId = await this.getAccountId()
 
@@ -1367,7 +1359,7 @@ export class StripeSync {
     )
   }
 
-  async syncInvoices(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncInvoices(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing invoices')
     const accountId = await this.getAccountId()
 
@@ -1390,7 +1382,7 @@ export class StripeSync {
     )
   }
 
-  async syncCharges(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncCharges(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing charges')
     const accountId = await this.getAccountId()
 
@@ -1413,7 +1405,7 @@ export class StripeSync {
     )
   }
 
-  async syncSetupIntents(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncSetupIntents(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing setup_intents')
     const accountId = await this.getAccountId()
 
@@ -1436,7 +1428,7 @@ export class StripeSync {
     )
   }
 
-  async syncPaymentIntents(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncPaymentIntents(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing payment_intents')
     const accountId = await this.getAccountId()
 
@@ -1459,7 +1451,7 @@ export class StripeSync {
     )
   }
 
-  async syncTaxIds(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncTaxIds(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing tax_ids')
     const accountId = await this.getAccountId()
 
@@ -1472,7 +1464,7 @@ export class StripeSync {
     )
   }
 
-  async syncPaymentMethods(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncPaymentMethods(syncParams?: SyncParams): Promise<Sync> {
     // We can't filter by date here, it is also not possible to get payment methods without specifying a customer (you need Stripe Sigma for that -.-)
     // Thus, we need to loop through all customers
     this.config.logger?.info('Syncing payment method')
@@ -1516,7 +1508,7 @@ export class StripeSync {
     return { synced }
   }
 
-  async syncDisputes(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncDisputes(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing disputes')
     const accountId = await this.getAccountId()
 
@@ -1539,7 +1531,7 @@ export class StripeSync {
     )
   }
 
-  async syncEarlyFraudWarnings(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncEarlyFraudWarnings(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing early fraud warnings')
     const accountId = await this.getAccountId()
 
@@ -1563,7 +1555,7 @@ export class StripeSync {
     )
   }
 
-  async syncRefunds(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncRefunds(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing refunds')
     const accountId = await this.getAccountId()
 
@@ -1586,7 +1578,7 @@ export class StripeSync {
     )
   }
 
-  async syncCreditNotes(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncCreditNotes(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing credit notes')
     const accountId = await this.getAccountId()
 
@@ -1635,7 +1627,7 @@ export class StripeSync {
     )
   }
 
-  async syncCheckoutSessions(syncParams?: SyncBackfillParams): Promise<Sync> {
+  async syncCheckoutSessions(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing checkout sessions')
     const accountId = await this.getAccountId()
 

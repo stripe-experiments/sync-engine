@@ -308,7 +308,7 @@ describe('Incremental Sync', () => {
     expect(finalStatus.rows[0].status).toBe('complete')
   })
 
-  test('should work with syncBackfill using cursor automatically', async () => {
+  test('should work with processUntilDone using cursor automatically', async () => {
     const products: Stripe.Product[] = [
       {
         id: 'test_prod_backfill_1',
@@ -334,12 +334,12 @@ describe('Incremental Sync', () => {
       .spyOn(stripeSync.stripe.products, 'list')
       .mockReturnValue(mockList() as unknown)
 
-    // First backfill
-    await stripeSync.syncBackfill({ object: 'product' })
+    // First sync
+    await stripeSync.processUntilDone({ object: 'product' })
 
     expect(listSpy).toHaveBeenCalledWith({ limit: 100 })
 
-    // Second backfill should be incremental
+    // Second sync should be incremental
     const newProducts: Stripe.Product[] = [
       {
         id: 'test_prod_backfill_3',
@@ -359,7 +359,7 @@ describe('Incremental Sync', () => {
       .spyOn(stripeSync.stripe.products, 'list')
       .mockReturnValue(mockListNew() as unknown)
 
-    await stripeSync.syncBackfill({ object: 'product' })
+    await stripeSync.processUntilDone({ object: 'product' })
 
     expect(listSpyNew).toHaveBeenCalledWith({
       limit: 100,
@@ -512,7 +512,7 @@ describe('processUntilDone', () => {
     stripeSync.cachedAccount = null
   })
 
-  test('should be an alias for syncBackfill', async () => {
+  test('should sync products using processUntilDone', async () => {
     const products: Stripe.Product[] = [
       {
         id: 'test_prod_alias_1',

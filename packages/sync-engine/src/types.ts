@@ -142,7 +142,7 @@ export interface SyncBackfill {
   checkoutSessions?: Sync
 }
 
-export interface SyncBackfillParams {
+export interface SyncParams {
   created?: {
     /**
      * Minimum value to filter by (exclusive)
