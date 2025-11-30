@@ -33,8 +33,12 @@ const ORDERED_STRIPE_TABLES = [
   'reviews',
   '_managed_webhooks',
   'customers',
-  '_sync_status',
+  '_sync_obj_run', // Must be deleted before _sync_run (foreign key)
+  '_sync_run',
 ] as const
+
+// Tables that use `account_id` instead of `_account_id` (migration 0049)
+const TABLES_WITH_ACCOUNT_ID: ReadonlySet<string> = new Set(['_managed_webhooks'])
 
 export class PostgresClient {
   pool: pg.Pool
@@ -274,12 +278,15 @@ export class PostgresClient {
     return result.rows.length > 0 ? result.rows[0]._raw_data : null
   }
 
+  private getAccountIdColumn(table: (typeof ORDERED_STRIPE_TABLES)[number]): string {
+    return TABLES_WITH_ACCOUNT_ID.has(table) ? 'account_id' : '_account_id'
+  }
+
   async getAccountRecordCounts(accountId: string): Promise<{ [tableName: string]: number }> {
     const counts: { [tableName: string]: number } = {}
 
     for (const table of ORDERED_STRIPE_TABLES) {
-      // Metadata tables (starting with _) use account_id, regular tables use _account_id
-      const accountIdColumn = table.startsWith('_') ? 'account_id' : '_account_id'
+      const accountIdColumn = this.getAccountIdColumn(table)
       const result = await this.query(
         `SELECT COUNT(*) as count FROM "${this.config.schema}"."${table}"
          WHERE "${accountIdColumn}" = $1`,
@@ -304,8 +311,7 @@ export class PostgresClient {
 
       // Delete from all dependent tables
       for (const table of ORDERED_STRIPE_TABLES) {
-        // Metadata tables (starting with _) use account_id, regular tables use _account_id
-        const accountIdColumn = table.startsWith('_') ? 'account_id' : '_account_id'
+        const accountIdColumn = this.getAccountIdColumn(table)
         const result = await this.query(
           `DELETE FROM "${this.config.schema}"."${table}"
            WHERE "${accountIdColumn}" = $1`,
