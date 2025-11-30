@@ -201,66 +201,6 @@ export class PostgresClient {
     return missingIds
   }
 
-  // Sync status tracking methods for incremental backfill
-
-  async getSyncCursor(resource: string, accountId: string): Promise<number | null> {
-    const result = await this.query(
-      `SELECT EXTRACT(EPOCH FROM last_incremental_cursor)::integer as cursor
-       FROM "${this.config.schema}"."_sync_status"
-       WHERE resource = $1 AND "account_id" = $2`,
-      [resource, accountId]
-    )
-    const cursor = result.rows[0]?.cursor ?? null
-    return cursor
-  }
-
-  async updateSyncCursor(resource: string, accountId: string, cursor: number): Promise<void> {
-    // Only update if the new cursor is greater than the existing one
-    // This handles Stripe returning results in descending order (newest first)
-    // Convert Unix timestamp to timestamptz for human-readable storage
-    await this.query(
-      `INSERT INTO "${this.config.schema}"."_sync_status" (resource, "account_id", last_incremental_cursor, status, last_synced_at)
-       VALUES ($1, $2, to_timestamp($3), 'running', now())
-       ON CONFLICT (resource, "account_id")
-       DO UPDATE SET
-         last_incremental_cursor = GREATEST(
-           COALESCE("${this.config.schema}"."_sync_status".last_incremental_cursor, to_timestamp(0)),
-           to_timestamp($3)
-         ),
-         last_synced_at = now(),
-         updated_at = now()`,
-      [resource, accountId, cursor.toString()]
-    )
-  }
-
-  async markSyncRunning(resource: string, accountId: string): Promise<void> {
-    await this.query(
-      `INSERT INTO "${this.config.schema}"."_sync_status" (resource, "account_id", status)
-       VALUES ($1, $2, 'running')
-       ON CONFLICT (resource, "account_id")
-       DO UPDATE SET status = 'running', updated_at = now()`,
-      [resource, accountId]
-    )
-  }
-
-  async markSyncComplete(resource: string, accountId: string): Promise<void> {
-    await this.query(
-      `UPDATE "${this.config.schema}"."_sync_status"
-       SET status = 'complete', error_message = NULL, updated_at = now()
-       WHERE resource = $1 AND "account_id" = $2`,
-      [resource, accountId]
-    )
-  }
-
-  async markSyncError(resource: string, accountId: string, errorMessage: string): Promise<void> {
-    await this.query(
-      `UPDATE "${this.config.schema}"."_sync_status"
-       SET status = 'error', error_message = $3, updated_at = now()
-       WHERE resource = $1 AND "account_id" = $2`,
-      [resource, accountId, errorMessage]
-    )
-  }
-
   // Account management methods
 
   async upsertAccount(
@@ -731,6 +671,27 @@ export class PostgresClient {
        WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
       [accountId, runStartedAt, object, cursor]
     )
+  }
+
+  /**
+   * Get the cursor from the last completed sync for an object type.
+   * This is used to start incremental syncs from where the previous sync left off.
+   */
+  async getLastCompletedCursor(accountId: string, object: string): Promise<string | null> {
+    const result = await this.query(
+      `SELECT o.cursor
+       FROM "${this.config.schema}"."_sync_obj_run" o
+       JOIN "${this.config.schema}"."_sync_run" r
+         ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
+       WHERE o."_account_id" = $1
+         AND o.object = $2
+         AND o.status = 'complete'
+         AND r.status = 'complete'
+       ORDER BY o.completed_at DESC
+       LIMIT 1`,
+      [accountId, object]
+    )
+    return result.rows[0]?.cursor ?? null
   }
 
   /**

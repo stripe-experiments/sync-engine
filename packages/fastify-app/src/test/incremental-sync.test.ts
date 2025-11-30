@@ -7,6 +7,31 @@ import { logger } from '../logger'
 let stripeSync: StripeSync
 const testAccountId = 'acct_test_account'
 
+// Helper to get cursor from the new observability tables
+async function getCursor(resourceName: string): Promise<number | null> {
+  const result = await stripeSync.postgresClient.pool.query(
+    `SELECT o.cursor FROM stripe._sync_obj_run o
+     JOIN stripe._sync_run r ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
+     WHERE o."_account_id" = $1 AND o.object = $2
+     ORDER BY r.started_at DESC
+     LIMIT 1`,
+    [testAccountId, resourceName]
+  )
+  return result.rows[0]?.cursor ? parseInt(result.rows[0].cursor) : null
+}
+
+// Helper to clean up sync runs for test account
+async function cleanupSyncRuns(): Promise<void> {
+  await stripeSync.postgresClient.pool.query(
+    'DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1',
+    [testAccountId]
+  )
+  await stripeSync.postgresClient.pool.query(
+    'DELETE FROM stripe._sync_run WHERE "_account_id" = $1',
+    [testAccountId]
+  )
+}
+
 beforeAll(async () => {
   const config = getConfig()
   await runMigrations({
@@ -50,10 +75,9 @@ describe('Incremental Sync', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await stripeSync.postgresClient.pool.query(
-      'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
-      ['test_%', 'products']
-    )
+    await cleanupSyncRuns()
+    // Clear cached account so it re-fetches using the mock
+    stripeSync.cachedAccount = null
   })
 
   test('should only fetch new products on second sync', async () => {
@@ -110,8 +134,8 @@ describe('Incremental Sync', () => {
     )
     expect(parseInt(firstResult.rows[0].count)).toBe(3)
 
-    // Verify cursor was saved
-    const cursor = await stripeSync.postgresClient.getSyncCursor('products', testAccountId)
+    // Verify cursor was saved in new observability tables
+    const cursor = await getCursor('products')
     expect(cursor).toBe(1705075200) // Max created from first sync
 
     // Mock Stripe API for second sync - only returns new products
@@ -140,8 +164,8 @@ describe('Incremental Sync', () => {
     )
     expect(parseInt(secondResult.rows[0].count)).toBe(4)
 
-    // Verify cursor was updated
-    const newCursor = await stripeSync.postgresClient.getSyncCursor('products', testAccountId)
+    // Verify cursor was updated in new observability tables
+    const newCursor = await getCursor('products')
     expect(newCursor).toBe(1705161600)
   })
 
@@ -161,16 +185,36 @@ describe('Incremental Sync', () => {
 
     vitest.spyOn(stripeSync.stripe.products, 'list').mockReturnValue(mockList() as unknown)
 
-    // Spy on updateSyncCursor
-    const updateSpy = vitest.spyOn(stripeSync.postgresClient, 'updateSyncCursor')
+    // Spy on updateObjectCursor (new observability method)
+    const updateSpy = vitest.spyOn(stripeSync.postgresClient, 'updateObjectCursor')
 
     await stripeSync.syncProducts()
 
     // Should update cursor 3 times: after 100, after 200, after 250
     expect(updateSpy).toHaveBeenCalledTimes(3)
-    expect(updateSpy).toHaveBeenNthCalledWith(1, 'products', testAccountId, 1704902400 + 99)
-    expect(updateSpy).toHaveBeenNthCalledWith(2, 'products', testAccountId, 1704902400 + 199)
-    expect(updateSpy).toHaveBeenNthCalledWith(3, 'products', testAccountId, 1704902400 + 249)
+    // Note: updateObjectCursor takes (accountId, runStartedAt, object, cursor)
+    // We check that the cursor values are correct
+    expect(updateSpy).toHaveBeenNthCalledWith(
+      1,
+      testAccountId,
+      expect.any(Date),
+      'products',
+      String(1704902400 + 99)
+    )
+    expect(updateSpy).toHaveBeenNthCalledWith(
+      2,
+      testAccountId,
+      expect.any(Date),
+      'products',
+      String(1704902400 + 199)
+    )
+    expect(updateSpy).toHaveBeenNthCalledWith(
+      3,
+      testAccountId,
+      expect.any(Date),
+      'products',
+      String(1704902400 + 249)
+    )
 
     updateSpy.mockRestore()
   })
@@ -196,7 +240,7 @@ describe('Incremental Sync', () => {
 
     await stripeSync.syncProducts()
 
-    const initialCursor = await stripeSync.postgresClient.getSyncCursor('products', testAccountId)
+    const initialCursor = await getCursor('products')
     expect(initialCursor).toBe(1704902400)
 
     // Process webhook with newer product
@@ -217,14 +261,37 @@ describe('Incremental Sync', () => {
 
     await stripeSync.processEvent(webhookEvent)
 
-    // Cursor should be unchanged
-    const afterCursor = await stripeSync.postgresClient.getSyncCursor('products', testAccountId)
+    // Cursor should be unchanged (webhooks don't update sync cursor)
+    const afterCursor = await getCursor('products')
     expect(afterCursor).toBe(initialCursor)
   })
 
   test('should use explicit filter instead of cursor when provided', async () => {
-    // Set up a cursor
-    await stripeSync.postgresClient.updateSyncCursor('products', testAccountId, 1704902400)
+    // First do a sync to set up a cursor
+    const setupProducts: Stripe.Product[] = [
+      {
+        id: 'test_prod_setup_1',
+        object: 'product',
+        created: 1704902400,
+        name: 'Setup Product',
+      } as Stripe.Product,
+    ]
+
+    const mockSetupList = vitest.fn(async function* () {
+      for (const product of setupProducts) {
+        yield product
+      }
+    })
+
+    vitest.spyOn(stripeSync.stripe.products, 'list').mockReturnValue(mockSetupList() as unknown)
+    await stripeSync.syncProducts()
+
+    // Verify cursor was set
+    const cursor = await getCursor('products')
+    expect(cursor).toBe(1704902400)
+
+    // Clean up the run so we can start a new one
+    await cleanupSyncRuns()
 
     const products: Stripe.Product[] = [
       {
@@ -285,16 +352,22 @@ describe('Incremental Sync', () => {
     await expect(stripeSync.syncProducts()).rejects.toThrow('Simulated sync error')
 
     // Cursor should be saved up to checkpoint
-    const cursor = await stripeSync.postgresClient.getSyncCursor('products', testAccountId)
+    const cursor = await getCursor('products')
     expect(cursor).toBe(1704902400)
 
-    // Status should be error
+    // Status should be error in the new observability tables
     const status = await stripeSync.postgresClient.pool.query(
-      'SELECT status, error_message FROM stripe._sync_status WHERE resource = $1 AND "account_id" = $2',
-      ['products', testAccountId]
+      `SELECT r.status as run_status, r.error_message as run_error,
+              o.status as obj_status, o.error_message as obj_error
+       FROM stripe._sync_run r
+       LEFT JOIN stripe._sync_obj_run o ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
+       WHERE r."_account_id" = $1 AND o.object = $2
+       ORDER BY r.started_at DESC
+       LIMIT 1`,
+      [testAccountId, 'products']
     )
-    expect(status.rows[0].status).toBe('error')
-    expect(status.rows[0].error_message).toContain('Simulated sync error')
+    expect(status.rows[0].run_status).toBe('error')
+    expect(status.rows[0].run_error).toContain('Simulated sync error')
 
     // Second attempt should succeed
     callCount = 0
@@ -302,8 +375,12 @@ describe('Incremental Sync', () => {
 
     // Status should be complete
     const finalStatus = await stripeSync.postgresClient.pool.query(
-      'SELECT status FROM stripe._sync_status WHERE resource = $1 AND "account_id" = $2',
-      ['products', testAccountId]
+      `SELECT r.status FROM stripe._sync_run r
+       JOIN stripe._sync_obj_run o ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
+       WHERE r."_account_id" = $1 AND o.object = $2
+       ORDER BY r.started_at DESC
+       LIMIT 1`,
+      [testAccountId, 'products']
     )
     expect(finalStatus.rows[0].status).toBe('complete')
   })
@@ -374,10 +451,7 @@ describe('processNext', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await stripeSync.postgresClient.pool.query(
-      'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
-      ['test_%', 'products']
-    )
+    await cleanupSyncRuns()
     // Clear cached account so it re-fetches using the mock
     stripeSync.cachedAccount = null
   })
@@ -404,6 +478,7 @@ describe('processNext', () => {
 
     expect(result.processed).toBe(1)
     expect(result.hasMore).toBe(true)
+    expect(result.runStartedAt).toBeInstanceOf(Date)
   })
 
   test('should return hasMore: false when no more pages', async () => {
@@ -427,6 +502,7 @@ describe('processNext', () => {
 
     expect(result.processed).toBe(1)
     expect(result.hasMore).toBe(false)
+    expect(result.runStartedAt).toBeInstanceOf(Date)
   })
 
   test('should use cursor for incremental sync on second call', async () => {
@@ -489,6 +565,7 @@ describe('processNext', () => {
 
     expect(result.processed).toBe(0)
     expect(result.hasMore).toBe(false)
+    expect(result.runStartedAt).toBeInstanceOf(Date)
   })
 
   test('should throw on API error', async () => {
@@ -504,10 +581,7 @@ describe('processUntilDone', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await stripeSync.postgresClient.pool.query(
-      'DELETE FROM stripe._sync_status WHERE resource LIKE $1 OR resource = $2',
-      ['test_%', 'products']
-    )
+    await cleanupSyncRuns()
     // Clear cached account so it re-fetches using the mock
     stripeSync.cachedAccount = null
   })

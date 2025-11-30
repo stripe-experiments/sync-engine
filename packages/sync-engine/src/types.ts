@@ -186,4 +186,16 @@ export interface ProcessNextResult {
   processed: number
   /** Whether there are more items to process */
   hasMore: boolean
+  /** The sync run this processing belongs to */
+  runStartedAt: Date
+}
+
+/**
+ * Parameters for processNext() including optional run context
+ */
+export interface ProcessNextParams extends SyncParams {
+  /** Join an existing sync run instead of creating a new one */
+  runStartedAt?: Date
+  /** Who/what triggered this sync (for observability) */
+  triggeredBy?: string
 }
