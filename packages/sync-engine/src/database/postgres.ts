@@ -658,6 +658,9 @@ export class PostgresClient {
 
   /**
    * Update the cursor for an object sync.
+   * Only updates if the new cursor is higher than the existing one (cursors should never decrease).
+   * For numeric cursors (timestamps), uses GREATEST to ensure monotonic increase.
+   * For non-numeric cursors, just sets the value directly.
    */
   async updateObjectCursor(
     accountId: string,
@@ -665,30 +668,39 @@ export class PostgresClient {
     object: string,
     cursor: string | null
   ): Promise<void> {
-    await this.query(
-      `UPDATE "${this.config.schema}"."_sync_obj_run"
-       SET cursor = $4, updated_at = now()
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-      [accountId, runStartedAt, object, cursor]
-    )
+    // Check if cursor is numeric (for incremental sync timestamps)
+    const isNumeric = cursor !== null && /^\d+$/.test(cursor)
+    if (isNumeric) {
+      await this.query(
+        `UPDATE "${this.config.schema}"."_sync_obj_run"
+         SET cursor = GREATEST(COALESCE(cursor::bigint, 0), $4::bigint)::text,
+             updated_at = now()
+         WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+        [accountId, runStartedAt, object, cursor]
+      )
+    } else {
+      await this.query(
+        `UPDATE "${this.config.schema}"."_sync_obj_run"
+         SET cursor = $4, updated_at = now()
+         WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+        [accountId, runStartedAt, object, cursor]
+      )
+    }
   }
 
   /**
-   * Get the cursor from the last completed sync for an object type.
-   * This is used to start incremental syncs from where the previous sync left off.
+   * Get the highest cursor from previous syncs for an object type.
+   * This considers completed, error, AND running runs to ensure recovery syncs
+   * don't re-process data that was already synced before a crash.
+   * A 'running' status with a cursor means the process was killed mid-sync.
    */
   async getLastCompletedCursor(accountId: string, object: string): Promise<string | null> {
     const result = await this.query(
-      `SELECT o.cursor
+      `SELECT MAX(o.cursor::bigint)::text as cursor
        FROM "${this.config.schema}"."_sync_obj_run" o
-       JOIN "${this.config.schema}"."_sync_run" r
-         ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
        WHERE o."_account_id" = $1
          AND o.object = $2
-         AND o.status = 'complete'
-         AND r.status = 'complete'
-       ORDER BY o.completed_at DESC
-       LIMIT 1`,
+         AND o.cursor IS NOT NULL`,
       [accountId, object]
     )
     return result.rows[0]?.cursor ?? null
