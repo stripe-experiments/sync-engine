@@ -23,6 +23,8 @@ import { hashApiKey } from './utils/hashApiKey'
  * Used by resourceRegistry to map SyncObject → list/upsert operations.
  */
 type ResourceConfig = {
+  /** Backfill order - lower numbers sync first. Parents before children for FK dependencies. */
+  order: number
   /** Function to list items from Stripe API */
   listFn: (params: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam }) => Promise<{
     data: unknown[]
@@ -413,81 +415,110 @@ export class StripeSync {
   // Resource registry - maps SyncObject → list/upsert operations for processNext()
   // Complements eventHandlers which maps event types → handlers for webhooks
   // Both registries share the same underlying upsert methods
+  // Order field determines backfill sequence - parents before children for FK dependencies
   private readonly resourceRegistry: Record<string, ResourceConfig> = {
     product: {
+      order: 1, // No dependencies
       listFn: (p) => this.stripe.products.list(p),
       upsertFn: (items, id) => this.upsertProducts(items as Stripe.Product[], id),
       supportsCreatedFilter: true,
     },
     price: {
+      order: 2, // Depends on product
       listFn: (p) => this.stripe.prices.list(p),
       upsertFn: (items, id, bf) => this.upsertPrices(items as Stripe.Price[], id, bf),
       supportsCreatedFilter: true,
     },
     plan: {
+      order: 3, // Depends on product
       listFn: (p) => this.stripe.plans.list(p),
       upsertFn: (items, id, bf) => this.upsertPlans(items as Stripe.Plan[], id, bf),
       supportsCreatedFilter: true,
     },
     customer: {
+      order: 4, // No dependencies
       listFn: (p) => this.stripe.customers.list(p),
       upsertFn: (items, id) => this.upsertCustomers(items as Stripe.Customer[], id),
       supportsCreatedFilter: true,
     },
     subscription: {
+      order: 5, // Depends on customer, price
       listFn: (p) => this.stripe.subscriptions.list(p),
       upsertFn: (items, id, bf) => this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
       supportsCreatedFilter: true,
     },
     subscription_schedules: {
+      order: 6, // Depends on customer
       listFn: (p) => this.stripe.subscriptionSchedules.list(p),
       upsertFn: (items, id, bf) =>
         this.upsertSubscriptionSchedules(items as Stripe.SubscriptionSchedule[], id, bf),
       supportsCreatedFilter: true,
     },
     invoice: {
+      order: 7, // Depends on customer, subscription
       listFn: (p) => this.stripe.invoices.list(p),
       upsertFn: (items, id, bf) => this.upsertInvoices(items as Stripe.Invoice[], id, bf),
       supportsCreatedFilter: true,
     },
     charge: {
+      order: 8, // Depends on customer, invoice
       listFn: (p) => this.stripe.charges.list(p),
       upsertFn: (items, id, bf) => this.upsertCharges(items as Stripe.Charge[], id, bf),
       supportsCreatedFilter: true,
     },
     setup_intent: {
+      order: 9, // Depends on customer
       listFn: (p) => this.stripe.setupIntents.list(p),
       upsertFn: (items, id, bf) => this.upsertSetupIntents(items as Stripe.SetupIntent[], id, bf),
       supportsCreatedFilter: true,
     },
+    payment_method: {
+      order: 10, // Depends on customer (special: iterates customers)
+      listFn: (p) => this.stripe.paymentMethods.list(p),
+      upsertFn: (items, id, bf) =>
+        this.upsertPaymentMethods(items as Stripe.PaymentMethod[], id, bf),
+      supportsCreatedFilter: false, // Requires customer param, can't filter by created
+    },
     payment_intent: {
+      order: 11, // Depends on customer
       listFn: (p) => this.stripe.paymentIntents.list(p),
       upsertFn: (items, id, bf) =>
         this.upsertPaymentIntents(items as Stripe.PaymentIntent[], id, bf),
       supportsCreatedFilter: true,
     },
+    tax_id: {
+      order: 12, // Depends on customer
+      listFn: (p) => this.stripe.taxIds.list(p),
+      upsertFn: (items, id, bf) => this.upsertTaxIds(items as Stripe.TaxId[], id, bf),
+      supportsCreatedFilter: false, // taxIds don't support created filter
+    },
+    credit_note: {
+      order: 13, // Depends on invoice
+      listFn: (p) => this.stripe.creditNotes.list(p),
+      upsertFn: (items, id, bf) => this.upsertCreditNotes(items as Stripe.CreditNote[], id, bf),
+      supportsCreatedFilter: false, // credit_notes don't support created filter
+    },
     dispute: {
+      order: 14, // Depends on charge
       listFn: (p) => this.stripe.disputes.list(p),
       upsertFn: (items, id, bf) => this.upsertDisputes(items as Stripe.Dispute[], id, bf),
       supportsCreatedFilter: true,
     },
     early_fraud_warning: {
+      order: 15, // Depends on charge
       listFn: (p) => this.stripe.radar.earlyFraudWarnings.list(p),
       upsertFn: (items, id) =>
         this.upsertEarlyFraudWarning(items as Stripe.Radar.EarlyFraudWarning[], id),
       supportsCreatedFilter: true,
     },
     refund: {
+      order: 16, // Depends on charge
       listFn: (p) => this.stripe.refunds.list(p),
       upsertFn: (items, id, bf) => this.upsertRefunds(items as Stripe.Refund[], id, bf),
       supportsCreatedFilter: true,
     },
-    credit_note: {
-      listFn: (p) => this.stripe.creditNotes.list(p),
-      upsertFn: (items, id, bf) => this.upsertCreditNotes(items as Stripe.CreditNote[], id, bf),
-      supportsCreatedFilter: false, // credit_notes don't support created filter
-    },
     checkout_sessions: {
+      order: 17, // Depends on customer (optional)
       listFn: (p) => this.stripe.checkout.sessions.list(p),
       upsertFn: (items, id) => this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
       supportsCreatedFilter: true,
@@ -531,6 +562,17 @@ export class StripeSync {
     return Object.keys(
       this.eventHandlers
     ).sort() as Stripe.WebhookEndpointCreateParams.EnabledEvent[]
+  }
+
+  /**
+   * Returns an array of all object types that can be synced via processNext/processUntilDone.
+   * Ordered for backfill: parents before children (products before prices, customers before subscriptions).
+   * Order is determined by the `order` field in resourceRegistry.
+   */
+  public getSupportedSyncObjects(): Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[] {
+    return Object.entries(this.resourceRegistry)
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([key]) => key) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
   }
 
   // Event handler methods
@@ -1186,121 +1228,246 @@ export class StripeSync {
    * @param params - Optional parameters for filtering and specifying object types
    * @returns SyncBackfill with counts for each synced resource type
    */
-  async processUntilDone(params?: SyncParams): Promise<SyncBackfill> {
-    const { object } = params ?? { object: this.getSupportedEventTypes }
-    let products,
-      prices,
-      customers,
-      checkoutSessions,
-      subscriptions,
-      subscriptionSchedules,
-      invoices,
-      setupIntents,
-      paymentMethods,
-      disputes,
-      charges,
-      paymentIntents,
-      plans,
-      taxIds,
-      creditNotes,
-      earlyFraudWarnings,
-      refunds
+  /**
+   * Process all pages for a single object type until complete.
+   * Loops processNext() internally until hasMore is false.
+   *
+   * @param object - The object type to sync
+   * @param runStartedAt - The sync run to use (for sharing across objects)
+   * @param params - Optional sync parameters
+   * @returns Sync result with count of synced items
+   */
+  private async processObjectUntilDone(
+    object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
+    runStartedAt: Date,
+    params?: SyncParams
+  ): Promise<Sync> {
+    let totalSynced = 0
 
-    // Ensure account exists before syncing (required for _sync_status foreign key)
-    await this.getCurrentAccount()
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = await this.processNext(object, {
+        ...params,
+        runStartedAt,
+        triggeredBy: 'processUntilDone',
+      })
+      totalSynced += result.processed
 
-    switch (object) {
-      case 'all':
-        products = await this.syncProducts(params)
-        prices = await this.syncPrices(params)
-        plans = await this.syncPlans(params)
-        customers = await this.syncCustomers(params)
-        subscriptions = await this.syncSubscriptions(params)
-        subscriptionSchedules = await this.syncSubscriptionSchedules(params)
-        invoices = await this.syncInvoices(params)
-        charges = await this.syncCharges(params)
-        setupIntents = await this.syncSetupIntents(params)
-        paymentMethods = await this.syncPaymentMethods(params)
-        paymentIntents = await this.syncPaymentIntents(params)
-        taxIds = await this.syncTaxIds(params)
-        creditNotes = await this.syncCreditNotes(params)
-        disputes = await this.syncDisputes(params)
-        earlyFraudWarnings = await this.syncEarlyFraudWarnings(params)
-        refunds = await this.syncRefunds(params)
-        checkoutSessions = await this.syncCheckoutSessions(params)
+      if (!result.hasMore) {
         break
-      case 'customer':
-        customers = await this.syncCustomers(params)
-        break
-      case 'invoice':
-        invoices = await this.syncInvoices(params)
-        break
-      case 'price':
-        prices = await this.syncPrices(params)
-        break
-      case 'product':
-        products = await this.syncProducts(params)
-        break
-      case 'subscription':
-        subscriptions = await this.syncSubscriptions(params)
-        break
-      case 'subscription_schedules':
-        subscriptionSchedules = await this.syncSubscriptionSchedules(params)
-        break
-      case 'setup_intent':
-        setupIntents = await this.syncSetupIntents(params)
-        break
-      case 'payment_method':
-        paymentMethods = await this.syncPaymentMethods(params)
-        break
-      case 'dispute':
-        disputes = await this.syncDisputes(params)
-        break
-      case 'charge':
-        charges = await this.syncCharges(params)
-        break
-      case 'payment_intent':
-        paymentIntents = await this.syncPaymentIntents(params)
-      case 'plan':
-        plans = await this.syncPlans(params)
-        break
-      case 'tax_id':
-        taxIds = await this.syncTaxIds(params)
-        break
-      case 'credit_note':
-        creditNotes = await this.syncCreditNotes(params)
-        break
-      case 'early_fraud_warning':
-        earlyFraudWarnings = await this.syncEarlyFraudWarnings(params)
-        break
-      case 'refund':
-        refunds = await this.syncRefunds(params)
-        break
-      case 'checkout_sessions':
-        checkoutSessions = await this.syncCheckoutSessions(params)
-        break
-      default:
-        break
+      }
     }
 
-    return {
-      products,
-      prices,
-      customers,
-      checkoutSessions,
-      subscriptions,
-      subscriptionSchedules,
-      invoices,
-      setupIntents,
-      paymentMethods,
-      disputes,
-      charges,
-      paymentIntents,
-      plans,
-      taxIds,
-      creditNotes,
-      earlyFraudWarnings,
-      refunds,
+    return { synced: totalSynced }
+  }
+
+  async processUntilDone(params?: SyncParams): Promise<SyncBackfill> {
+    const { object } = params ?? { object: 'all' }
+
+    // Ensure account exists before syncing
+    await this.getCurrentAccount()
+    const accountId = await this.getAccountId()
+
+    // Get or create a single sync run for all objects
+    const runKey = await this.postgresClient.getOrCreateSyncRun(accountId, 'processUntilDone')
+    if (!runKey) {
+      const activeRun = await this.postgresClient.getActiveSyncRun(accountId)
+      if (!activeRun) {
+        throw new Error('Failed to get or create sync run')
+      }
+      // Join existing run
+      return this.processUntilDoneWithRun(activeRun.runStartedAt, object, params)
+    }
+
+    return this.processUntilDoneWithRun(runKey.runStartedAt, object, params)
+  }
+
+  /**
+   * Internal implementation of processUntilDone with an existing run.
+   */
+  private async processUntilDoneWithRun(
+    runStartedAt: Date,
+    object: SyncObject | undefined,
+    params?: SyncParams
+  ): Promise<SyncBackfill> {
+    const accountId = await this.getAccountId()
+
+    const results: SyncBackfill = {}
+
+    try {
+      // Determine which objects to sync
+      // getSupportedSyncObjects() returns objects in correct dependency order for backfills
+      const objectsToSync: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[] =
+        object === 'all' || object === undefined
+          ? this.getSupportedSyncObjects()
+          : [object as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
+
+      // Sync each object type
+      for (const obj of objectsToSync) {
+        this.config.logger?.info(`Syncing ${obj}`)
+
+        // payment_method requires special handling (iterates customers)
+        if (obj === 'payment_method') {
+          results.paymentMethods = await this.syncPaymentMethodsWithRun(runStartedAt, params)
+        } else {
+          const result = await this.processObjectUntilDone(obj, runStartedAt, params)
+
+          // Map object name to result field
+          switch (obj) {
+            case 'product':
+              results.products = result
+              break
+            case 'price':
+              results.prices = result
+              break
+            case 'plan':
+              results.plans = result
+              break
+            case 'customer':
+              results.customers = result
+              break
+            case 'subscription':
+              results.subscriptions = result
+              break
+            case 'subscription_schedules':
+              results.subscriptionSchedules = result
+              break
+            case 'invoice':
+              results.invoices = result
+              break
+            case 'charge':
+              results.charges = result
+              break
+            case 'setup_intent':
+              results.setupIntents = result
+              break
+            case 'payment_intent':
+              results.paymentIntents = result
+              break
+            case 'tax_id':
+              results.taxIds = result
+              break
+            case 'credit_note':
+              results.creditNotes = result
+              break
+            case 'dispute':
+              results.disputes = result
+              break
+            case 'early_fraud_warning':
+              results.earlyFraudWarnings = result
+              break
+            case 'refund':
+              results.refunds = result
+              break
+            case 'checkout_sessions':
+              results.checkoutSessions = result
+              break
+          }
+        }
+      }
+
+      // Complete the sync run after all objects are done
+      await this.postgresClient.completeSyncRun(accountId, runStartedAt)
+
+      return results
+    } catch (error) {
+      // Fail the sync run on error
+      await this.postgresClient.failSyncRun(
+        accountId,
+        runStartedAt,
+        error instanceof Error ? error.message : 'Unknown error'
+      )
+      throw error
+    }
+  }
+
+  /**
+   * Sync payment methods with an existing run (special case - iterates customers)
+   */
+  private async syncPaymentMethodsWithRun(
+    runStartedAt: Date,
+    syncParams?: SyncParams
+  ): Promise<Sync> {
+    const accountId = await this.getAccountId()
+    const resourceName = 'payment_methods'
+
+    // Create object run
+    await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
+    await this.postgresClient.tryStartObjectSync(accountId, runStartedAt, resourceName)
+
+    try {
+      // Query customers from database
+      const prepared = sql(
+        `select id from "stripe"."customers" WHERE COALESCE(deleted, false) <> true;`
+      )([])
+
+      const customerIds = await this.postgresClient
+        .query(prepared.text, prepared.values)
+        .then(({ rows }) => rows.map((it) => it.id))
+
+      this.config.logger?.info(`Getting payment methods for ${customerIds.length} customers`)
+
+      let synced = 0
+
+      // 10 in parallel as chunks
+      for (const customerIdChunk of chunkArray(customerIds, 10)) {
+        await Promise.all(
+          customerIdChunk.map(async (customerId) => {
+            const CHECKPOINT_SIZE = 100
+            let currentBatch: Stripe.PaymentMethod[] = []
+
+            for await (const item of this.stripe.paymentMethods.list({
+              limit: 100,
+              customer: customerId,
+            })) {
+              currentBatch.push(item)
+              if (currentBatch.length >= CHECKPOINT_SIZE) {
+                await this.upsertPaymentMethods(
+                  currentBatch,
+                  accountId,
+                  syncParams?.backfillRelatedEntities
+                )
+                synced += currentBatch.length
+                await this.postgresClient.incrementObjectProgress(
+                  accountId,
+                  runStartedAt,
+                  resourceName,
+                  currentBatch.length
+                )
+                currentBatch = []
+              }
+            }
+
+            if (currentBatch.length > 0) {
+              await this.upsertPaymentMethods(
+                currentBatch,
+                accountId,
+                syncParams?.backfillRelatedEntities
+              )
+              synced += currentBatch.length
+              await this.postgresClient.incrementObjectProgress(
+                accountId,
+                runStartedAt,
+                resourceName,
+                currentBatch.length
+              )
+            }
+          })
+        )
+      }
+
+      // Complete object run
+      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+
+      return { synced }
+    } catch (error) {
+      await this.postgresClient.failObjectSync(
+        accountId,
+        runStartedAt,
+        resourceName,
+        error instanceof Error ? error.message : 'Unknown error'
+      )
+      throw error
     }
   }
 

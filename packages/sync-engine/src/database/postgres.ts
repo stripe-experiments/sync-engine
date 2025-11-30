@@ -6,9 +6,13 @@ type PostgresConfig = {
   poolConfig: PoolConfig
 }
 
-// All Stripe tables that store account-related data.
-// Ordered for safe cascade deletion: dependencies first, then accounts last.
-// Note: 'customers' is near the end because other tables reference it.
+/**
+ * All Stripe tables that store account-related data.
+ * Ordered for safe cascade deletion: dependencies first, then parent tables last.
+ *
+ * Note: Backfill order is defined separately in resourceRegistry (stripeSync.ts)
+ * using the `order` field, since deletion order != creation order.
+ */
 const ORDERED_STRIPE_TABLES = [
   'subscription_items',
   'subscriptions',
