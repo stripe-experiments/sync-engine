@@ -7,7 +7,7 @@ import { logger } from '../logger'
 let stripeSync: StripeSync
 const testAccountId = 'acct_test_account'
 
-// Helper to get cursor from the new observability tables
+// Helper to get cursor from most recent sync run (for test verification - any status)
 async function getCursor(resourceName: string): Promise<number | null> {
   const result = await stripeSync.postgresClient.pool.query(
     `SELECT o.cursor FROM stripe._sync_obj_run o
@@ -18,18 +18,6 @@ async function getCursor(resourceName: string): Promise<number | null> {
     [testAccountId, resourceName]
   )
   return result.rows[0]?.cursor ? parseInt(result.rows[0].cursor) : null
-}
-
-// Helper to clean up sync runs for test account
-async function cleanupSyncRuns(): Promise<void> {
-  await stripeSync.postgresClient.pool.query(
-    'DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1',
-    [testAccountId]
-  )
-  await stripeSync.postgresClient.pool.query(
-    'DELETE FROM stripe._sync_run WHERE "_account_id" = $1',
-    [testAccountId]
-  )
 }
 
 beforeAll(async () => {
@@ -75,7 +63,7 @@ describe('Incremental Sync', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await cleanupSyncRuns()
+    await stripeSync.postgresClient.deleteSyncRuns(testAccountId)
     // Clear cached account so it re-fetches using the mock
     stripeSync.cachedAccount = null
   })
@@ -291,7 +279,7 @@ describe('Incremental Sync', () => {
     expect(cursor).toBe(1704902400)
 
     // Clean up the run so we can start a new one
-    await cleanupSyncRuns()
+    await stripeSync.postgresClient.deleteSyncRuns(testAccountId)
 
     const products: Stripe.Product[] = [
       {
@@ -451,7 +439,7 @@ describe('processNext', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await cleanupSyncRuns()
+    await stripeSync.postgresClient.deleteSyncRuns(testAccountId)
     // Clear cached account so it re-fetches using the mock
     stripeSync.cachedAccount = null
   })
@@ -581,7 +569,7 @@ describe('processUntilDone', () => {
     await stripeSync.postgresClient.pool.query('DELETE FROM stripe.products WHERE id LIKE $1', [
       'test_prod_%',
     ])
-    await cleanupSyncRuns()
+    await stripeSync.postgresClient.deleteSyncRuns(testAccountId)
     // Clear cached account so it re-fetches using the mock
     stripeSync.cachedAccount = null
   })

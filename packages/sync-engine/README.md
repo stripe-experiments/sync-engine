@@ -120,7 +120,7 @@ The library will create and manage a `stripe` schema in your PostgreSQL database
 
 > **Important:** The library uses a fixed schema name of `stripe`. This cannot be configured as the SQL migrations hardcode this schema name.
 
-> **Note:** Fields and tables prefixed with an underscore (`_`) are reserved for internal metadata managed by the sync engine and should not be modified directly. These include fields like `_account`, `_cursor`, `_synced_at`, and tables like `_migrations`, `_accounts`, and `_sync_status`.
+> **Note:** Fields and tables prefixed with an underscore (`_`) are reserved for internal metadata managed by the sync engine and should not be modified directly. These include fields like `_account`, `_cursor`, `_synced_at`, and tables like `_migrations`, `_accounts`, `_sync_run`, and `_sync_obj_run`.
 
 ### Migrations
 
@@ -208,7 +208,7 @@ await sync.processUntilDone({
 - `object` can be one of: `all`, `charge`, `customer`, `dispute`, `invoice`, `payment_method`, `payment_intent`, `plan`, `price`, `product`, `setup_intent`, `subscription`.
 - `created` is a Stripe RangeQueryParam and supports `gt`, `gte`, `lt`, `lte`.
 
-The sync engine automatically tracks per-account cursors in the `_sync_status` table. When you call sync methods without an explicit `created` filter, they will automatically resume from the last synced position for that account and resource. This enables incremental syncing that can resume after interruptions.
+The sync engine automatically tracks per-account cursors in the `_sync_run` and `_sync_obj_run` tables. When you call sync methods without an explicit `created` filter, they will automatically resume from the last synced position for that account and resource. This enables incremental syncing that can resume after interruptions.
 
 > **Note:**
 > For large Stripe accounts (more than 10,000 objects), it is recommended to write a script that loops through each day and sets the `created` date filters to the start and end of day. This avoids timeouts and memory issues when syncing large datasets.

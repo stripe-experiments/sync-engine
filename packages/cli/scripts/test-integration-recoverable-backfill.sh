@@ -101,7 +101,7 @@ WAITED=0
 STATUS=""
 while [ $WAITED -lt $MAX_WAIT ]; do
     STATUS=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c \
-        "SELECT status FROM stripe._sync_status WHERE resource = 'products';" \
+        "SELECT o.status FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.object = 'products' ORDER BY r.started_at DESC LIMIT 1;" \
         2>/dev/null | tr -d ' ' || echo "")
 
     if [ "$STATUS" = "running" ]; then
@@ -146,8 +146,8 @@ fi
 echo "   ✓ Account ID: $ACCOUNT_ID"
 echo ""
 
-# Check sync status is 'error' or 'running'
-SYNC_STATUS=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT status FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ' || echo "")
+# Check sync status is 'error' or 'running' (using new observability tables)
+SYNC_STATUS=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT o.status FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' ORDER BY r.started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 if [ "$SYNC_STATUS" = "error" ] || [ "$SYNC_STATUS" = "running" ]; then
     echo "   ✓ Sync status is '$SYNC_STATUS' (process was interrupted)"
 else
@@ -156,20 +156,20 @@ else
     exit 1
 fi
 
-# Check error message exists
-ERROR_MSG=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT error_message FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ' || echo "")
+# Check error message exists (using new observability tables)
+ERROR_MSG=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(o.error_message, r.error_message, '') FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' ORDER BY r.started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 if [ -n "$ERROR_MSG" ]; then
     echo "   ✓ Error message recorded: $(echo $ERROR_MSG | head -c 50)..."
 else
     echo "   ℹ️  No error message (process killed before error could be recorded)"
 fi
 
-# Check cursor was saved (partial progress preserved)
-CURSOR_AFTER_ERROR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(EXTRACT(EPOCH FROM last_incremental_cursor)::integer, 0) FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ' || echo "0")
-CURSOR_AFTER_ERROR_DISPLAY=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT last_incremental_cursor FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ')
-if [ "$CURSOR_AFTER_ERROR" -gt 0 ]; then
-    echo "   ✓ Cursor saved: $CURSOR_AFTER_ERROR_DISPLAY (epoch: $CURSOR_AFTER_ERROR, partial progress preserved)"
+# Check cursor was saved (partial progress preserved) - using new observability tables
+CURSOR_AFTER_ERROR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(cursor::integer, 0) FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' ORDER BY r.started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "0")
+if [ -n "$CURSOR_AFTER_ERROR" ] && [ "$CURSOR_AFTER_ERROR" != "" ] && [ "$CURSOR_AFTER_ERROR" -gt 0 ] 2>/dev/null; then
+    echo "   ✓ Cursor saved: $CURSOR_AFTER_ERROR (partial progress preserved)"
 else
+    CURSOR_AFTER_ERROR=0
     echo "   ℹ️  No cursor saved yet"
 fi
 
@@ -192,8 +192,8 @@ echo ""
 echo "🔍 Step 7: Verifying successful recovery..."
 echo ""
 
-# Check sync status is now 'complete'
-FINAL_STATUS=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT status FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ' || echo "")
+# Check sync status is now 'complete' (using new observability tables)
+FINAL_STATUS=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT o.status FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' ORDER BY r.started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 if [ "$FINAL_STATUS" = "complete" ]; then
     echo "   ✓ Sync status recovered to 'complete'"
 else
@@ -201,17 +201,18 @@ else
     exit 1
 fi
 
-# Check error message is cleared
-FINAL_ERROR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(error_message, '') FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ')
+# Check error message is cleared (in the latest completed sync)
+# Note: With the new system, we look at the latest run which should be complete without error
+FINAL_ERROR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(o.error_message, '') FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' AND o.status = 'complete' ORDER BY r.started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ')
 if [ -z "$FINAL_ERROR" ]; then
-    echo "   ✓ Error message cleared"
+    echo "   ✓ Error message cleared (in latest completed sync)"
 else
     echo "   ❌ Error message still present: '$FINAL_ERROR'"
     exit 1
 fi
 
-# Check cursor advanced or maintained (never decreased)
-FINAL_CURSOR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(EXTRACT(EPOCH FROM last_incremental_cursor)::integer, 0) FROM stripe._sync_status WHERE resource = 'products' AND account_id = '$ACCOUNT_ID';" 2>/dev/null | tr -d ' ')
+# Check cursor advanced or maintained (never decreased) - using new observability tables
+FINAL_CURSOR=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COALESCE(cursor::integer, 0) FROM stripe._sync_obj_run o JOIN stripe._sync_run r ON o.\"_account_id\" = r.\"_account_id\" AND o.run_started_at = r.started_at WHERE o.\"_account_id\" = '$ACCOUNT_ID' AND o.object = 'products' AND o.status = 'complete' ORDER BY o.completed_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ')
 if [ -z "$FINAL_CURSOR" ]; then
     FINAL_CURSOR="0"
 fi

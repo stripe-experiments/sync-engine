@@ -695,6 +695,21 @@ export class PostgresClient {
   }
 
   /**
+   * Delete all sync runs and object runs for an account.
+   * Useful for testing or resetting sync state.
+   */
+  async deleteSyncRuns(accountId: string): Promise<void> {
+    // Delete object runs first (foreign key constraint)
+    await this.query(
+      `DELETE FROM "${this.config.schema}"."_sync_obj_run" WHERE "_account_id" = $1`,
+      [accountId]
+    )
+    await this.query(`DELETE FROM "${this.config.schema}"."_sync_run" WHERE "_account_id" = $1`, [
+      accountId,
+    ])
+  }
+
+  /**
    * Mark an object sync as complete.
    */
   async completeObjectSync(accountId: string, runStartedAt: Date, object: string): Promise<void> {
