@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
-import { syncCommand, migrateCommand, backfillCommand, deployCommand } from './command'
+import { syncCommand, migrateCommand, backfillCommand } from './command'
 
 const program = new Command()
 
@@ -50,23 +50,6 @@ program
       },
       entityName
     )
-  })
-
-// Deploy to Supabase command
-program
-  .command('deploy')
-  .description('Deploy Stripe Sync Engine to Supabase (Edge Functions + pg_cron)')
-  .option('--token <token>', 'Supabase access token (or SUPABASE_ACCESS_TOKEN env)')
-  .option('--project <ref>', 'Supabase project reference (or SUPABASE_PROJECT_REF env)')
-  .option('--stripe-key <key>', 'Stripe secret key (or STRIPE_SECRET_KEY env)')
-  .option('--db-password <password>', 'Supabase database password (or SUPABASE_DB_PASSWORD env)')
-  .action(async (options) => {
-    await deployCommand({
-      token: options.token,
-      project: options.project,
-      stripeKey: options.stripeKey,
-      dbPassword: options.dbPassword,
-    })
   })
 
 program.parse()
