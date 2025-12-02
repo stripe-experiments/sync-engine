@@ -63,10 +63,7 @@ export class PostgresJsAdapter implements DatabaseAdapter {
       query: async (sql: string | { text: string; values?: unknown[] }) => {
         const text = typeof sql === 'string' ? sql : sql.text
         const values = typeof sql === 'string' ? undefined : sql.values
-        const rows = await this.sql.unsafe(
-          text,
-          values as postgres.ParameterOrJSON<never>[]
-        )
+        const rows = await this.sql.unsafe(text, values as postgres.ParameterOrJSON<never>[])
         return { rows: [...rows], rowCount: rows.length }
       },
     }
