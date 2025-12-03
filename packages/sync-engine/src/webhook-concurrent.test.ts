@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { StripeSync } from './stripeSync'
 import { runMigrations } from './database/migrate'
-import { PgAdapter } from './database/pg-adapter'
+import type { PoolConfig } from 'pg'
 import type Stripe from 'stripe'
 
 describe('Webhook Race Condition Tests', () => {
   let stripeSync: StripeSync
-  let adapter: PgAdapter
   const databaseUrl =
     process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
   const stripeApiKey = process.env.STRIPE_API_KEY
@@ -21,16 +20,17 @@ describe('Webhook Race Condition Tests', () => {
     // Run migrations to ensure unique constraint exists
     await runMigrations({ databaseUrl })
 
-    adapter = new PgAdapter({
+    const poolConfig: PoolConfig = {
       max: 20, // Need more connections for concurrent tests
       connectionString: databaseUrl,
       keepAlive: true,
-    })
+    }
 
     stripeSync = new StripeSync({
+      databaseUrl,
       stripeSecretKey: stripeApiKey,
       stripeApiVersion: '2020-08-27',
-      adapter,
+      poolConfig,
     })
   })
 
@@ -54,7 +54,7 @@ describe('Webhook Race Condition Tests', () => {
     }
 
     // Close database connection
-    await adapter.end()
+    await stripeSync['postgresClient'].pool.end()
   })
 
   beforeEach(async () => {

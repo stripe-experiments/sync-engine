@@ -1,5 +1,4 @@
-import { StripeSync } from 'stripe-experiment-sync'
-import { PgAdapter, runMigrations } from 'stripe-experiment-sync/pg'
+import { StripeSync, runMigrations } from 'stripe-experiment-sync'
 import { vitest, beforeAll, describe, test, expect, afterAll } from 'vitest'
 import { getConfig } from '../utils/config'
 import { mockStripe } from './helpers/mockStripe'
@@ -20,11 +19,7 @@ beforeAll(async () => {
     logger,
   })
 
-  const adapter = new PgAdapter({
-    connectionString: config.databaseUrl,
-  })
-
-  stripeSync = new StripeSync({ ...config, adapter })
+  stripeSync = new StripeSync(config)
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
 })

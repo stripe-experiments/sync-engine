@@ -6,10 +6,10 @@
  * when the base URL matches, and creates new ones when it doesn't.
  */
 
-import { StripeSync } from 'stripe-experiment-sync'
-import { PgAdapter, runMigrations } from 'stripe-experiment-sync/pg'
+import { StripeSync, runMigrations } from 'stripe-experiment-sync'
 import dotenv from 'dotenv'
 import chalk from 'chalk'
+import type { PoolConfig } from 'pg'
 
 // Load environment variables
 dotenv.config()
@@ -36,17 +36,18 @@ async function main() {
       databaseUrl: DATABASE_URL!,
     })
 
-    // Create adapter
-    const adapter = new PgAdapter({
+    // Create StripeSync instance
+    const poolConfig: PoolConfig = {
       max: 10,
       connectionString: DATABASE_URL!,
       keepAlive: true,
-    })
+    }
 
     const stripeSync = new StripeSync({
+      databaseUrl: DATABASE_URL!,
       stripeSecretKey: STRIPE_API_KEY!,
       stripeApiVersion: '2020-08-27',
-      adapter,
+      poolConfig,
     })
 
     // Test 1: Create initial webhook with first base URL
@@ -412,16 +413,11 @@ async function main() {
       try {
         // Create second StripeSync instance with different API key
         // Account ID will be automatically retrieved from the API key
-        const adapter2 = new PgAdapter({
-          max: 10,
-          connectionString: DATABASE_URL!,
-          keepAlive: true,
-        })
-
         const stripeSync2 = new StripeSync({
+          databaseUrl: DATABASE_URL!,
           stripeSecretKey: STRIPE_API_KEY_2,
           stripeApiVersion: '2020-08-27',
-          adapter: adapter2,
+          poolConfig,
         })
 
         // Get both account IDs for clarity
@@ -618,16 +614,11 @@ async function main() {
         }
 
         // Create StripeSync instances for both accounts
-        const adapter3 = new PgAdapter({
-          max: 10,
-          connectionString: DATABASE_URL!,
-          keepAlive: true,
-        })
-
         stripeSync2 = new StripeSync({
+          databaseUrl: DATABASE_URL!,
           stripeSecretKey: STRIPE_API_KEY_2,
           stripeApiVersion: '2020-08-27',
-          adapter: adapter3,
+          poolConfig,
         })
 
         const account1Id = await stripeSync['getAccountId']()

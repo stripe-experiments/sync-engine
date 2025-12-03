@@ -7,9 +7,5 @@ export { StripeSync } from './stripeSync'
 export type * from './types'
 
 export { PostgresClient } from './database/postgres'
+export { runMigrations } from './database/migrate'
 export { hashApiKey } from './utils/hashApiKey'
-
-// Database adapter interface (use stripe-experiment-sync/pg or stripe-experiment-sync/postgres-js for implementations)
-export type { DatabaseAdapter } from './database/adapter'
-
-// Note: runMigrations is exported from 'stripe-experiment-sync/pg' since it uses pg directly

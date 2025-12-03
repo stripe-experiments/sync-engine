@@ -2,9 +2,9 @@ import chalk from 'chalk'
 import express from 'express'
 import http from 'node:http'
 import dotenv from 'dotenv'
+import { type PoolConfig } from 'pg'
 import { loadConfig, CliOptions } from './config'
-import { StripeSync, type SyncObject } from 'stripe-experiment-sync'
-import { PgAdapter, runMigrations } from 'stripe-experiment-sync/pg'
+import { StripeSync, runMigrations, type SyncObject } from 'stripe-experiment-sync'
 import { createTunnel, NgrokTunnel } from './ngrok'
 
 const VALID_SYNC_OBJECTS: SyncObject[] = [
@@ -121,17 +121,19 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     }
 
     // Create StripeSync instance
-    const adapter = new PgAdapter({
-      connectionString: config.databaseUrl,
+    const poolConfig: PoolConfig = {
       max: 10,
-    })
+      connectionString: config.databaseUrl,
+      keepAlive: true,
+    }
 
     const stripeSync = new StripeSync({
+      databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
-      adapter,
+      poolConfig,
     })
 
     // Run sync for the specified entity
@@ -290,17 +292,19 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     }
 
     // 2. Create StripeSync instance
-    const adapter = new PgAdapter({
-      connectionString: config.databaseUrl,
+    const poolConfig: PoolConfig = {
       max: 10,
-    })
+      connectionString: config.databaseUrl,
+      keepAlive: true,
+    }
 
     stripeSync = new StripeSync({
+      databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
-      adapter,
+      poolConfig,
     })
 
     // Create ngrok tunnel and webhook endpoint
