@@ -6,8 +6,8 @@
  * when the base URL matches, and creates new ones when it doesn't.
  */
 
-import { StripeSync, runMigrations } from 'stripe-experiment-sync'
-import { PgAdapter } from 'stripe-experiment-sync/pg'
+import { StripeSync } from 'stripe-experiment-sync'
+import { PgAdapter, runMigrations } from 'stripe-experiment-sync/pg'
 import dotenv from 'dotenv'
 import chalk from 'chalk'
 
@@ -31,15 +31,17 @@ async function main() {
   let hasFailures = false
 
   try {
+    // Run migrations first
+    await runMigrations({
+      databaseUrl: DATABASE_URL!,
+    })
+
     // Create adapter
     const adapter = new PgAdapter({
       max: 10,
       connectionString: DATABASE_URL!,
       keepAlive: true,
     })
-
-    // Run migrations first
-    await runMigrations(adapter)
 
     const stripeSync = new StripeSync({
       stripeSecretKey: STRIPE_API_KEY!,

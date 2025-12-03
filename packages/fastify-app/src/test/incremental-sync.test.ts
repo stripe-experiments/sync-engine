@@ -1,6 +1,6 @@
 import type Stripe from 'stripe'
-import { StripeSync, hashApiKey, runMigrations } from 'stripe-experiment-sync'
-import { PgAdapter } from 'stripe-experiment-sync/pg'
+import { StripeSync, hashApiKey } from 'stripe-experiment-sync'
+import { PgAdapter, runMigrations } from 'stripe-experiment-sync/pg'
 import { vitest, beforeAll, afterAll, describe, test, expect, beforeEach } from 'vitest'
 import { getConfig } from '../utils/config'
 import { logger } from '../logger'
@@ -23,11 +23,15 @@ async function getCursor(resourceName: string): Promise<number | null> {
 
 beforeAll(async () => {
   const config = getConfig()
+  await runMigrations({
+    databaseUrl: config.databaseUrl,
+
+    logger,
+  })
+
   const adapter = new PgAdapter({
     connectionString: config.databaseUrl,
   })
-
-  await runMigrations(adapter, logger)
 
   stripeSync = new StripeSync({
     ...config,
