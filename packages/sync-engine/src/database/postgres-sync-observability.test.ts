@@ -33,18 +33,14 @@ describe('Observable Sync System Methods', () => {
 
   afterAll(async () => {
     // Clean up test data
-    await pool.query('DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1', [
-      testAccountId,
-    ])
+    await pool.query('DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1', [testAccountId])
     await pool.query('DELETE FROM stripe._sync_run WHERE "_account_id" = $1', [testAccountId])
     await pool.end()
   })
 
   beforeEach(async () => {
     // Clean up between tests
-    await pool.query('DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1', [
-      testAccountId,
-    ])
+    await pool.query('DELETE FROM stripe._sync_obj_run WHERE "_account_id" = $1', [testAccountId])
     await pool.query('DELETE FROM stripe._sync_run WHERE "_account_id" = $1', [testAccountId])
   })
 
