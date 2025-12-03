@@ -2889,8 +2889,10 @@ export class StripeSync {
           // Check if this webhook was created by us
           // Method 1 (preferred): Check metadata for managed_by field
           const isManagedByMetadata =
-            stripeWebhook.metadata?.managed_by?.toLowerCase().replace(/[\s\-]+/g, '') ===
-            'stripesync'
+            stripeWebhook.metadata?.managed_by
+              ?.toLowerCase()
+              .replace(/[\s\-]+/g, '')
+              .startsWith('stripesync')
 
           // Method 2 (backwards compatible): Check if description includes 'stripesync' (spaces/hyphens removed)
           const normalizedDescription =
