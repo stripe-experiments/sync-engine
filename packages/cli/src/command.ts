@@ -4,7 +4,6 @@ import http from 'node:http'
 import dotenv from 'dotenv'
 import { loadConfig, CliOptions } from './config'
 import { StripeSync, type SyncObject, runMigrations } from 'stripe-experiment-sync'
-import { PgAdapter } from 'stripe-experiment-sync/pg'
 import { createTunnel, NgrokTunnel } from './ngrok'
 
 const VALID_SYNC_OBJECTS: SyncObject[] = [
@@ -107,15 +106,9 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     console.log(chalk.blue(`Backfilling ${entityName} from Stripe in 'stripe' schema...`))
     console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
-    // Create adapter
-    const adapter = new PgAdapter({
-      connectionString: config.databaseUrl,
-      max: 10,
-    })
-
     // Run migrations first
     try {
-      await runMigrations(adapter)
+      await runMigrations({ databaseUrl: config.databaseUrl })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))
       console.error(
@@ -129,7 +122,10 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
-      adapter,
+      poolConfig: {
+        connectionString: config.databaseUrl,
+        max: 10,
+      },
     })
 
     // Run sync for the specified entity
@@ -183,13 +179,8 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
     console.log(chalk.blue("Running database migrations in 'stripe' schema..."))
     console.log(chalk.gray(`Database: ${databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
-    const adapter = new PgAdapter({
-      connectionString: databaseUrl,
-      max: 5,
-    })
-
     try {
-      await runMigrations(adapter)
+      await runMigrations({ databaseUrl })
       console.log(chalk.green('✓ Migrations completed successfully'))
     } catch (migrationError) {
       // Migration failed - drop schema and retry
@@ -199,8 +190,6 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
         migrationError instanceof Error ? migrationError.message : String(migrationError)
       )
       throw migrationError
-    } finally {
-      await adapter.end()
     }
   } catch (error) {
     if (error instanceof Error) {
@@ -277,15 +266,9 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     // Show command with database URL
     console.log(chalk.gray(`$ stripe-sync start ${config.databaseUrl}`))
 
-    // 1. Create adapter
-    const adapter = new PgAdapter({
-      connectionString: config.databaseUrl,
-      max: 10,
-    })
-
-    // 2. Run migrations
+    // Run migrations
     try {
-      await runMigrations(adapter)
+      await runMigrations({ databaseUrl: config.databaseUrl })
     } catch (migrationError) {
       // Migration failed - drop schema and retry
       console.warn(chalk.yellow('Migrations failed.'))
@@ -301,7 +284,10 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
-      adapter,
+      poolConfig: {
+        connectionString: config.databaseUrl,
+        max: 10,
+      },
     })
 
     // Create ngrok tunnel and webhook endpoint
