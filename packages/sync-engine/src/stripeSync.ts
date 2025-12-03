@@ -2888,10 +2888,7 @@ export class StripeSync {
         for (const stripeWebhook of stripeWebhooks.data) {
           // Check if this webhook was created by us
           // Method 1 (preferred): Check metadata for managed_by field
-          const isManagedByMetadata = stripeWebhook.metadata?.managed_by
-            ?.toLowerCase()
-            .replace(/[\s\-]+/g, '')
-            .startsWith('stripesync')
+          const isManagedByMetadata = stripeWebhook.metadata?.managed_by === 'stripe-sync'
 
           // Method 2 (backwards compatible): Check if description includes 'stripesync' (spaces/hyphens removed)
           const normalizedDescription =
@@ -2927,7 +2924,8 @@ export class StripeSync {
         // Always set metadata to identify managed webhooks
         metadata: {
           ...webhookParams.metadata,
-          managed_by: 'stripe-sync ' + pkg.version,
+          managed_by: 'stripe-sync',
+          version: pkg.version,
         },
       })
 
