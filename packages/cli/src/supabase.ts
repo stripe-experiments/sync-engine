@@ -111,16 +111,19 @@ Deno.serve(async (req) => {
 `
 }
 
-export function getWorkerFunctionCode(): string {
+export function getSchedulerFunctionCode(projectRef: string): string {
   const importBase = IMPORT_BASE
+  const workerUrl = `https://${projectRef}.supabase.co/functions/v1/stripe-worker`
   return `import { StripeSync } from '${importBase}'
+
+const WORKER_URL = '${workerUrl}'
 
 // Remove sslmode from connection string
 const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')!
 const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
 const stripeSync = new StripeSync({
-  poolConfig: { connectionString: dbUrl, max: 5 },
+  poolConfig: { connectionString: dbUrl, max: 2 },
   stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
 })
 
@@ -132,9 +135,84 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Process next batch of pending sync work
-    const results = await stripeSync.processNext()
-    return new Response(JSON.stringify(results), {
+    const objects = stripeSync.getSupportedSyncObjects()
+
+    // Invoke worker for each object type (fire-and-forget)
+    for (const object of objects) {
+      fetch(WORKER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ object }),
+      }).catch((err) => console.error('Failed to invoke worker for', object, err))
+    }
+
+    return new Response(JSON.stringify({ scheduled: objects }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    console.error('Scheduler error:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+`
+}
+
+export function getWorkerFunctionCode(projectRef: string): string {
+  const importBase = IMPORT_BASE
+  const selfUrl = `https://${projectRef}.supabase.co/functions/v1/stripe-worker`
+  return `import { StripeSync } from '${importBase}'
+
+const SELF_URL = '${selfUrl}'
+
+// Remove sslmode from connection string
+const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')!
+const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
+
+const stripeSync = new StripeSync({
+  poolConfig: { connectionString: dbUrl, max: 5 },
+  stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
+})
+
+Deno.serve(async (req) => {
+  // Verify authorization (service role key)
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}))
+    const { object } = body
+
+    if (!object) {
+      return new Response(JSON.stringify({ error: 'Missing object in request body' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const result = await stripeSync.processNext(object)
+
+    // If more pages, re-invoke self (fire-and-forget)
+    if (result.hasMore) {
+      fetch(SELF_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ object }),
+      }).catch((err) => console.error('Failed to re-invoke worker for', object, err))
+    }
+
+    return new Response(JSON.stringify(result), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
@@ -230,28 +308,39 @@ export class SupabaseDeployClient {
   }
 
   /**
-   * Setup pg_cron job to invoke worker function
+   * Setup pg_cron job to invoke scheduler function
    */
   async setupPgCronJob(): Promise<void> {
+    // Get service role key to store in vault
+    const serviceRoleKey = await this.getServiceRoleKey()
+
     const sql = `
       -- Enable pg_cron and pg_net extensions if not already enabled
       CREATE EXTENSION IF NOT EXISTS pg_cron;
       CREATE EXTENSION IF NOT EXISTS pg_net;
 
-      -- Delete existing job if it exists
+      -- Store service role key in vault for pg_cron to use
+      -- Delete existing secret if it exists, then create new one
+      DELETE FROM vault.secrets WHERE name = 'stripe_sync_service_role_key';
+      SELECT vault.create_secret('${serviceRoleKey}', 'stripe_sync_service_role_key');
+
+      -- Delete existing jobs if they exist
       SELECT cron.unschedule('stripe-sync-worker') WHERE EXISTS (
         SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-worker'
       );
+      SELECT cron.unschedule('stripe-sync-scheduler') WHERE EXISTS (
+        SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-scheduler'
+      );
 
-      -- Create job to invoke worker every 10 seconds
+      -- Create job to invoke scheduler every 10 seconds
       SELECT cron.schedule(
-        'stripe-sync-worker',
+        'stripe-sync-scheduler',
         '10 seconds',
         $$
         SELECT net.http_post(
-          url := 'https://${this.projectRef}.supabase.co/functions/v1/stripe-worker',
+          url := 'https://${this.projectRef}.supabase.co/functions/v1/stripe-scheduler',
           headers := jsonb_build_object(
-            'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key')
+            'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_service_role_key')
           )
         )
         $$

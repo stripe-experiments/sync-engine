@@ -382,14 +382,6 @@ export class PostgresClient {
   }
 
   /**
-   * Release all advisory locks held by the current session.
-   * Useful for cleanup after timeouts or crashes.
-   */
-  async releaseAllAdvisoryLocks(): Promise<void> {
-    await this.query('SELECT pg_advisory_unlock_all()')
-  }
-
-  /**
    * Execute a function while holding an advisory lock.
    * The lock is automatically released after the function completes (success or error).
    *

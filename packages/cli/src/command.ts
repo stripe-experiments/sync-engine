@@ -11,6 +11,7 @@ import {
   getSetupFunctionCode,
   getWebhookFunctionCode,
   getWorkerFunctionCode,
+  getSchedulerFunctionCode,
 } from './supabase'
 
 export interface DeployOptions {
@@ -498,8 +499,12 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
     await client.deployFunction('stripe-webhook', getWebhookFunctionCode())
     console.log(chalk.green('  ✓ stripe-webhook deployed'))
 
+    console.log(chalk.gray('  → stripe-scheduler'))
+    await client.deployFunction('stripe-scheduler', getSchedulerFunctionCode(projectRef))
+    console.log(chalk.green('  ✓ stripe-scheduler deployed'))
+
     console.log(chalk.gray('  → stripe-worker'))
-    await client.deployFunction('stripe-worker', getWorkerFunctionCode())
+    await client.deployFunction('stripe-worker', getWorkerFunctionCode(projectRef))
     console.log(chalk.green('  ✓ stripe-worker deployed'))
 
     // Set secrets (SUPABASE_DB_URL is provided automatically by Supabase)
@@ -518,6 +523,17 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
       console.log(chalk.green('✓ Setup complete'))
     } else {
       console.log(chalk.yellow(`⚠ Setup returned: ${setupResult.error}`))
+    }
+
+    // Setup pg_cron job
+    console.log(chalk.gray('\nConfiguring pg_cron scheduler...'))
+    try {
+      await client.setupPgCronJob()
+      console.log(chalk.green('✓ pg_cron scheduler configured'))
+    } catch (error) {
+      // pg_cron may not be available on all projects
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(chalk.yellow(`⚠ Could not configure pg_cron scheduler: ${message}`))
     }
 
     // Print summary
