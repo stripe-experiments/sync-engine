@@ -91,7 +91,7 @@ describe('Edge Function Files', () => {
 
     test('re-invokes self if hasMore is true', () => {
       expect(workerFunctionCode).toContain('if (result.hasMore)')
-      expect(workerFunctionCode).toContain('selfUrl')
+      expect(workerFunctionCode).toContain('stripe-worker')
     })
 
     test('returns 200 on success', () => {
