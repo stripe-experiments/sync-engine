@@ -1,30 +1,21 @@
 import { StripeSync } from 'npm:stripe-experiment-sync'
 
-// Get and validate environment variables at startup
-const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')
-if (!rawDbUrl) {
-  throw new Error('SUPABASE_DB_URL environment variable is not set')
-}
-const supabaseUrl = Deno.env.get('SUPABASE_URL')
-if (!supabaseUrl) {
-  throw new Error('SUPABASE_URL environment variable is not set')
-}
-
-// Remove sslmode from connection string (not supported by pg in Deno)
-const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
-const workerUrl = supabaseUrl + '/functions/v1/stripe-worker'
-
-const stripeSync = new StripeSync({
-  poolConfig: { connectionString: dbUrl, max: 2 },
-  stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
-})
-
 Deno.serve(async (req) => {
-  // Verify authorization (service role key from pg_cron)
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return new Response('Unauthorized', { status: 401 })
   }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  if (!supabaseUrl) {
+    return new Response(JSON.stringify({ error: 'SUPABASE_URL not set' }), { status: 500 })
+  }
+  const workerUrl = `${supabaseUrl}/functions/v1/stripe-worker`
+
+  // StripeSync just needed for getSupportedSyncObjects() - no DB connection required
+  const stripeSync = new StripeSync({
+    stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
+  })
 
   try {
     const objects = stripeSync.getSupportedSyncObjects()
@@ -33,10 +24,7 @@ Deno.serve(async (req) => {
     for (const object of objects) {
       fetch(workerUrl, {
         method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ object }),
       }).catch((err) => console.error('Failed to invoke worker for', object, err))
     }
