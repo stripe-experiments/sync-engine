@@ -1,7 +1,0 @@
-{
-  "buildCommand": "./build.sh",
-  "devCommand": "cd ../.. && pnpm --filter @supabase/stripe-sync-dashboard run dev",
-  "installCommand": "echo 'Skipping install - handled by build script'",
-  "framework": null,
-  "outputDirectory": ".next"
-}
