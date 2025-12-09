@@ -5,9 +5,10 @@
 -- Step 1: Drop dependent view first
 DROP VIEW IF EXISTS "stripe"."sync_dashboard";
 
--- Step 2: Drop the old constraint and status column
+-- Step 2: Drop the old constraint, status column, and completed_at column
 ALTER TABLE "stripe"."_sync_run" DROP CONSTRAINT IF EXISTS one_active_run_per_account;
 ALTER TABLE "stripe"."_sync_run" DROP COLUMN IF EXISTS status;
+ALTER TABLE "stripe"."_sync_run" DROP COLUMN IF EXISTS completed_at;
 
 -- Step 3: Add closed_at column
 ALTER TABLE "stripe"."_sync_run" ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
@@ -18,31 +19,35 @@ ADD CONSTRAINT one_active_run_per_account
 EXCLUDE ("_account_id" WITH =) WHERE (closed_at IS NULL);
 
 -- Step 5: Recreate sync_dashboard view (run-level only, one row per run)
+-- Base table: _sync_run (parent sync operation)
+-- Child table: _sync_obj_run (individual object syncs)
 CREATE OR REPLACE VIEW "stripe"."sync_dashboard" AS
 SELECT
-  r."_account_id" as account_id,
-  r.started_at,
-  r.completed_at,
-  r.closed_at,
-  r.max_concurrent,
-  r.triggered_by,
-  r.updated_at,
-  -- Derived status
+  run."_account_id" as account_id,
+  run.started_at,
+  run.closed_at,
+  run.max_concurrent,
+  run.triggered_by,
+  run.updated_at,
+  -- Derived status from object states
   CASE
-    WHEN r.closed_at IS NULL THEN 'running'
+    WHEN run.closed_at IS NULL THEN 'running'
     WHEN EXISTS (
-      SELECT 1 FROM "stripe"."_sync_obj_run" o
-      WHERE o."_account_id" = r."_account_id"
-        AND o.run_started_at = r.started_at
-        AND o.status = 'error'
+      SELECT 1 FROM "stripe"."_sync_obj_run" obj
+      WHERE obj."_account_id" = run."_account_id"
+        AND obj.run_started_at = run.started_at
+        AND obj.status = 'error'
     ) THEN 'error'
     ELSE 'complete'
   END as status,
   -- First error message from failed objects
-  (SELECT o.error_message FROM "stripe"."_sync_obj_run" o
-   WHERE o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at AND o.status = 'error'
-   ORDER BY o.object LIMIT 1) as error_message,
+  (SELECT obj.error_message FROM "stripe"."_sync_obj_run" obj
+   WHERE obj."_account_id" = run."_account_id"
+     AND obj.run_started_at = run.started_at
+     AND obj.status = 'error'
+   ORDER BY obj.object LIMIT 1) as error_message,
   -- Total processed count across all objects
-  COALESCE((SELECT SUM(o.processed_count) FROM "stripe"."_sync_obj_run" o
-   WHERE o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at), 0) as processed_count
-FROM "stripe"."_sync_run" r;
+  COALESCE((SELECT SUM(obj.processed_count) FROM "stripe"."_sync_obj_run" obj
+   WHERE obj."_account_id" = run."_account_id"
+     AND obj.run_started_at = run.started_at), 0) as processed_count
+FROM "stripe"."_sync_run" run;

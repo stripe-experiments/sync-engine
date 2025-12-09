@@ -111,13 +111,13 @@ describe('Observable Sync System Methods', () => {
 
       // Check derived status via view
       const result = await pool.query(
-        `SELECT status, completed_at FROM stripe.sync_dashboard
+        `SELECT status, closed_at FROM stripe.sync_dashboard
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
 
       expect(result.rows[0].status).toBe('complete')
-      expect(result.rows[0].completed_at).not.toBeNull()
+      expect(result.rows[0].closed_at).not.toBeNull()
     })
 
     it('should derive error status when objects have errors', async () => {

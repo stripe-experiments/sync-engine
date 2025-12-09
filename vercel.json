@@ -1,4 +1,5 @@
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter stripe-experiment-sync run build && pnpm --filter @supabase/stripe-sync-fastify run build && pnpm --filter @supabase/stripe-sync-cli run build && pnpm --filter @supabase/stripe-sync-dashboard run build",
+  "buildCommand": "pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @supabase/stripe-sync-dashboard... run build",
+  "installCommand": "echo 'Skipped - handled in buildCommand'",
   "outputDirectory": "packages/dashboard/.next"
 }
