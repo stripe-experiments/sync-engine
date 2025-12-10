@@ -38,6 +38,6 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' },
     })
   } finally {
-    await stripeSync.postgresClient.pool.end()
+    await stripeSync.close()
   }
 })

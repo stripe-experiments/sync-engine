@@ -140,6 +140,6 @@ Deno.serve(async (req) => {
     })
   } finally {
     if (sql) await sql.end()
-    if (stripeSync) await stripeSync.postgresClient.pool.end()
+    if (stripeSync) await stripeSync.close()
   }
 })

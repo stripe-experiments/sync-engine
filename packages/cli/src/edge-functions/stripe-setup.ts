@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
     const webhook = await stripeSync.findOrCreateManagedWebhook(webhookUrl)
 
-    await stripeSync.postgresClient.pool.end()
+    await stripeSync.close()
 
     return new Response(
       JSON.stringify({
@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     if (stripeSync) {
       try {
         await stripeSync.postgresClient.query('SELECT pg_advisory_unlock_all()')
-        await stripeSync.postgresClient.pool.end()
+        await stripeSync.close()
       } catch (cleanupErr) {
         console.warn('Cleanup failed:', cleanupErr)
       }

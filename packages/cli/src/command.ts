@@ -119,7 +119,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     console.log(chalk.blue(`Backfilling ${entityName} from Stripe in 'stripe' schema...`))
     console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
-    // Run migrations first
+    // Run migrations first (will check for legacy installations and throw if detected)
     try {
       await runMigrations({
         databaseUrl: config.databaseUrl,
@@ -130,6 +130,35 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
         migrationError instanceof Error ? migrationError.message : String(migrationError)
       )
       throw migrationError
+    }
+
+    // Verify installation completed successfully
+    const { PostgresClient } = await import('stripe-experiment-sync')
+    const checkPoolConfig: PoolConfig = {
+      max: 1,
+      connectionString: config.databaseUrl,
+    }
+    const checkClient = new PostgresClient({
+      schema: 'stripe',
+      poolConfig: checkPoolConfig,
+    })
+
+    try {
+      const installed = await checkClient.isInstalled()
+      if (!installed) {
+        console.error(
+          chalk.red('Installation verification failed. Please try running migrations again.')
+        )
+        process.exit(1)
+      }
+    } catch (error) {
+      // This should not happen after successful migration, but handle it
+      if (error instanceof Error) {
+        console.error(chalk.red(error.message))
+      }
+      process.exit(1)
+    } finally {
+      await checkClient.pool.end()
     }
 
     // Create StripeSync instance
@@ -156,10 +185,23 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     )
 
     console.log(chalk.green(`✓ Backfill complete: ${totalSynced} ${entityName} objects synced`))
+
+    // Clean up database pool
+    await stripeSync.close()
   } catch (error) {
     if (error instanceof Error) {
       console.error(chalk.red(error.message))
     }
+
+    // Clean up database pool on error
+    if (stripeSync) {
+      try {
+        await stripeSync.close()
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
     process.exit(1)
   }
 }
@@ -274,6 +316,16 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       }
     }
 
+    // Close database pool
+    if (stripeSync) {
+      try {
+        await stripeSync.close()
+        console.log(chalk.green('✓ Database pool closed'))
+      } catch {
+        console.log(chalk.yellow('⚠ Could not close database pool'))
+      }
+    }
+
     process.exit(0)
   }
 
@@ -288,19 +340,46 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     // Show command with database URL
     console.log(chalk.gray(`$ stripe-sync start ${config.databaseUrl}`))
 
-    // 1. Run migrations
+    // 1. Run migrations (will check for legacy installations and throw if detected)
     try {
       await runMigrations({
         databaseUrl: config.databaseUrl,
       })
     } catch (migrationError) {
-      // Migration failed - drop schema and retry
-      console.warn(chalk.yellow('Migrations failed.'))
-      console.warn(
-        'Migration error:',
+      console.error(chalk.red('Failed to run migrations:'))
+      console.error(
         migrationError instanceof Error ? migrationError.message : String(migrationError)
       )
       throw migrationError
+    }
+
+    // Verify installation completed successfully
+    const { PostgresClient } = await import('stripe-experiment-sync')
+    const checkPoolConfig: PoolConfig = {
+      max: 1,
+      connectionString: config.databaseUrl,
+    }
+    const checkClient = new PostgresClient({
+      schema: 'stripe',
+      poolConfig: checkPoolConfig,
+    })
+
+    try {
+      const installed = await checkClient.isInstalled()
+      if (!installed) {
+        console.error(
+          chalk.red('Installation verification failed. Please try running migrations again.')
+        )
+        process.exit(1)
+      }
+    } catch (error) {
+      // This should not happen after successful migration, but handle it
+      if (error instanceof Error) {
+        console.error(chalk.red(error.message))
+      }
+      process.exit(1)
+    } finally {
+      await checkClient.pool.end()
     }
 
     // 2. Create StripeSync instance
