@@ -92,6 +92,25 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
     // Run migrations
     await client.connect()
 
+    // Check for legacy installations before running migrations
+    const { PostgresClient } = await import('./postgres')
+    const checkClient = new PostgresClient({
+      schema,
+      poolConfig: {
+        max: 1,
+        connectionString: config.databaseUrl,
+        ssl: config.ssl,
+      },
+    })
+
+    try {
+      await checkClient.isInstalled()
+      // If we get here, either not installed (false) or properly installed (true)
+      // Both cases are fine to proceed with migrations
+    } finally {
+      await checkClient.pool.end()
+    }
+
     // Ensure schema exists, not doing it via migration to not break current migration checksums
     await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema};`)
 
@@ -113,6 +132,16 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
     config.logger?.info('Running migrations')
 
     await connectAndMigrate(client, path.resolve(__dirname, './migrations'), config)
+
+    // Get package version
+    const pkgPath = path.resolve(__dirname, '../../package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+    const version = pkg.version
+
+    // Set schema comment with version info
+    await client.query(`COMMENT ON SCHEMA "${schema}" IS $1`, [`stripe-sync v${version} installed`])
+
+    config.logger?.info(`Schema comment set: stripe-sync v${version}`)
   } catch (err) {
     config.logger?.error(err, 'Error running migrations')
     throw err
