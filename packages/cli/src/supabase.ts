@@ -1,4 +1,6 @@
+import { runMigrations } from 'stripe-experiment-sync'
 import { SupabaseManagementAPI } from 'supabase-management-js'
+import { setupFunctionCode, webhookFunctionCode, workerFunctionCode } from './edge-function-code'
 export { setupFunctionCode, webhookFunctionCode, workerFunctionCode } from './edge-function-code'
 
 export interface DeployClientOptions {
@@ -196,5 +198,50 @@ export class SupabaseDeployClient {
     }
 
     return { success: true }
+  }
+}
+
+export async function install(params: {
+  supabaseAccessToken: string
+  supabaseProjectRef: string
+  stripeKey: string
+}): Promise<void> {
+  const { supabaseAccessToken, supabaseProjectRef, stripeKey } = params
+
+  const trimmedStripeKey = stripeKey.trim()
+  if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
+    throw new Error('Stripe key should start with "sk_" or "rk_"')
+  }
+
+  const client = new SupabaseDeployClient({
+    accessToken: supabaseAccessToken,
+    projectRef: supabaseProjectRef,
+  })
+
+  // Validate project
+  await client.validateProject()
+
+  // Deploy Edge Functions
+  await client.deployFunction('stripe-setup', setupFunctionCode)
+  // await runMigrations()
+  await client.deployFunction('stripe-webhook', webhookFunctionCode)
+  await client.deployFunction('stripe-worker', workerFunctionCode)
+
+  // Set secrets
+  await client.setSecrets([{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }])
+
+  // Run setup
+  const serviceRoleKey = await client.getServiceRoleKey()
+  const setupResult = await client.invokeFunction('stripe-setup', serviceRoleKey)
+
+  if (!setupResult.success) {
+    throw new Error(`Setup failed: ${setupResult.error}`)
+  }
+
+  // Setup pg_cron
+  try {
+    await client.setupPgCronJob()
+  } catch {
+    // pg_cron may not be available
   }
 }

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "composite": true,
     "target": "esnext",
     "module": "esnext",
     "moduleResolution": "node",
@@ -10,5 +11,7 @@
     "strict": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }
