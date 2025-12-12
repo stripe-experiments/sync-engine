@@ -11,7 +11,7 @@ import {
   setupFunctionCode,
   webhookFunctionCode,
   workerFunctionCode,
-} from './supabase'
+} from 'stripe-experiment-sync/supabase'
 
 export interface DeployOptions {
   supabaseAccessToken?: string
