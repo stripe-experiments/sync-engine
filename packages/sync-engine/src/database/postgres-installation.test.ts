@@ -142,7 +142,7 @@ describe('PostgresClient.isInstalled()', () => {
 })
 
 describe.sequential('runMigrations() integration with isInstalled()', () => {
-  let client: pg.Client
+  let client: pg.Client | undefined
   const databaseUrl =
     process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
 
@@ -153,8 +153,14 @@ describe.sequential('runMigrations() integration with isInstalled()', () => {
 
   afterAll(async () => {
     // Cleanup stripe schema (runMigrations uses 'stripe' schema)
-    await client.query(`DROP SCHEMA IF EXISTS "stripe" CASCADE`)
-    await client.end()
+    if (client) {
+      try {
+        await client.query(`DROP SCHEMA IF EXISTS "stripe" CASCADE`)
+        await client.end()
+      } catch (err) {
+        console.warn('Cleanup failed:', err)
+      }
+    }
   })
 
   beforeEach(async () => {
