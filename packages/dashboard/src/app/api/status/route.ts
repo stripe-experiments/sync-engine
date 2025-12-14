@@ -26,11 +26,13 @@ export async function GET(request: NextRequest) {
         body: JSON.stringify({
           query: `
             SELECT
-              _account_id,
+              account_id,
               started_at,
+              closed_at,
               status,
-              completed_at
-            FROM stripe._sync_run
+              error_message,
+              processed_count
+            FROM stripe.sync_dashboard
             ORDER BY started_at DESC
             LIMIT 1
           `,
