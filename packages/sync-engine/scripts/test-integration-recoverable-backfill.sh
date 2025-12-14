@@ -136,11 +136,11 @@ echo ""
 echo "🔍 Step 5: Verifying interrupted state..."
 echo ""
 
-# Get the account ID from the database (from synced data)
-echo "   Getting account ID..."
-ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT DISTINCT _account_id FROM stripe.products LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
+# Get the account ID from the sync_runs view
+echo "   Getting account ID from sync runs..."
+ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT account_id FROM stripe.sync_runs ORDER BY started_at DESC LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 if [ -z "$ACCOUNT_ID" ]; then
-    echo "   ❌ Could not determine account ID from synced data"
+    echo "   ❌ Could not determine account ID from sync runs"
     exit 1
 fi
 echo "   ✓ Account ID: $ACCOUNT_ID"
