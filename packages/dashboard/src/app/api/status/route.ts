@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
               closed_at,
               status,
               error_message,
-              processed_count
-            FROM stripe.sync_dashboard
+              total_processed
+            FROM stripe.sync_runs
             ORDER BY started_at DESC
             LIMIT 1
           `,

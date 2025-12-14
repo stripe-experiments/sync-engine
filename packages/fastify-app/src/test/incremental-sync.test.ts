@@ -10,8 +10,8 @@ const testAccountId = 'acct_test_account'
 // Helper to get cursor from most recent sync run (for test verification - any status)
 async function getCursor(resourceName: string): Promise<number | null> {
   const result = await stripeSync!.postgresClient.pool.query(
-    `SELECT o.cursor FROM stripe._sync_obj_run o
-     JOIN stripe._sync_run r ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
+    `SELECT o.cursor FROM stripe._sync_obj_runs o
+     JOIN stripe._sync_runs r ON o."_account_id" = r."_account_id" AND o.run_started_at = r.started_at
      WHERE o."_account_id" = $1 AND o.object = $2
      ORDER BY r.started_at DESC
      LIMIT 1`,
@@ -351,7 +351,7 @@ describe('Incremental Sync', () => {
       `SELECT d.status as run_status, d.error_message as run_error,
               o.status as obj_status, o.error_message as obj_error
        FROM stripe.sync_dashboard d
-       LEFT JOIN stripe._sync_obj_run o ON o."_account_id" = d.account_id AND o.run_started_at = d.started_at
+       LEFT JOIN stripe._sync_obj_runs o ON o."_account_id" = d.account_id AND o.run_started_at = d.started_at
        WHERE d.account_id = $1 AND o.object = $2
        ORDER BY d.started_at DESC
        LIMIT 1`,
@@ -367,7 +367,7 @@ describe('Incremental Sync', () => {
     // Status should be complete
     const finalStatus = await stripeSync.postgresClient.pool.query(
       `SELECT d.status FROM stripe.sync_dashboard d
-       JOIN stripe._sync_obj_run o ON o."_account_id" = d.account_id AND o.run_started_at = d.started_at
+       JOIN stripe._sync_obj_runs o ON o."_account_id" = d.account_id AND o.run_started_at = d.started_at
        WHERE d.account_id = $1 AND o.object = $2
        ORDER BY d.started_at DESC
        LIMIT 1`,
@@ -678,7 +678,7 @@ describe('Bug regression tests', () => {
 
     // Also verify via observability: only payment_intents object run should exist
     const objRuns = await stripeSync.postgresClient.pool.query(
-      `SELECT object FROM stripe._sync_obj_run WHERE "_account_id" = $1`,
+      `SELECT object FROM stripe._sync_obj_runs WHERE "_account_id" = $1`,
       [testAccountId]
     )
     const objects = objRuns.rows.map((r: { object: string }) => r.object)
@@ -728,7 +728,7 @@ describe('Bug regression tests', () => {
 
     // Count how many sync runs were created
     const runResult = await stripeSync.postgresClient.pool.query(
-      `SELECT COUNT(*) FROM stripe._sync_run WHERE "_account_id" = $1`,
+      `SELECT COUNT(*) FROM stripe._sync_runs WHERE "_account_id" = $1`,
       [testAccountId]
     )
 
@@ -784,14 +784,14 @@ describe('Bug regression tests', () => {
 
     // Count runs after first processUntilDone
     const runResultAfterFirst = await stripeSync.postgresClient.pool.query(
-      `SELECT COUNT(*) FROM stripe._sync_run WHERE "_account_id" = $1`,
+      `SELECT COUNT(*) FROM stripe._sync_runs WHERE "_account_id" = $1`,
       [testAccountId]
     )
     expect(parseInt(runResultAfterFirst.rows[0].count)).toBe(1)
 
     // Count object runs - should have 'products' object run
     const objRunResult = await stripeSync.postgresClient.pool.query(
-      `SELECT object FROM stripe._sync_obj_run WHERE "_account_id" = $1`,
+      `SELECT object FROM stripe._sync_obj_runs WHERE "_account_id" = $1`,
       [testAccountId]
     )
     expect(objRunResult.rows.map((r: { object: string }) => r.object)).toContain('products')

@@ -12,7 +12,7 @@ interface SyncRun {
   closed_at: string | null
   status: 'running' | 'complete' | 'error'
   error_message: string | null
-  processed_count: number
+  total_processed: number
 }
 
 function relativeTime(date: Date): string {
@@ -109,7 +109,7 @@ export function SyncStatus({ sessionId }: SyncStatusProps) {
       <div style={containerStyle}>
         <span style={{ fontSize: 20 }}>🔄</span>
         <span>
-          Syncing since {startedAt} ({syncRun.processed_count.toLocaleString()} items)
+          Syncing since {startedAt} ({syncRun.total_processed.toLocaleString()} items)
         </span>
       </div>
     )
@@ -123,7 +123,7 @@ export function SyncStatus({ sessionId }: SyncStatusProps) {
         <span style={{ fontSize: 20 }}>✅</span>
         <span>
           Completed {relativeTime(new Date(syncRun.closed_at))} (
-          {syncRun.processed_count.toLocaleString()} items, took {duration})
+          {syncRun.total_processed.toLocaleString()} items, took {duration})
         </span>
       </div>
     )
