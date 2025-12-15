@@ -1,7 +1,9 @@
 export type InsertColumn = { column: string; pgType: string; value: unknown }
 
 export class QueryUtils {
-  private constructor() { /* prevent instantiation */ }
+  private constructor() {
+    /* prevent instantiation */
+  }
 
   static quoteIdent(name: string): string {
     return `"${name}"`
@@ -59,4 +61,3 @@ export class QueryUtils {
     return { sql, params }
   }
 }
-

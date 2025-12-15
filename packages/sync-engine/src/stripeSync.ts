@@ -1173,7 +1173,13 @@ export class StripeSync {
 
     try {
       if (config.sigma) {
-        return await this.fetchOneSigmaPage(accountId, resourceName, runStartedAt, cursor, config.sigma)
+        return await this.fetchOneSigmaPage(
+          accountId,
+          resourceName,
+          runStartedAt,
+          cursor,
+          config.sigma
+        )
       }
 
       // Build list parameters
@@ -1181,7 +1187,9 @@ export class StripeSync {
       if (config.supportsCreatedFilter) {
         const created =
           params?.created ??
-          (cursor && /^\d+$/.test(cursor) ? ({ gte: Number.parseInt(cursor, 10) } as const) : undefined)
+          (cursor && /^\d+$/.test(cursor)
+            ? ({ gte: Number.parseInt(cursor, 10) } as const)
+            : undefined)
         if (created) {
           listParams.created = created
         }
@@ -1300,7 +1308,8 @@ export class StripeSync {
       )
     }
 
-    const effectiveCursor = cursor ?? (await this.getSigmaFallbackCursorFromDestination(accountId, sigmaConfig))
+    const effectiveCursor =
+      cursor ?? (await this.getSigmaFallbackCursorFromDestination(accountId, sigmaConfig))
     const sigmaSql = buildSigmaQuery(sigmaConfig, effectiveCursor)
 
     this.config.logger?.info(
@@ -1320,7 +1329,9 @@ export class StripeSync {
       return { processed: 0, hasMore: false, runStartedAt }
     }
 
-    const entries: Array<Record<string, unknown>> = rows.map((row) => defaultSigmaRowToEntry(sigmaConfig, row))
+    const entries: Array<Record<string, unknown>> = rows.map((row) =>
+      defaultSigmaRowToEntry(sigmaConfig, row)
+    )
 
     this.config.logger?.info(
       { object: resourceName, rows: entries.length, queryRunId, fileId },
@@ -1335,7 +1346,12 @@ export class StripeSync {
       sigmaConfig.upsert
     )
 
-    await this.postgresClient.incrementObjectProgress(accountId, runStartedAt, resourceName, entries.length)
+    await this.postgresClient.incrementObjectProgress(
+      accountId,
+      runStartedAt,
+      resourceName,
+      entries.length
+    )
 
     // Cursor: advance to the last row in the page (matches the ORDER BY in buildSigmaQuery()).
     const newCursor = sigmaCursorFromEntry(sigmaConfig, entries[entries.length - 1]!)

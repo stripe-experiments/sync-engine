@@ -27,7 +27,10 @@ describe('sigmaApi helpers', () => {
     it('treats empty fields as null', () => {
       const csv = ['a,b', '1,', ',2'].join('\n')
       const rows = parseCsvObjects(csv)
-      expect(rows).toEqual([{ a: '1', b: null }, { a: null, b: '2' }])
+      expect(rows).toEqual([
+        { a: '1', b: null },
+        { a: null, b: '2' },
+      ])
     })
   })
 
@@ -46,5 +49,3 @@ describe('sigmaApi helpers', () => {
     })
   })
 })
-
-

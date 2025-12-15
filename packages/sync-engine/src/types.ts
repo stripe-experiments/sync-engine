@@ -248,7 +248,7 @@ export type SigmaResourceConfig = BaseResourceConfig & {
   /** Sigma ingestion configuration (query, cursor spec, upsert options) */
   sigma: SigmaIngestionConfig
   /** discriminator */
-  listFn?: undefined 
+  listFn?: undefined
   /** discriminator */
   upsertFn?: undefined
 }

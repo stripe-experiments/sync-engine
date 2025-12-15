@@ -184,7 +184,11 @@ export class PostgresClient {
           // Build column list: _raw_data + any extra typed columns + metadata
           const columns: InsertColumn[] = [
             { column: '_raw_data', pgType: 'jsonb', value: JSON.stringify(entry) },
-            ...extraColumns.map((c) => ({ column: c.column, pgType: c.pgType, value: entry[c.entryKey] })),
+            ...extraColumns.map((c) => ({
+              column: c.column,
+              pgType: c.pgType,
+              value: entry[c.entryKey],
+            })),
             { column: '_last_synced_at', pgType: 'timestamptz', value: timestamp },
             { column: '_account_id', pgType: 'text', value: accountId },
           ]

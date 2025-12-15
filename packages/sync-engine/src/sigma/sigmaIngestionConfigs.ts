@@ -43,5 +43,3 @@ export const SIGMA_INGESTION_CONFIGS: Record<string, SigmaIngestionConfig> = {
     },
   },
 }
-
-

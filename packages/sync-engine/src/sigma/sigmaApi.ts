@@ -97,7 +97,11 @@ export async function runSigmaQueryAndDownloadCsv(params: {
     }
     await sleep(pollIntervalMs)
 
-    current = (await stripe.rawRequest('GET', `/v1/sigma/query_runs/${queryRunId}`, {})) as unknown as SigmaQueryRun
+    current = (await stripe.rawRequest(
+      'GET',
+      `/v1/sigma/query_runs/${queryRunId}`,
+      {}
+    )) as unknown as SigmaQueryRun
   }
 
   if (current.status !== 'succeeded') {
@@ -122,5 +126,3 @@ export async function runSigmaQueryAndDownloadCsv(params: {
 
   return { queryRunId, fileId, csv }
 }
-
-

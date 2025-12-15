@@ -17,7 +17,10 @@ describe('QueryUtils', () => {
     it.each([
       [['id'], '"id"'],
       [['a', 'b'], '"a", "b"'],
-      [['_account_id', 'event_timestamp', 'event_type'], '"_account_id", "event_timestamp", "event_type"'],
+      [
+        ['_account_id', 'event_timestamp', 'event_type'],
+        '"_account_id", "event_timestamp", "event_type"',
+      ],
     ])('QueryUtils.quotedList(%j) => %s', (input, expected) => {
       expect(QueryUtils.quotedList(input)).toBe(expected)
     })
@@ -83,7 +86,12 @@ describe('QueryUtils', () => {
       ['_account_id', 'event_timestamp'],
       ['_account_id', 'event_timestamp', 'event_type', 'subscription_item_id'],
     ])('builds valid SQL with conflict target: %j', (...conflictTarget) => {
-      const { sql, params } = QueryUtils.buildRawJsonUpsertQuery('stripe', 'test_table', baseColumns, conflictTarget)
+      const { sql, params } = QueryUtils.buildRawJsonUpsertQuery(
+        'stripe',
+        'test_table',
+        baseColumns,
+        conflictTarget
+      )
 
       expect(sql).toContain('INSERT INTO "stripe"."test_table"')
       expect(sql).toContain(`ON CONFLICT (${QueryUtils.quotedList(conflictTarget)})`)
@@ -110,7 +118,9 @@ describe('QueryUtils', () => {
         ['_account_id', 'event_timestamp', 'event_type']
       )
 
-      expect(sql).toContain('"_raw_data", "event_timestamp", "event_type", "_last_synced_at", "_account_id"')
+      expect(sql).toContain(
+        '"_raw_data", "event_timestamp", "event_type", "_last_synced_at", "_account_id"'
+      )
       expect(sql).toContain('$1::jsonb, $2::timestamptz, $3::text, $4::timestamptz, $5::text')
       expect(params).toEqual([
         '{}',
@@ -142,4 +152,3 @@ describe('QueryUtils', () => {
     })
   })
 })
-

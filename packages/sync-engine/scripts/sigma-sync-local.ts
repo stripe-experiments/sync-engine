@@ -18,7 +18,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true })
 async function main() {
   const databaseUrl = process.env.DATABASE_URL!
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY!
-  const object = (process.env.SIGMA_OBJECT || 'subscription_item_change_events_v2_beta') as SyncObject
+  const object = (process.env.SIGMA_OBJECT ||
+    'subscription_item_change_events_v2_beta') as SyncObject
 
   await runMigrations({ databaseUrl })
 

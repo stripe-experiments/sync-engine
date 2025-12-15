@@ -59,7 +59,9 @@ export function formatSigmaTimestampForSqlLiteral(date: Date): string {
 export function decodeSigmaCursorValues(spec: SigmaCursorSpec, cursor: string): string[] {
   const prefix = `v${spec.version}${SIGMA_CURSOR_DELIM}`
   if (!cursor.startsWith(prefix)) {
-    throw new Error(`Unrecognized Sigma cursor format (expected prefix ${JSON.stringify(prefix)}): ${cursor}`)
+    throw new Error(
+      `Unrecognized Sigma cursor format (expected prefix ${JSON.stringify(prefix)}): ${cursor}`
+    )
   }
 
   const parts = cursor.split(SIGMA_CURSOR_DELIM)
@@ -133,9 +135,7 @@ export function buildSigmaCursorWhereClause(spec: SigmaCursorSpec, cursorValues:
 
 export function buildSigmaQuery(config: SigmaIngestionConfig, cursor: string | null): string {
   const select =
-    config.select === undefined || config.select === '*'
-      ? '*'
-      : config.select.join(', ')
+    config.select === undefined || config.select === '*' ? '*' : config.select.join(', ')
 
   const whereParts: string[] = []
   if (config.additionalWhere) {
@@ -164,10 +164,13 @@ export function buildSigmaQuery(config: SigmaIngestionConfig, cursor: string | n
 /**
  * Prepares a Sigma CSV row for upsert into Postgres.
  * - Keeps all CSV columns in the output (as strings/nulls)
- * - Requires all cursor columns to be present (throws on missing) 
+ * - Requires all cursor columns to be present (throws on missing)
  * - Normalizes cursor timestamp columns into ISO UTC strings
  */
-export function defaultSigmaRowToEntry(config: SigmaIngestionConfig, row: SigmaRow): Record<string, unknown> {
+export function defaultSigmaRowToEntry(
+  config: SigmaIngestionConfig,
+  row: SigmaRow
+): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row }
 
   for (const col of config.cursor.columns) {
@@ -201,7 +204,10 @@ export function defaultSigmaRowToEntry(config: SigmaIngestionConfig, row: SigmaR
   return out
 }
 
-export function sigmaCursorFromEntry(config: SigmaIngestionConfig, entry: Record<string, unknown>): string {
+export function sigmaCursorFromEntry(
+  config: SigmaIngestionConfig,
+  entry: Record<string, unknown>
+): string {
   const values = config.cursor.columns.map((c) => {
     const raw = entry[c.column]
     if (raw == null) {
@@ -211,5 +217,3 @@ export function sigmaCursorFromEntry(config: SigmaIngestionConfig, entry: Record
   })
   return encodeSigmaCursor(config.cursor, values)
 }
-
-
