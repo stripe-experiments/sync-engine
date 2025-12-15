@@ -123,6 +123,12 @@ jobs:
           chmod +x ./scripts/test-integration-backfill.sh
           ./scripts/test-integration-backfill.sh
 
+      - name: Run Sigma Sync Integration Test
+        run: |
+          cd packages/sync-engine
+          chmod +x ./scripts/test-integration-sigma.sh
+          ./scripts/test-integration-sigma.sh
+
       - name: Run CLI Error Recovery Integration Test
         run: |
           cd packages/sync-engine
