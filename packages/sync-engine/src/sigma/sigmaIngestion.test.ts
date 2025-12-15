@@ -2,7 +2,6 @@ import { describe, it, expect, test } from 'vitest'
 import {
   buildSigmaCursorWhereClause,
   buildSigmaQuery,
-  decodeSigmaCursorValues,
   encodeSigmaCursor,
   type SigmaIngestionConfig,
   type SigmaCursorSpec,

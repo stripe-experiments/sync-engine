@@ -14,8 +14,6 @@ import {
   SyncObject,
   type RevalidateEntity,
   type ResourceConfig,
-  type StripeListResourceConfig,
-  type SigmaResourceConfig,
 } from './types'
 import { managedWebhookSchema } from './schemas/managed_webhook'
 import { type PoolConfig } from 'pg'
