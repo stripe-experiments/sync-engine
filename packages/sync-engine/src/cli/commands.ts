@@ -43,6 +43,8 @@ const VALID_SYNC_OBJECTS: SyncObject[] = [
   'early_fraud_warning',
   'refund',
   'checkout_sessions',
+  'subscription_item_change_events_v2_beta',
+  'exchange_rates_from_usd',
 ]
 
 /**
@@ -83,8 +85,8 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
             if (!input || input.trim() === '') {
               return 'Stripe API key is required'
             }
-            if (!input.startsWith('sk_')) {
-              return 'Stripe API key should start with "sk_"'
+            if (!input.startsWith('sk_') && !input.startsWith('rk_')) {
+              return 'Stripe API key should start with "sk_" or "rk_"'
             }
             return true
           },
@@ -148,6 +150,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
+      enableSigmaSync: process.env.ENABLE_SIGMA_SYNC === 'true',
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
@@ -360,6 +363,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
+      enableSigmaSync: config.enableSigmaSync,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
@@ -542,7 +546,8 @@ export async function installCommand(options: DeployOptions): Promise<void> {
           mask: '*',
           validate: (input: string) => {
             if (!input.trim()) return 'Stripe key is required'
-            if (!input.startsWith('sk_')) return 'Stripe key should start with "sk_"'
+            if (!input.startsWith('sk_') && !input.startsWith('rk_'))
+              return 'Stripe key should start with "sk_" or "rk_"'
             return true
           },
         })
@@ -632,7 +637,8 @@ export async function uninstallCommand(options: DeployOptions): Promise<void> {
           mask: '*',
           validate: (input: string) => {
             if (!input.trim()) return 'Stripe key is required'
-            if (!input.startsWith('sk_')) return 'Stripe key should start with "sk_"'
+            if (!input.startsWith('sk_') && !input.startsWith('rk_'))
+              return 'Stripe key should start with "sk_" or "rk_"'
             return true
           },
         })

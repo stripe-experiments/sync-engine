@@ -40,8 +40,13 @@ describe('Pagination regression tests', () => {
       const registry = (sync as any).resourceRegistry
 
       // Objects that legitimately don't support created filter
-      // (they require customer context and are handled specially)
-      const expectedFalse = ['payment_method', 'tax_id']
+      // (either require customer context, or are Sigma-backed tables)
+      const expectedFalse = [
+        'payment_method',
+        'tax_id',
+        'subscription_item_change_events_v2_beta', // Sigma-backed table
+        'exchange_rates_from_usd', // Sigma-backed table
+      ]
 
       for (const [objectName, config] of Object.entries(registry)) {
         const resourceConfig = config as { supportsCreatedFilter: boolean }
