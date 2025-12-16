@@ -72,9 +72,10 @@ Options:
   --project <ref>          Supabase project ref (or SUPABASE_PROJECT_REF env)
   --stripe-key <key>       Stripe API key (or STRIPE_API_KEY env)
   --worker-interval <seconds>  Worker interval in seconds (defaults to 60)
+                               Valid values: 1-59 (seconds) or multiples of 60 up to 3540 (59 minutes)
 ```
 
-Deploys Stripe sync engine as Supabase Edge Functions. The worker interval controls how frequently the pg_cron job invokes the worker function to process sync operations.
+Deploys Stripe sync engine as Supabase Edge Functions. The worker interval controls how frequently the pg_cron job invokes the worker function to process sync operations. Intervals of 1-59 seconds use pg_cron's interval format, while minute-based intervals (60, 120, 180, etc.) use cron format.
 
 #### Uninstall from Supabase
 

@@ -193,7 +193,33 @@ describe('SupabaseDeployClient', () => {
       )
     })
 
-    it('should use custom worker interval when specified', async () => {
+    it('should use interval format for sub-minute intervals', async () => {
+      const client = new SupabaseSetupClient({
+        accessToken: mockAccessToken,
+        projectRef: mockProjectRef,
+      })
+
+      // Mock the API methods
+      const mockGetProjectApiKeys = vi
+        .fn()
+        .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
+      const mockRunQuery = vi.fn().mockResolvedValue(null)
+
+      // @ts-expect-error - accessing private api for testing
+      client.api.getProjectApiKeys = mockGetProjectApiKeys
+      // @ts-expect-error - accessing private api for testing
+      client.api.runQuery = mockRunQuery
+
+      await client.setupPgCronJob(30)
+
+      // Get the SQL that was executed
+      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+
+      // Verify it uses interval format for seconds
+      expect(executedSQL).toContain("'30 seconds'")
+    })
+
+    it('should use cron format for minute intervals', async () => {
       const client = new SupabaseSetupClient({
         accessToken: mockAccessToken,
         projectRef: mockProjectRef,
@@ -215,11 +241,11 @@ describe('SupabaseDeployClient', () => {
       // Get the SQL that was executed
       const executedSQL = mockRunQuery.mock.calls[0][1] as string
 
-      // Verify it contains the custom interval
-      expect(executedSQL).toContain("'120 seconds'")
+      // Verify it uses cron format for 2 minutes
+      expect(executedSQL).toContain("'*/2 * * * *'")
     })
 
-    it('should use default interval of 60 seconds when not specified', async () => {
+    it('should use default interval of 60 seconds (1 minute) when not specified', async () => {
       const client = new SupabaseSetupClient({
         accessToken: mockAccessToken,
         projectRef: mockProjectRef,
@@ -241,8 +267,8 @@ describe('SupabaseDeployClient', () => {
       // Get the SQL that was executed
       const executedSQL = mockRunQuery.mock.calls[0][1] as string
 
-      // Verify it contains the default interval
-      expect(executedSQL).toContain("'60 seconds'")
+      // Verify it uses cron format for 1 minute
+      expect(executedSQL).toContain("'*/1 * * * *'")
     })
 
     it('should reject invalid worker intervals', async () => {
@@ -263,6 +289,16 @@ describe('SupabaseDeployClient', () => {
       await expect(client.setupPgCronJob(0)).rejects.toThrow('Invalid interval')
       await expect(client.setupPgCronJob(-1)).rejects.toThrow('Invalid interval')
       await expect(client.setupPgCronJob(1.5)).rejects.toThrow('Invalid interval')
+
+      // Test intervals that aren't multiples of 60 (when >= 60)
+      await expect(client.setupPgCronJob(90)).rejects.toThrow(
+        'Must be either 1-59 seconds or a multiple of 60'
+      )
+
+      // Test intervals >= 1 hour
+      await expect(client.setupPgCronJob(3600)).rejects.toThrow(
+        'Intervals >= 3600 seconds (1 hour) are not supported'
+      )
     })
   })
 

@@ -100,6 +100,31 @@ export class SupabaseSetupClient {
       throw new Error(`Invalid interval: ${intervalSeconds}. Must be a positive integer.`)
     }
 
+    // Convert interval to pg_cron schedule format
+    // pg_cron supports two formats:
+    // 1. Interval format: '[1-59] seconds' (only for 1-59 seconds)
+    // 2. Cron format: '*/N * * * *' (for minutes and longer)
+    let schedule: string
+    if (intervalSeconds < 60) {
+      // Use interval format for sub-minute intervals
+      schedule = `${intervalSeconds} seconds`
+    } else if (intervalSeconds % 60 === 0) {
+      // Convert to minutes for intervals divisible by 60
+      const minutes = intervalSeconds / 60
+      if (minutes < 60) {
+        // Use cron format for minute-based intervals
+        schedule = `*/${minutes} * * * *`
+      } else {
+        throw new Error(
+          `Invalid interval: ${intervalSeconds}. Intervals >= 3600 seconds (1 hour) are not supported. Use a value between 1-3599 seconds.`
+        )
+      }
+    } else {
+      throw new Error(
+        `Invalid interval: ${intervalSeconds}. Must be either 1-59 seconds or a multiple of 60 (e.g., 60, 120, 180).`
+      )
+    }
+
     // Get service role key to store in vault
     const serviceRoleKey = await this.getServiceRoleKey()
 
@@ -137,7 +162,7 @@ export class SupabaseSetupClient {
       -- Worker reads from pgmq, enqueues objects if empty, and processes sync work
       SELECT cron.schedule(
         'stripe-sync-worker',
-        '${intervalSeconds} seconds',
+        '${schedule}',
         $$
         SELECT net.http_post(
           url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker',
