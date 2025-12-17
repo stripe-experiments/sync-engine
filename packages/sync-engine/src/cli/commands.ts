@@ -152,7 +152,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
-      enableSigma: process.env.ENABLE_SIGMA_SYNC === 'true',
+      enableSigma: process.env.ENABLE_SIGMA === 'true',
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',

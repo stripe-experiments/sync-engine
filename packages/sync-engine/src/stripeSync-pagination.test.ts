@@ -19,6 +19,7 @@ describe('Pagination regression tests', () => {
       const sync = new StripeSync({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
+        poolConfig: {},
       })
 
       // Access private resourceRegistry for testing
@@ -34,6 +35,7 @@ describe('Pagination regression tests', () => {
       const sync = new StripeSync({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
+        poolConfig: {},
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +75,7 @@ describe('Pagination regression tests', () => {
       sync = new StripeSync({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
+        poolConfig: {},
       })
 
       // Mock the Stripe creditNotes.list method

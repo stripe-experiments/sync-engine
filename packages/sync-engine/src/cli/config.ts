@@ -38,9 +38,7 @@ export async function loadConfig(options: CliOptions): Promise<Config> {
   // Get Sigma sync option
   config.enableSigma =
     options.enableSigma ??
-    (process.env.ENABLE_SIGMA_SYNC !== undefined
-      ? process.env.ENABLE_SIGMA_SYNC === 'true'
-      : undefined)
+    (process.env.ENABLE_SIGMA !== undefined ? process.env.ENABLE_SIGMA === 'true' : undefined)
 
   // Prompt for missing required values
   const questions = []

@@ -81,7 +81,7 @@ echo ""
 unset NGROK_AUTH_TOKEN
 
 # Start CLI in background with SKIP_BACKFILL for faster startup
-cd "$SYNC_ENGINE_DIR" && ENABLE_SIGMA_SYNC=false SKIP_BACKFILL=true node dist/cli/index.js start --database-url "$DATABASE_URL" > /tmp/cli-wss-test.log 2>&1 &
+cd "$SYNC_ENGINE_DIR" && ENABLE_SIGMA=false SKIP_BACKFILL=true node dist/cli/index.js start --database-url "$DATABASE_URL" > /tmp/cli-wss-test.log 2>&1 &
 CLI_PID=$!
 
 # Wait for startup (migrations + WebSocket connection)

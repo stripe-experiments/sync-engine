@@ -76,7 +76,7 @@ export type StripeSyncConfig = {
   /** @deprecated Use `poolConfig` instead. */
   maxPostgresConnections?: number
 
-  poolConfig?: PoolConfig
+  poolConfig: PoolConfig
 
   logger?: Logger
 

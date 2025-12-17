@@ -46,7 +46,7 @@ echo "Step 3: Running Sigma sync for subscription_item_change_events_v2_beta..."
 echo "   Executing: stripe-sync backfill subscription_item_change_events_v2_beta"
 echo ""
 
-STRIPE_API_KEY="$STRIPE_API_KEY_3" ENABLE_SIGMA_SYNC=true node dist/cli/index.js backfill subscription_item_change_events_v2_beta
+STRIPE_API_KEY="$STRIPE_API_KEY_3" ENABLE_SIGMA=true node dist/cli/index.js backfill subscription_item_change_events_v2_beta
 
 echo ""
 echo "Sigma sync for subscription_item_change_events_v2_beta completed"
@@ -56,7 +56,7 @@ echo "Step 4: Running Sigma sync for exchange_rates_from_usd..."
 echo "   Executing: stripe-sync backfill exchange_rates_from_usd"
 echo ""
 
-STRIPE_API_KEY="$STRIPE_API_KEY_3" ENABLE_SIGMA_SYNC=true node dist/cli/index.js backfill exchange_rates_from_usd
+STRIPE_API_KEY="$STRIPE_API_KEY_3" ENABLE_SIGMA=true node dist/cli/index.js backfill exchange_rates_from_usd
 
 echo ""
 echo " Sigma sync for exchange_rates_from_usd completed"

@@ -58,7 +58,7 @@ export function getConfig(): StripeSyncServerConfig {
   return {
     databaseUrl: getConfigFromEnv('DATABASE_URL'),
     stripeSecretKey: getConfigFromEnv('STRIPE_SECRET_KEY', ''),
-    enableSigma: process.env.ENABLE_SIGMA_SYNC === 'true',
+    enableSigma: process.env.ENABLE_SIGMA === 'true',
     stripeWebhookSecret: getConfigFromEnv('STRIPE_WEBHOOK_SECRET'),
     apiKey: getConfigFromEnv('API_KEY', 'false'),
     stripeApiVersion: getConfigFromEnv('STRIPE_API_VERSION', '2020-08-27'),
