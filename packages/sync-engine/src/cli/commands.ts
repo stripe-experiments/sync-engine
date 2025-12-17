@@ -152,7 +152,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
-      enableSigmaSync: process.env.ENABLE_SIGMA_SYNC === 'true',
+      enableSigma: process.env.ENABLE_SIGMA_SYNC === 'true',
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
@@ -365,7 +365,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
-      enableSigmaSync: config.enableSigmaSync,
+      enableSigma: config.enableSigma,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',

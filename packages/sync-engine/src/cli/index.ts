@@ -41,7 +41,7 @@ program
       stripeKey: options.stripeKey,
       ngrokToken: options.ngrokToken,
       databaseUrl: options.databaseUrl,
-      enableSigmaSync: options.sigma,
+      enableSigma: options.sigma,
     })
   })
 

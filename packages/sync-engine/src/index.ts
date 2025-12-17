@@ -16,6 +16,3 @@ export type {
   StripeWebhookEvent,
   WebhookProcessingResult,
 } from './websocket-client'
-
-// Sigma helpers (useful for local tooling / debugging)
-export { parseCsvObjects, normalizeSigmaTimestampToIso } from './sigma/sigmaApi'

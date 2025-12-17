@@ -43,7 +43,7 @@ export type StripeSyncConfig = {
    *
    * Default: false (opt-in, so workers don't enqueue Sigma jobs unexpectedly).
    */
-  enableSigmaSync?: boolean
+  enableSigma?: boolean
 
   /** Stripe account ID. If not provided, will be retrieved from Stripe API. Used as fallback option. */
   stripeAccountId?: string

@@ -26,7 +26,7 @@ async function main() {
   const stripeSync = new StripeSync({
     databaseUrl,
     stripeSecretKey,
-    enableSigmaSync: true,
+    enableSigma: true,
     poolConfig: { connectionString: databaseUrl, max: 5, keepAlive: true },
   })
 

@@ -6,14 +6,14 @@ export interface Config {
   stripeApiKey: string
   ngrokAuthToken?: string // Optional - if not provided, use WebSocket mode
   databaseUrl: string
-  enableSigmaSync?: boolean
+  enableSigma?: boolean
 }
 
 export interface CliOptions {
   stripeKey?: string
   ngrokToken?: string
   databaseUrl?: string
-  enableSigmaSync?: boolean
+  enableSigma?: boolean
 }
 
 /**
@@ -36,8 +36,8 @@ export async function loadConfig(options: CliOptions): Promise<Config> {
   config.databaseUrl = options.databaseUrl || process.env.DATABASE_URL || ''
 
   // Get Sigma sync option
-  config.enableSigmaSync =
-    options.enableSigmaSync ??
+  config.enableSigma =
+    options.enableSigma ??
     (process.env.ENABLE_SIGMA_SYNC !== undefined
       ? process.env.ENABLE_SIGMA_SYNC === 'true'
       : undefined)
@@ -84,10 +84,10 @@ export async function loadConfig(options: CliOptions): Promise<Config> {
     })
   }
 
-  if (config.enableSigmaSync === undefined) {
+  if (config.enableSigma === undefined) {
     questions.push({
       type: 'confirm',
-      name: 'enableSigmaSync',
+      name: 'enableSigma',
       message: 'Enable Sigma sync? (Requires Sigma access in Stripe API key)',
       default: false,
     })
@@ -100,8 +100,8 @@ export async function loadConfig(options: CliOptions): Promise<Config> {
   }
 
   // Default to false if not set
-  if (config.enableSigmaSync === undefined) {
-    config.enableSigmaSync = false
+  if (config.enableSigma === undefined) {
+    config.enableSigma = false
   }
 
   return config as Config

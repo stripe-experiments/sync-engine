@@ -582,7 +582,7 @@ export class StripeSync {
       .map(([key]) => key) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
 
     // Only advertise Sigma-backed objects when explicitly enabled (opt-in).
-    if (!this.config.enableSigmaSync) {
+    if (!this.config.enableSigma) {
       return all.filter(
         (o) => o !== 'subscription_item_change_events_v2_beta' && o !== 'exchange_rates_from_usd'
       ) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
