@@ -58,22 +58,22 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate that the token matches the one stored in vault by pg_cron
+    // Validate that the token matches the unique worker secret stored in vault
     const vaultResult = await sql`
       SELECT decrypted_secret
       FROM vault.decrypted_secrets
-      WHERE name = 'stripe_sync_service_role_key'
+      WHERE name = 'stripe_sync_worker_secret'
     `
 
     if (vaultResult.length === 0) {
       await sql.end()
-      return new Response('Service role key not configured in vault', { status: 500 })
+      return new Response('Worker secret not configured in vault', { status: 500 })
     }
 
-    const storedKey = vaultResult[0].decrypted_secret
-    if (token !== storedKey) {
+    const storedSecret = vaultResult[0].decrypted_secret
+    if (token !== storedSecret) {
       await sql.end()
-      return new Response('Forbidden: Invalid service role key', { status: 403 })
+      return new Response('Forbidden: Invalid worker secret', { status: 403 })
     }
 
     stripeSync = new StripeSync({

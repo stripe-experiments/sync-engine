@@ -224,7 +224,7 @@ Deno.serve(async (req) => {
       try {
         await stripeSync.postgresClient.query(`
           DELETE FROM vault.secrets
-          WHERE name = 'stripe_sync_service_role_key'
+          WHERE name = 'stripe_sync_worker_secret'
         `)
       } catch (err) {
         console.warn('Could not delete vault secret:', err)
