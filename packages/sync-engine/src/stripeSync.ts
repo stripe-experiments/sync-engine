@@ -73,7 +73,9 @@ export class StripeSync {
       // @ts-ignore
       apiVersion: config.stripeApiVersion,
       appInfo: {
-        name: 'Stripe Postgres Sync',
+        name: 'Stripe Sync Engine',
+        version: pkg.version,
+        url: pkg.homepage,
       },
     })
 

@@ -2,13 +2,17 @@ import { StripeSync, runMigrations, VERSION } from 'npm:stripe-experiment-sync'
 import postgres from 'npm:postgres'
 
 // Get management API base URL from environment variable (for testing against localhost/staging)
-const MGMT_API_BASE = Deno.env.get('SUPABASE_MANAGEMENT_URL') || 'api.supabase.com'
+// Caller should provide full URL with protocol (e.g., http://localhost:54323 or https://api.supabase.com)
+const MGMT_API_BASE_RAW = Deno.env.get('SUPABASE_MANAGEMENT_URL') || 'https://api.supabase.com'
+const MGMT_API_BASE = MGMT_API_BASE_RAW.match(/^https?:\/\//)
+  ? MGMT_API_BASE_RAW
+  : `https://${MGMT_API_BASE_RAW}`
 
 // Helper to validate accessToken against Management API
 async function validateAccessToken(projectRef: string, accessToken: string): Promise<boolean> {
   // Try to fetch project details using the access token
   // This validates that the token is valid for the management API
-  const url = `https://${MGMT_API_BASE}/v1/projects/${projectRef}`
+  const url = `${MGMT_API_BASE}/v1/projects/${projectRef}`
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -27,7 +31,7 @@ async function deleteEdgeFunction(
   functionSlug: string,
   accessToken: string
 ): Promise<void> {
-  const url = `https://${MGMT_API_BASE}/v1/projects/${projectRef}/functions/${functionSlug}`
+  const url = `${MGMT_API_BASE}/v1/projects/${projectRef}/functions/${functionSlug}`
   const response = await fetch(url, {
     method: 'DELETE',
     headers: {
@@ -48,7 +52,7 @@ async function deleteSecret(
   secretName: string,
   accessToken: string
 ): Promise<void> {
-  const url = `https://${MGMT_API_BASE}/v1/projects/${projectRef}/secrets`
+  const url = `${MGMT_API_BASE}/v1/projects/${projectRef}/secrets`
   const response = await fetch(url, {
     method: 'DELETE',
     headers: {

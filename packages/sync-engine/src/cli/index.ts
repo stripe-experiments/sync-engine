@@ -79,7 +79,7 @@ supabase
   )
   .option(
     '--management-url <url>',
-    'Supabase management API URL (e.g., localhost:54323, defaults to api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
+    'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
   .action(async (options) => {
     await installCommand({
@@ -99,7 +99,7 @@ supabase
   .option('--project <ref>', 'Supabase project ref (or SUPABASE_PROJECT_REF env)')
   .option(
     '--management-url <url>',
-    'Supabase management API URL (defaults to api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
+    'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
   .action(async (options) => {
     await uninstallCommand({
