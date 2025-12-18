@@ -372,21 +372,15 @@ export class SupabaseSetupClient {
    */
   async uninstall(): Promise<void> {
     try {
-      // Get service role key for authentication
-      const serviceRoleKey = await this.getServiceRoleKey()
-
       // Invoke the DELETE endpoint on stripe-setup function
+      // Use accessToken in Authorization header for Management API validation
       const url = `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-setup`
       const response = await fetch(url, {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${serviceRoleKey}`,
+          Authorization: `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          supabase_access_token: this.accessToken,
-          supabase_project_ref: this.projectRef,
-        }),
       })
 
       if (!response.ok) {
@@ -448,16 +442,16 @@ export class SupabaseSetupClient {
       const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
       const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
 
-      await this.deployFunction('stripe-setup', versionedSetup, true)
+      await this.deployFunction('stripe-setup', versionedSetup, false)
       await this.deployFunction('stripe-webhook', versionedWebhook, false)
-      await this.deployFunction('stripe-worker', versionedWorker, true)
+      await this.deployFunction('stripe-worker', versionedWorker, false)
 
       // Set secrets
       await this.setSecrets([{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }])
 
       // Run setup (migrations + webhook creation)
-      const serviceRoleKey = await this.getServiceRoleKey()
-      const setupResult = await this.invokeFunction('stripe-setup', serviceRoleKey)
+      // Use accessToken for Management API validation
+      const setupResult = await this.invokeFunction('stripe-setup', this.accessToken)
 
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)
