@@ -222,7 +222,7 @@ jobs:
 
   integration-test-backfill:
     name: Integration (backfill)
-    needs: [build, integration-test-parallel]  # Wait for parallel tests to finish
+    needs: [build, integration-test]  # Wait for parallel tests to finish
     runs-on: ubuntu-24.04
 
     steps:
