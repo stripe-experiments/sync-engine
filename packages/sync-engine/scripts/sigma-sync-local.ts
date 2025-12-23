@@ -21,7 +21,7 @@ async function main() {
   const object = (process.env.SIGMA_OBJECT ||
     'subscription_item_change_events_v2_beta') as SyncObject
 
-  await runMigrations({ databaseUrl })
+  await runMigrations({ databaseUrl, enableSigma: true })
 
   const stripeSync = new StripeSync({
     databaseUrl,

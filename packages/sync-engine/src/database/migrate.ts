@@ -14,6 +14,7 @@ type MigrationConfig = {
   databaseUrl: string
   ssl?: ConnectionOptions
   logger?: Logger
+  enableSigma?: boolean
 }
 
 async function doesTableExist(client: Client, schema: string, tableName: string): Promise<boolean> {
@@ -113,6 +114,11 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
     config.logger?.info('Running migrations')
 
     await connectAndMigrate(client, path.resolve(__dirname, './migrations'), config)
+
+    if (config.enableSigma) {
+      config.logger?.info('Running Sigma migrations')
+      await connectAndMigrate(client, path.resolve(__dirname, './migrations/sigma'), config)
+    }
   } catch (err) {
     config.logger?.error(err, 'Error running migrations')
     throw err

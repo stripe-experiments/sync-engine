@@ -20,6 +20,7 @@ const main = async () => {
       databaseUrl: config.databaseUrl,
       logger: logger,
       ssl: config.sslConnectionOptions,
+      enableSigma: config.enableSigma,
     })
   }
 
