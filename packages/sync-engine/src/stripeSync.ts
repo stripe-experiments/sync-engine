@@ -340,6 +340,9 @@ export class StripeSync {
     'customer.subscription.pending_update_expired': this.handleSubscriptionEvent.bind(this),
     'customer.subscription.trial_will_end': this.handleSubscriptionEvent.bind(this),
     'customer.subscription.resumed': this.handleSubscriptionEvent.bind(this),
+    'coupon.created': this.handleCouponEvent.bind(this),
+    'coupon.updated': this.handleCouponEvent.bind(this),
+    'coupon.deleted': this.handleCouponEvent.bind(this),
     'customer.subscription.updated': this.handleSubscriptionEvent.bind(this),
     'customer.tax_id.updated': this.handleTaxIdEvent.bind(this),
     'customer.tax_id.created': this.handleTaxIdEvent.bind(this),
@@ -427,14 +430,20 @@ export class StripeSync {
       upsertFn: (items, id, bf) => this.upsertPrices(items as Stripe.Price[], id, bf),
       supportsCreatedFilter: true,
     },
-    plan: {
+    coupon: {
       order: 3, // Depends on product
+      listFn: (p) => this.stripe.coupons.list(p),
+      upsertFn: (items, id) => this.upsertCoupons(items as Stripe.Coupon[], id),
+      supportsCreatedFilter: true,
+    },
+    plan: {
+      order: 4, // Depends on product
       listFn: (p) => this.stripe.plans.list(p),
       upsertFn: (items, id, bf) => this.upsertPlans(items as Stripe.Plan[], id, bf),
       supportsCreatedFilter: true,
     },
     customer: {
-      order: 4, // No dependencies
+      order: 5, // No dependencies
       listFn: (p) => this.stripe.customers.list(p),
       upsertFn: (items, id) => this.upsertCustomers(items as Stripe.Customer[], id),
       supportsCreatedFilter: true,
@@ -875,6 +884,16 @@ export class StripeSync {
     )
 
     await this.upsertRefunds([refund], accountId, false, this.getSyncTimestamp(event, refetched))
+  }
+
+  private async handleCouponEvent(event: Stripe.Event, accountId: string): Promise<void> {
+    if (event.type === 'coupon.deleted') {
+      const coupon = event.data.object as Stripe.Coupon
+      await this.deleteCoupon(coupon.id)
+    } else {
+      const coupon = event.data.object as Stripe.Coupon
+      await this.upsertCoupons([coupon], accountId, this.getSyncTimestamp(event, false))
+    }
   }
 
   private async handleReviewEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -1553,6 +1572,9 @@ export class StripeSync {
             case 'price':
               results.prices = result
               break
+            case 'coupon':
+              results.coupons = result
+              break
             case 'plan':
               results.plans = result
               break
@@ -1766,6 +1788,30 @@ export class StripeSync {
         (prices) => this.upsertPrices(prices, accountId, syncParams?.backfillRelatedEntities),
         accountId,
         'prices',
+        runStartedAt
+      )
+    })
+  }
+
+  async syncCoupons(syncParams?: SyncParams): Promise<Sync> {
+    this.config.logger?.info('Syncing coupons')
+
+    return this.withSyncRun('coupons', 'syncCoupons', async (cursor, runStartedAt) => {
+      const accountId = await this.getAccountId()
+      const params: Stripe.CouponListParams = { limit: 100 }
+
+      if (syncParams?.created) {
+        params.created = syncParams.created
+      } else if (cursor) {
+        params.created = { gte: cursor }
+        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
+      }
+
+      return this.fetchAndUpsert(
+        (pagination) => this.stripe.coupons.list({ ...params, ...pagination }),
+        (items) => this.upsertCoupons(items, accountId),
+        accountId,
+        'coupons',
         runStartedAt
       )
     })
@@ -2673,9 +2719,24 @@ export class StripeSync {
     syncTimestamp?: string
   ): Promise<Stripe.Invoice[]> {
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
+      const couponIds = new Set<string>()
+      for (const inv of invoices) {
+        if (inv.discount?.coupon?.id) {
+          couponIds.add(inv.discount.coupon.id)
+        }
+        if (inv.discounts) {
+          for (const d of inv.discounts) {
+            if (typeof d === 'object' && 'coupon' in d && d.coupon?.id) {
+              couponIds.add(d.coupon.id)
+            }
+          }
+        }
+      }
+
       await Promise.all([
         this.backfillCustomers(getUniqueIds(invoices, 'customer'), accountId),
         this.backfillSubscriptions(getUniqueIds(invoices, 'subscription'), accountId),
+        this.backfillCoupons(Array.from(couponIds), accountId),
       ])
     }
 
@@ -2702,6 +2763,13 @@ export class StripeSync {
     const missingIds = await this.postgresClient.findMissingEntries('prices', priceIds)
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.prices.retrieve(id)).then(
       (entries) => this.upsertPrices(entries, accountId)
+    )
+  }
+
+  backfillCoupons = async (couponIds: string[], accountId: string) => {
+    const missingIds = await this.postgresClient.findMissingEntries('coupons', couponIds)
+    await this.fetchMissingEntities(missingIds, (id) => this.stripe.coupons.retrieve(id)).then(
+      (entries) => this.upsertCoupons(entries, accountId)
     )
   }
 
@@ -2747,6 +2815,23 @@ export class StripeSync {
 
   async deletePrice(id: string): Promise<boolean> {
     return this.postgresClient.delete('prices', id)
+  }
+
+  async upsertCoupons(
+    coupons: Stripe.Coupon[],
+    accountId: string,
+    syncTimestamp?: string
+  ): Promise<Stripe.Coupon[]> {
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      coupons,
+      'coupons',
+      accountId,
+      syncTimestamp
+    )
+  }
+
+  async deleteCoupon(id: string): Promise<boolean> {
+    return this.postgresClient.delete('coupons', id)
   }
 
   async upsertProducts(
@@ -3014,8 +3099,17 @@ export class StripeSync {
   ): Promise<Stripe.Subscription[]> {
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       const customerIds = getUniqueIds(subscriptions, 'customer')
+      const couponIds = new Set<string>()
+      for (const sub of subscriptions) {
+        if (sub.discount?.coupon?.id) {
+          couponIds.add(sub.discount.coupon.id)
+        }
+      }
 
-      await this.backfillCustomers(customerIds, accountId)
+      await Promise.all([
+        this.backfillCustomers(customerIds, accountId),
+        this.backfillCoupons(Array.from(couponIds), accountId),
+      ])
     }
 
     await this.expandEntity(subscriptions, 'items', (id) =>
