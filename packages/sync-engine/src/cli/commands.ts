@@ -46,6 +46,7 @@ const VALID_SYNC_OBJECTS: SyncObject[] = [
   'early_fraud_warning',
   'refund',
   'checkout_sessions',
+  'coupon',
   'subscription_item_change_events_v2_beta',
   'exchange_rates_from_usd',
 ]
