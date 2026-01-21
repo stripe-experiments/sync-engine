@@ -1121,8 +1121,7 @@ export class StripeSync {
   private appendMigrationHint(error: unknown): Error {
     const hint =
       'Error occurred. Make sure you are up to date with DB migrations which can sometimes help with this. Details:'
-    const withHint = (message: string) =>
-      message.includes(hint) ? message : `${hint}\n${message}`
+    const withHint = (message: string) => (message.includes(hint) ? message : `${hint}\n${message}`)
 
     if (error instanceof Error) {
       const { stack } = error

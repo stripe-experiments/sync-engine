@@ -232,12 +232,14 @@ describe('Pagination regression tests', () => {
       // Cursor from BEFORE a run starts:
       // - runA: none
       // - runB: exists
-      sync.postgresClient.getLastCursorBeforeRun = vi.fn().mockImplementation((_acct, _obj, runStartedAt) => {
-        if (runStartedAt instanceof Date && runStartedAt.getTime() === runB.getTime()) {
-          return Promise.resolve('1700000200')
-        }
-        return Promise.resolve(null)
-      })
+      sync.postgresClient.getLastCursorBeforeRun = vi
+        .fn()
+        .mockImplementation((_acct, _obj, runStartedAt) => {
+          if (runStartedAt instanceof Date && runStartedAt.getTime() === runB.getTime()) {
+            return Promise.resolve('1700000200')
+          }
+          return Promise.resolve(null)
+        })
 
       // Object run state across calls:
       // 1) runA tick #1: no pageCursor yet

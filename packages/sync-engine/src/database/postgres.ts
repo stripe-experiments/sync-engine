@@ -782,7 +782,7 @@ export class PostgresClient {
    * - During the initial backfill we page through history, but we also update the cursor as we go.
    *   If we crash mid-backfill and reuse that cursor, we can accidentally switch into incremental mode
    *   too early and only ever fetch the newest page (breaking the historical backfill).
-   * 
+   *
    * Handles two cursor formats:
    * - Numeric: compared as bigint for correct ordering
    * - Composite cursors: compared as strings with COLLATE "C"
