@@ -3,6 +3,11 @@ import { pg as sql } from 'yesql'
 import pkg from '../package.json' with { type: 'json' }
 import { PostgresClient } from './database/postgres'
 import {
+  SyncDatabaseClient,
+  isDatabaseFeatureSupported,
+} from './database/SyncDatabaseClient'
+import { createSyncClient } from './database/createSyncClient'
+import {
   StripeSyncConfig,
   Sync,
   SyncBackfill,
@@ -64,7 +69,11 @@ export interface StripSyncInfo {
 
 export class StripeSync {
   stripe: Stripe
-  postgresClient: PostgresClient
+  db: SyncDatabaseClient
+  /** @deprecated Use `db` instead */
+  get postgresClient(): SyncDatabaseClient {
+    return this.db
+  }
 
   constructor(private config: StripeSyncConfig) {
     // Create base Stripe client
@@ -87,33 +96,48 @@ export class StripeSync {
     this.stripe = createRetryableStripeClient(baseStripe, {}, config.logger)
 
     this.config.logger = config.logger ?? console
+    const databaseType = config.databaseType ?? 'postgres'
     this.config.logger?.info(
-      { autoExpandLists: config.autoExpandLists, stripeApiVersion: config.stripeApiVersion },
+      {
+        autoExpandLists: config.autoExpandLists,
+        stripeApiVersion: config.stripeApiVersion,
+        databaseType,
+      },
       'StripeSync initialized'
     )
 
-    const poolConfig = config.poolConfig ?? ({} as PoolConfig)
+    // Create database client based on type
+    if (databaseType === 'postgres') {
+      // PostgreSQL uses PostgresClient directly for full feature support
+      const poolConfig = config.poolConfig ?? ({} as PoolConfig)
 
-    if (config.databaseUrl) {
-      poolConfig.connectionString = config.databaseUrl
+      if (config.databaseUrl) {
+        poolConfig.connectionString = config.databaseUrl
+      }
+
+      if (config.maxPostgresConnections) {
+        poolConfig.max = config.maxPostgresConnections
+      }
+
+      if (poolConfig.max === undefined) {
+        poolConfig.max = 10
+      }
+
+      if (poolConfig.keepAlive === undefined) {
+        poolConfig.keepAlive = true
+      }
+
+      this.db = new PostgresClient({
+        schema: 'stripe',
+        poolConfig,
+      })
+    } else {
+      // DuckDB, SQLite, MySQL use the factory
+      if (!config.databaseUrl) {
+        throw new Error(`databaseUrl is required for ${databaseType}`)
+      }
+      this.db = createSyncClient({ type: databaseType, url: config.databaseUrl })
     }
-
-    if (config.maxPostgresConnections) {
-      poolConfig.max = config.maxPostgresConnections
-    }
-
-    if (poolConfig.max === undefined) {
-      poolConfig.max = 10
-    }
-
-    if (poolConfig.keepAlive === undefined) {
-      poolConfig.keepAlive = true
-    }
-
-    this.postgresClient = new PostgresClient({
-      schema: 'stripe',
-      poolConfig,
-    })
   }
 
   /**
@@ -134,7 +158,7 @@ export class StripeSync {
    */
   private async upsertAccount(account: Stripe.Account, apiKeyHash: string): Promise<void> {
     try {
-      await this.postgresClient.upsertAccount(
+      await this.db.upsertAccount(
         {
           id: account.id,
           raw_data: account,
@@ -158,7 +182,7 @@ export class StripeSync {
 
     // Try to lookup account from database using API key hash (fast path)
     try {
-      const account = await this.postgresClient.getAccountByApiKeyHash(apiKeyHash)
+      const account = await this.db.getAccountByApiKeyHash(apiKeyHash)
       if (account) {
         return account as Stripe.Account
       }
@@ -189,7 +213,7 @@ export class StripeSync {
    */
   async getAllSyncedAccounts(): Promise<Stripe.Account[]> {
     try {
-      const accountsData = await this.postgresClient.getAllAccounts()
+      const accountsData = await this.db.getAllAccounts()
       return accountsData as Stripe.Account[]
     } catch (error) {
       this.config.logger?.error(error, 'Failed to retrieve accounts from database')
@@ -227,7 +251,7 @@ export class StripeSync {
 
     try {
       // Get record counts
-      const counts = await this.postgresClient.getAccountRecordCounts(accountId)
+      const counts = await this.db.getAccountRecordCounts(accountId)
 
       // Generate warnings
       const warnings: string[] = []
@@ -257,7 +281,7 @@ export class StripeSync {
       }
 
       // Actual deletion
-      const deletionCounts = await this.postgresClient.deleteAccountWithCascade(
+      const deletionCounts = await this.db.deleteAccountWithCascade(
         accountId,
         useTransaction
       )
@@ -288,7 +312,7 @@ export class StripeSync {
       const accountId = await this.getAccountId()
 
       // Check if we have a managed webhook in the database for this specific account
-      const result = await this.postgresClient.query(
+      const result = await this.db.query(
         `SELECT secret FROM "stripe"."_managed_webhooks" WHERE account_id = $1 LIMIT 1`,
         [accountId]
       )
@@ -1055,10 +1079,10 @@ export class StripeSync {
       }
 
       // Ensure object run exists
-      await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
+      await this.db.createObjectRuns(accountId, runStartedAt, [resourceName])
 
       // Check object status and try to claim if pending
-      const objRun = await this.postgresClient.getObjectRun(accountId, runStartedAt, resourceName)
+      const objRun = await this.db.getObjectRun(accountId, runStartedAt, resourceName)
       if (objRun?.status === 'complete' || objRun?.status === 'error') {
         // Object already finished - return early
         return {
@@ -1070,7 +1094,7 @@ export class StripeSync {
 
       // Try to start if pending (for first call on this object)
       if (objRun?.status === 'pending') {
-        const started = await this.postgresClient.tryStartObjectSync(
+        const started = await this.db.tryStartObjectSync(
           accountId,
           runStartedAt,
           resourceName
@@ -1093,7 +1117,7 @@ export class StripeSync {
       // Note: Do not use the current run’s cursor as created.gte. That cursor while paging, and using it would keep jumping to newest-only, and can get stuck syncing ~100 rows forever.
       let cursor: string | null = null
       if (!params?.created) {
-        const lastCursor = await this.postgresClient.getLastCursorBeforeRun(
+        const lastCursor = await this.db.getLastCursorBeforeRun(
           accountId,
           resourceName,
           runStartedAt
@@ -1178,7 +1202,7 @@ export class StripeSync {
     // Handle special cases that require customer context
     if (object === 'payment_method' || object === 'tax_id') {
       this.config.logger?.warn(`processNext for ${object} requires customer context`)
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
       return { processed: 0, hasMore: false, runStartedAt }
     }
 
@@ -1225,7 +1249,7 @@ export class StripeSync {
         const message = `Stripe returned has_more=true with empty page for ${resourceName}. Aborting to avoid infinite loop.`
         this.config.logger?.warn(message)
 
-        await this.postgresClient.failObjectSync(accountId, runStartedAt, resourceName, message)
+        await this.db.failObjectSync(accountId, runStartedAt, resourceName, message)
         return { processed: 0, hasMore: false, runStartedAt }
       }
 
@@ -1235,7 +1259,7 @@ export class StripeSync {
         await config.upsertFn(response.data, accountId, params?.backfillRelatedEntities)
 
         // Update progress
-        await this.postgresClient.incrementObjectProgress(
+        await this.db.incrementObjectProgress(
           accountId,
           runStartedAt,
           resourceName,
@@ -1247,7 +1271,7 @@ export class StripeSync {
           ...response.data.map((i) => (i as { created?: number }).created || 0)
         )
         if (maxCreated > 0) {
-          await this.postgresClient.updateObjectCursor(
+          await this.db.updateObjectCursor(
             accountId,
             runStartedAt,
             resourceName,
@@ -1258,7 +1282,7 @@ export class StripeSync {
         // Update pagination page_cursor with last item's ID
         const lastId = (response.data[response.data.length - 1] as { id: string }).id
         if (response.has_more) {
-          await this.postgresClient.updateObjectPageCursor(
+          await this.db.updateObjectPageCursor(
             accountId,
             runStartedAt,
             resourceName,
@@ -1269,7 +1293,7 @@ export class StripeSync {
 
       // Mark complete if no more pages
       if (!response.has_more) {
-        await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+        await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
       }
 
       return {
@@ -1278,7 +1302,7 @@ export class StripeSync {
         runStartedAt,
       }
     } catch (error) {
-      await this.postgresClient.failObjectSync(
+      await this.db.failObjectSync(
         accountId,
         runStartedAt,
         resourceName,
@@ -1296,7 +1320,7 @@ export class StripeSync {
     const selectCols = cursorCols.map((c) => `"${c.column}"`).join(', ')
     const orderBy = cursorCols.map((c) => `"${c.column}" DESC`).join(', ')
 
-    const result = await this.postgresClient.query(
+    const result = await this.db.query(
       `SELECT ${selectCols}
        FROM "stripe"."${sigmaConfig.destinationTable}"
        WHERE "_account_id" = $1
@@ -1367,7 +1391,7 @@ export class StripeSync {
 
     const rows = parseCsvObjects(csv)
     if (rows.length === 0) {
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
       return { processed: 0, hasMore: false, runStartedAt }
     }
 
@@ -1380,7 +1404,7 @@ export class StripeSync {
       'Sigma sync: upserting rows'
     )
 
-    await this.postgresClient.upsertManyWithTimestampProtection(
+    await this.db.upsertManyWithTimestampProtection(
       entries,
       resourceName,
       accountId,
@@ -1388,7 +1412,7 @@ export class StripeSync {
       sigmaConfig.upsert
     )
 
-    await this.postgresClient.incrementObjectProgress(
+    await this.db.incrementObjectProgress(
       accountId,
       runStartedAt,
       resourceName,
@@ -1397,11 +1421,11 @@ export class StripeSync {
 
     // Cursor: advance to the last row in the page (matches the ORDER BY in buildSigmaQuery()).
     const newCursor = sigmaCursorFromEntry(sigmaConfig, entries[entries.length - 1]!)
-    await this.postgresClient.updateObjectCursor(accountId, runStartedAt, resourceName, newCursor)
+    await this.db.updateObjectCursor(accountId, runStartedAt, resourceName, newCursor)
 
     const hasMore = rows.length === sigmaConfig.pageSize
     if (!hasMore) {
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
     }
 
     return { processed: entries.length, hasMore, runStartedAt }
@@ -1466,7 +1490,7 @@ export class StripeSync {
     await this.getCurrentAccount()
     const accountId = await this.getAccountId()
 
-    const result = await this.postgresClient.getOrCreateSyncRun(accountId, triggeredBy)
+    const result = await this.db.getOrCreateSyncRun(accountId, triggeredBy)
 
     // Determine which objects to create runs for
     const objects =
@@ -1475,13 +1499,13 @@ export class StripeSync {
         : [objectFilter as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
 
     if (!result) {
-      const activeRun = await this.postgresClient.getActiveSyncRun(accountId)
+      const activeRun = await this.db.getActiveSyncRun(accountId)
       if (!activeRun) {
         throw new Error('Failed to get or create sync run')
       }
       // Create object runs upfront to prevent premature close
       // Convert object types to resource names for database storage
-      await this.postgresClient.createObjectRuns(
+      await this.db.createObjectRuns(
         activeRun.accountId,
         activeRun.runStartedAt,
         objects.map((obj) => this.getResourceName(obj))
@@ -1495,7 +1519,7 @@ export class StripeSync {
     const { accountId: runAccountId, runStartedAt } = result
     // Create object runs upfront to prevent premature close
     // Convert object types to resource names for database storage
-    await this.postgresClient.createObjectRuns(
+    await this.db.createObjectRuns(
       runAccountId,
       runStartedAt,
       objects.map((obj) => this.getResourceName(obj))
@@ -1606,12 +1630,12 @@ export class StripeSync {
       }
 
       // Close the sync run after all objects are done (status derived from object states)
-      await this.postgresClient.closeSyncRun(accountId, runStartedAt)
+      await this.db.closeSyncRun(accountId, runStartedAt)
 
       return results
     } catch (error) {
       // Close the sync run on error (status will be 'error' based on failed object states)
-      await this.postgresClient.closeSyncRun(accountId, runStartedAt)
+      await this.db.closeSyncRun(accountId, runStartedAt)
       throw error
     }
   }
@@ -1627,8 +1651,8 @@ export class StripeSync {
     const resourceName = 'payment_methods'
 
     // Create object run
-    await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
-    await this.postgresClient.tryStartObjectSync(accountId, runStartedAt, resourceName)
+    await this.db.createObjectRuns(accountId, runStartedAt, [resourceName])
+    await this.db.tryStartObjectSync(accountId, runStartedAt, resourceName)
 
     try {
       // Query customers from database
@@ -1673,7 +1697,7 @@ export class StripeSync {
                     syncParams?.backfillRelatedEntities
                   )
                   synced += currentBatch.length
-                  await this.postgresClient.incrementObjectProgress(
+                  await this.db.incrementObjectProgress(
                     accountId,
                     runStartedAt,
                     resourceName,
@@ -1697,7 +1721,7 @@ export class StripeSync {
                 syncParams?.backfillRelatedEntities
               )
               synced += currentBatch.length
-              await this.postgresClient.incrementObjectProgress(
+              await this.db.incrementObjectProgress(
                 accountId,
                 runStartedAt,
                 resourceName,
@@ -1709,11 +1733,11 @@ export class StripeSync {
       }
 
       // Complete object run
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
 
       return { synced }
     } catch (error) {
-      await this.postgresClient.failObjectSync(
+      await this.db.failObjectSync(
         accountId,
         runStartedAt,
         resourceName,
@@ -2045,7 +2069,7 @@ export class StripeSync {
                       syncParams?.backfillRelatedEntities
                     )
                     synced += currentBatch.length
-                    await this.postgresClient.incrementObjectProgress(
+                    await this.db.incrementObjectProgress(
                       accountId,
                       runStartedAt,
                       'payment_methods',
@@ -2069,7 +2093,7 @@ export class StripeSync {
                   syncParams?.backfillRelatedEntities
                 )
                 synced += currentBatch.length
-                await this.postgresClient.incrementObjectProgress(
+                await this.db.incrementObjectProgress(
                   accountId,
                   runStartedAt,
                   'payment_methods',
@@ -2081,7 +2105,7 @@ export class StripeSync {
         }
 
         // Mark object sync as complete (run completion handled by withSyncRun)
-        await this.postgresClient.completeObjectSync(accountId, runStartedAt, 'payment_methods')
+        await this.db.completeObjectSync(accountId, runStartedAt, 'payment_methods')
 
         return { synced }
       }
@@ -2278,14 +2302,14 @@ export class StripeSync {
     const accountId = await this.getAccountId()
 
     // Get cursor from LAST COMPLETED sync (for incremental sync)
-    const lastCursor = await this.postgresClient.getLastCompletedCursor(accountId, resourceName)
+    const lastCursor = await this.db.getLastCompletedCursor(accountId, resourceName)
     const cursor = lastCursor ? parseInt(lastCursor) : null
 
     // Get or create sync run
-    const runKey = await this.postgresClient.getOrCreateSyncRun(accountId, triggeredBy)
+    const runKey = await this.db.getOrCreateSyncRun(accountId, triggeredBy)
     if (!runKey) {
       // Race condition - get active run
-      const activeRun = await this.postgresClient.getActiveSyncRun(accountId)
+      const activeRun = await this.db.getActiveSyncRun(accountId)
       if (!activeRun) {
         throw new Error('Failed to get or create sync run')
       }
@@ -2295,19 +2319,19 @@ export class StripeSync {
     const { runStartedAt } = runKey
 
     // Create and start object run
-    await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
-    await this.postgresClient.tryStartObjectSync(accountId, runStartedAt, resourceName)
+    await this.db.createObjectRuns(accountId, runStartedAt, [resourceName])
+    await this.db.tryStartObjectSync(accountId, runStartedAt, resourceName)
 
     try {
       const result = await fn(cursor, runStartedAt)
 
       // Complete the sync run
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
 
       return result
     } catch (error) {
       // Fail the sync run
-      await this.postgresClient.failObjectSync(
+      await this.db.failObjectSync(
         accountId,
         runStartedAt,
         resourceName,
@@ -2351,7 +2375,7 @@ export class StripeSync {
               totalSynced += currentBatch.length
 
               // Update progress and cursor with max created from this batch
-              await this.postgresClient.incrementObjectProgress(
+              await this.db.incrementObjectProgress(
                 accountId,
                 runStartedAt,
                 resourceName,
@@ -2361,7 +2385,7 @@ export class StripeSync {
                 ...currentBatch.map((i) => (i as { created?: number }).created || 0)
               )
               if (maxCreated > 0) {
-                await this.postgresClient.updateObjectCursor(
+                await this.db.updateObjectCursor(
                   accountId,
                   runStartedAt,
                   resourceName,
@@ -2386,7 +2410,7 @@ export class StripeSync {
           await upsert(currentBatch, accountId)
           totalSynced += currentBatch.length
 
-          await this.postgresClient.incrementObjectProgress(
+          await this.db.incrementObjectProgress(
             accountId,
             runStartedAt,
             resourceName,
@@ -2396,7 +2420,7 @@ export class StripeSync {
             ...currentBatch.map((i) => (i as { created?: number }).created || 0)
           )
           if (maxCreated > 0) {
-            await this.postgresClient.updateObjectCursor(
+            await this.db.updateObjectCursor(
               accountId,
               runStartedAt,
               resourceName,
@@ -2413,7 +2437,7 @@ export class StripeSync {
           await upsert(currentBatch, accountId)
           totalSynced += currentBatch.length
 
-          await this.postgresClient.incrementObjectProgress(
+          await this.db.incrementObjectProgress(
             accountId,
             runStartedAt,
             resourceName,
@@ -2423,7 +2447,7 @@ export class StripeSync {
             ...currentBatch.map((i) => (i as { created?: number }).created || 0)
           )
           if (maxCreated > 0) {
-            await this.postgresClient.updateObjectCursor(
+            await this.db.updateObjectCursor(
               accountId,
               runStartedAt,
               resourceName,
@@ -2434,12 +2458,12 @@ export class StripeSync {
         throw error
       }
 
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
+      await this.db.completeObjectSync(accountId, runStartedAt, resourceName)
 
       this.config.logger?.info(`Sync complete: ${totalSynced} items synced`)
       return { synced: totalSynced }
     } catch (error) {
-      await this.postgresClient.failObjectSync(
+      await this.db.failObjectSync(
         accountId,
         runStartedAt,
         resourceName,
@@ -2466,7 +2490,7 @@ export class StripeSync {
       this.stripe.refunds.list({ charge: id, limit: 100 })
     )
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       charges,
       'charges',
       accountId,
@@ -2475,7 +2499,7 @@ export class StripeSync {
   }
 
   private async backfillCharges(chargeIds: string[], accountId: string) {
-    const missingChargeIds = await this.postgresClient.findMissingEntries('charges', chargeIds)
+    const missingChargeIds = await this.db.findMissingEntries('charges', chargeIds)
 
     await this.fetchMissingEntities(missingChargeIds, (id) =>
       this.stripe.charges.retrieve(id)
@@ -2483,7 +2507,7 @@ export class StripeSync {
   }
 
   private async backfillPaymentIntents(paymentIntentIds: string[], accountId: string) {
-    const missingIds = await this.postgresClient.findMissingEntries(
+    const missingIds = await this.db.findMissingEntries(
       'payment_intents',
       paymentIntentIds
     )
@@ -2510,7 +2534,7 @@ export class StripeSync {
       this.stripe.creditNotes.listLineItems(id, { limit: 100 })
     )
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       creditNotes,
       'credit_notes',
       accountId,
@@ -2534,7 +2558,7 @@ export class StripeSync {
     }
 
     // Upsert checkout sessions first
-    const rows = await this.postgresClient.upsertManyWithTimestampProtection(
+    const rows = await this.db.upsertManyWithTimestampProtection(
       checkoutSessions,
       'checkout_sessions',
       accountId,
@@ -2563,7 +2587,7 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       earlyFraudWarnings,
       'early_fraud_warnings',
       accountId,
@@ -2584,7 +2608,7 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       refunds,
       'refunds',
       accountId,
@@ -2605,7 +2629,7 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       reviews,
       'reviews',
       accountId,
@@ -2621,13 +2645,13 @@ export class StripeSync {
     const deletedCustomers = customers.filter((customer) => customer.deleted)
     const nonDeletedCustomers = customers.filter((customer) => !customer.deleted)
 
-    await this.postgresClient.upsertManyWithTimestampProtection(
+    await this.db.upsertManyWithTimestampProtection(
       nonDeletedCustomers,
       'customers',
       accountId,
       syncTimestamp
     )
-    await this.postgresClient.upsertManyWithTimestampProtection(
+    await this.db.upsertManyWithTimestampProtection(
       deletedCustomers,
       'customers',
       accountId,
@@ -2638,7 +2662,7 @@ export class StripeSync {
   }
 
   async backfillCustomers(customerIds: string[], accountId: string) {
-    const missingIds = await this.postgresClient.findMissingEntries('customers', customerIds)
+    const missingIds = await this.db.findMissingEntries('customers', customerIds)
 
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.customers.retrieve(id))
       .then((entries) => this.upsertCustomers(entries, accountId))
@@ -2658,7 +2682,7 @@ export class StripeSync {
       await this.backfillCharges(getUniqueIds(disputes, 'charge'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       disputes,
       'disputes',
       accountId,
@@ -2683,7 +2707,7 @@ export class StripeSync {
       this.stripe.invoices.listLineItems(id, { limit: 100 })
     )
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       invoices,
       'invoices',
       accountId,
@@ -2692,14 +2716,14 @@ export class StripeSync {
   }
 
   backfillInvoices = async (invoiceIds: string[], accountId: string) => {
-    const missingIds = await this.postgresClient.findMissingEntries('invoices', invoiceIds)
+    const missingIds = await this.db.findMissingEntries('invoices', invoiceIds)
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.invoices.retrieve(id)).then(
       (entries) => this.upsertInvoices(entries, accountId)
     )
   }
 
   backfillPrices = async (priceIds: string[], accountId: string) => {
-    const missingIds = await this.postgresClient.findMissingEntries('prices', priceIds)
+    const missingIds = await this.db.findMissingEntries('prices', priceIds)
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.prices.retrieve(id)).then(
       (entries) => this.upsertPrices(entries, accountId)
     )
@@ -2715,7 +2739,7 @@ export class StripeSync {
       await this.backfillProducts(getUniqueIds(plans, 'product'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       plans,
       'plans',
       accountId,
@@ -2724,7 +2748,7 @@ export class StripeSync {
   }
 
   async deletePlan(id: string): Promise<boolean> {
-    return this.postgresClient.delete('plans', id)
+    return this.db.delete('plans', id)
   }
 
   async upsertPrices(
@@ -2737,7 +2761,7 @@ export class StripeSync {
       await this.backfillProducts(getUniqueIds(prices, 'product'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       prices,
       'prices',
       accountId,
@@ -2746,7 +2770,7 @@ export class StripeSync {
   }
 
   async deletePrice(id: string): Promise<boolean> {
-    return this.postgresClient.delete('prices', id)
+    return this.db.delete('prices', id)
   }
 
   async upsertProducts(
@@ -2754,7 +2778,7 @@ export class StripeSync {
     accountId: string,
     syncTimestamp?: string
   ): Promise<Stripe.Product[]> {
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       products,
       'products',
       accountId,
@@ -2763,11 +2787,11 @@ export class StripeSync {
   }
 
   async deleteProduct(id: string): Promise<boolean> {
-    return this.postgresClient.delete('products', id)
+    return this.db.delete('products', id)
   }
 
   async backfillProducts(productIds: string[], accountId: string) {
-    const missingProductIds = await this.postgresClient.findMissingEntries('products', productIds)
+    const missingProductIds = await this.db.findMissingEntries('products', productIds)
 
     await this.fetchMissingEntities(missingProductIds, (id) =>
       this.stripe.products.retrieve(id)
@@ -2787,7 +2811,7 @@ export class StripeSync {
       ])
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       paymentIntents,
       'payment_intents',
       accountId,
@@ -2805,7 +2829,7 @@ export class StripeSync {
       await this.backfillCustomers(getUniqueIds(paymentMethods, 'customer'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       paymentMethods,
       'payment_methods',
       accountId,
@@ -2823,7 +2847,7 @@ export class StripeSync {
       await this.backfillCustomers(getUniqueIds(setupIntents, 'customer'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       setupIntents,
       'setup_intents',
       accountId,
@@ -2841,7 +2865,7 @@ export class StripeSync {
       await this.backfillCustomers(getUniqueIds(taxIds, 'customer'), accountId)
     }
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       taxIds,
       'tax_ids',
       accountId,
@@ -2850,7 +2874,7 @@ export class StripeSync {
   }
 
   async deleteTaxId(id: string): Promise<boolean> {
-    return this.postgresClient.delete('tax_ids', id)
+    return this.db.delete('tax_ids', id)
   }
 
   async upsertSubscriptionItems(
@@ -2873,7 +2897,7 @@ export class StripeSync {
       }
     })
 
-    await this.postgresClient.upsertManyWithTimestampProtection(
+    await this.db.upsertManyWithTimestampProtection(
       modifiedSubscriptionItems,
       'subscription_items',
       accountId,
@@ -2945,7 +2969,7 @@ export class StripeSync {
       }
     })
 
-    await this.postgresClient.upsertManyWithTimestampProtection(
+    await this.db.upsertManyWithTimestampProtection(
       modifiedLineItems,
       'checkout_session_line_items',
       accountId,
@@ -2962,7 +2986,7 @@ export class StripeSync {
     select id from "stripe"."subscription_items"
     where subscription = :subscriptionId and COALESCE(deleted, false) = false;
     `)({ subscriptionId })
-    const { rows } = await this.postgresClient.query(prepared.text, prepared.values)
+    const { rows } = await this.db.query(prepared.text, prepared.values)
     const deletedIds = rows.filter(
       ({ id }: { id: string }) => currentSubItemIds.includes(id) === false
     )
@@ -2976,7 +3000,7 @@ export class StripeSync {
       set _raw_data = jsonb_set(_raw_data, '{deleted}', 'true'::jsonb)
       where id=any(:ids::text[]);
       `)({ ids })
-      const { rowCount } = await this.postgresClient.query(prepared.text, prepared.values)
+      const { rowCount } = await this.db.query(prepared.text, prepared.values)
       return { rowCount: rowCount || 0 }
     } else {
       return { rowCount: 0 }
@@ -2996,7 +3020,7 @@ export class StripeSync {
     }
 
     // Run it
-    const rows = await this.postgresClient.upsertManyWithTimestampProtection(
+    const rows = await this.db.upsertManyWithTimestampProtection(
       subscriptionSchedules,
       'subscription_schedules',
       accountId,
@@ -3023,7 +3047,7 @@ export class StripeSync {
     )
 
     // Run it
-    const rows = await this.postgresClient.upsertManyWithTimestampProtection(
+    const rows = await this.db.upsertManyWithTimestampProtection(
       subscriptions,
       'subscriptions',
       accountId,
@@ -3058,7 +3082,7 @@ export class StripeSync {
       delete from "stripe"."active_entitlements"
       where customer = :customerId and id <> ALL(:currentActiveEntitlementIds::text[]);
       `)({ customerId, currentActiveEntitlementIds })
-    const { rowCount } = await this.postgresClient.query(prepared.text, prepared.values)
+    const { rowCount } = await this.db.query(prepared.text, prepared.values)
     return { rowCount: rowCount || 0 }
   }
 
@@ -3067,7 +3091,7 @@ export class StripeSync {
     accountId: string,
     syncTimestamp?: string
   ) {
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       features,
       'features',
       accountId,
@@ -3076,7 +3100,7 @@ export class StripeSync {
   }
 
   async backfillFeatures(featureIds: string[], accountId: string) {
-    const missingFeatureIds = await this.postgresClient.findMissingEntries('features', featureIds)
+    const missingFeatureIds = await this.db.findMissingEntries('features', featureIds)
     await this.fetchMissingEntities(missingFeatureIds, (id) =>
       this.stripe.entitlements.features.retrieve(id)
     )
@@ -3111,7 +3135,7 @@ export class StripeSync {
       lookup_key: entitlement.lookup_key,
     }))
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       entitlements,
       'active_entitlements',
       accountId,
@@ -3135,7 +3159,7 @@ export class StripeSync {
     // A webhook should be guaranteed unique over account id and url
     const lockKey = `webhook:${accountId}:${url}`
 
-    return this.postgresClient.withAdvisoryLock(lockKey, async () => {
+    return this.db.withAdvisoryLock(lockKey, async () => {
       // Step 1: Check if we already have a webhook for this URL (and account ID) in the database
       const existingWebhook = await this.getManagedWebhookByUrl(url)
 
@@ -3153,7 +3177,7 @@ export class StripeSync {
             'Webhook is disabled, deleting and will recreate'
           )
           await this.stripe.webhookEndpoints.del(existingWebhook.id)
-          await this.postgresClient.delete('_managed_webhooks', existingWebhook.id)
+          await this.db.delete('_managed_webhooks', existingWebhook.id)
         } catch (error) {
           // Only delete from database if it's a 404 (webhook deleted in Stripe)
           // Other errors (network issues, rate limits, etc.) should not remove from DB
@@ -3163,7 +3187,7 @@ export class StripeSync {
               { error, webhookId: existingWebhook.id },
               'Webhook not found in Stripe (404), removing from database'
             )
-            await this.postgresClient.delete('_managed_webhooks', existingWebhook.id)
+            await this.db.delete('_managed_webhooks', existingWebhook.id)
           } else {
             // For other errors, log but don't delete - could be transient
             this.config.logger?.error(
@@ -3192,7 +3216,7 @@ export class StripeSync {
               'Failed to delete old webhook from Stripe'
             )
           }
-          await this.postgresClient.delete('_managed_webhooks', dbWebhook.id)
+          await this.db.delete('_managed_webhooks', dbWebhook.id)
         }
       }
 
@@ -3258,7 +3282,7 @@ export class StripeSync {
 
   async getManagedWebhook(id: string): Promise<Stripe.WebhookEndpoint | null> {
     const accountId = await this.getAccountId()
-    const result = await this.postgresClient.query(
+    const result = await this.db.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE id = $1 AND "account_id" = $2`,
       [id, accountId]
     )
@@ -3273,7 +3297,7 @@ export class StripeSync {
    */
   async getManagedWebhookByUrl(url: string): Promise<Stripe.WebhookEndpoint | null> {
     const accountId = await this.getAccountId()
-    const result = await this.postgresClient.query(
+    const result = await this.db.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE url = $1 AND "account_id" = $2`,
       [url, accountId]
     )
@@ -3282,7 +3306,7 @@ export class StripeSync {
 
   async listManagedWebhooks(): Promise<Array<Stripe.WebhookEndpoint>> {
     const accountId = await this.getAccountId()
-    const result = await this.postgresClient.query(
+    const result = await this.db.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE "account_id" = $1 ORDER BY created DESC`,
       [accountId]
     )
@@ -3301,7 +3325,7 @@ export class StripeSync {
 
   async deleteManagedWebhook(id: string): Promise<boolean> {
     await this.stripe.webhookEndpoints.del(id)
-    return this.postgresClient.delete('_managed_webhooks', id)
+    return this.db.delete('_managed_webhooks', id)
   }
 
   async upsertManagedWebhooks(
@@ -3321,7 +3345,7 @@ export class StripeSync {
       return filtered
     })
 
-    return this.postgresClient.upsertManyWithTimestampProtection(
+    return this.db.upsertManyWithTimestampProtection(
       filteredWebhooks as unknown as Array<Stripe.WebhookEndpoint>,
       '_managed_webhooks',
       accountId,
@@ -3330,7 +3354,7 @@ export class StripeSync {
   }
 
   async backfillSubscriptions(subscriptionIds: string[], accountId: string) {
-    const missingSubscriptionIds = await this.postgresClient.findMissingEntries(
+    const missingSubscriptionIds = await this.db.findMissingEntries(
       'subscriptions',
       subscriptionIds
     )
@@ -3341,7 +3365,7 @@ export class StripeSync {
   }
 
   backfillSubscriptionSchedules = async (subscriptionIds: string[], accountId: string) => {
-    const missingSubscriptionIds = await this.postgresClient.findMissingEntries(
+    const missingSubscriptionIds = await this.db.findMissingEntries(
       'subscription_schedules',
       subscriptionIds
     )
@@ -3420,7 +3444,9 @@ export class StripeSync {
    * Call this when you're done using the StripeSync instance.
    */
   async close(): Promise<void> {
-    await this.postgresClient.pool.end()
+    if (this.db.pool.end) {
+      await this.db.pool.end()
+    }
   }
 }
 

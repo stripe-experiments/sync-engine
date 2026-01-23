@@ -1,6 +1,7 @@
 import { type PoolConfig } from 'pg'
 import Stripe from 'stripe'
 import type { SigmaIngestionConfig } from './sigma/sigmaIngestion'
+import type { DatabaseType } from './database/SyncDatabaseClient'
 
 /**
  * Simple logger interface compatible with both pino and console
@@ -32,6 +33,13 @@ export type RevalidateEntity =
   | 'entitlements'
 
 export type StripeSyncConfig = {
+  /**
+   * Database type to use. Defaults to 'postgres'.
+   * - 'postgres': Full feature support including managed webhooks and sync observability
+   * - 'duckdb': Core sync operations only (backfill, upsert, cursor tracking)
+   */
+  databaseType?: DatabaseType
+
   /** @deprecated Use `poolConfig` with a connection string instead. */
   databaseUrl?: string
 
@@ -76,7 +84,8 @@ export type StripeSyncConfig = {
   /** @deprecated Use `poolConfig` instead. */
   maxPostgresConnections?: number
 
-  poolConfig: PoolConfig
+  /** PostgreSQL pool configuration. Required when databaseType is 'postgres'. */
+  poolConfig?: PoolConfig
 
   logger?: Logger
 

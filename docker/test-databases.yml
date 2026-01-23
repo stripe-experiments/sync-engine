@@ -1,0 +1,36 @@
+# Docker Compose file for running multi-database tests
+# Usage: docker compose -f docker/test-databases.yml up -d
+#
+# This starts PostgreSQL and MySQL containers for integration testing.
+# SQLite and DuckDB run in-memory and don't need containers.
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: stripe-test-postgres
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8
+    container_name: stripe-test-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: stripe_test
+    command: --mysql-native-password=ON
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

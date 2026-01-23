@@ -13,3 +13,10 @@ private/
 .mcp.*
 .vercel
 .env*.local
+
+# Test database files
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

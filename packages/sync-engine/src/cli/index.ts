@@ -50,12 +50,18 @@ program
   .command('backfill <entityName>')
   .description('Backfill a specific entity type from Stripe (e.g., customer, invoice, product)')
   .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
-  .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--database-url <url>', 'Database URL (PostgreSQL or file path for DuckDB)')
+  .option(
+    '--database-type <type>',
+    'Database type: postgres (default) or duckdb',
+    'postgres'
+  )
   .action(async (entityName, options) => {
     await backfillCommand(
       {
         stripeKey: options.stripeKey,
         databaseUrl: options.databaseUrl,
+        databaseType: options.databaseType,
       },
       entityName
     )
