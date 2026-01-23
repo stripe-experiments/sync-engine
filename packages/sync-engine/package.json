@@ -28,7 +28,13 @@
     "prebuild": "npm run clean",
     "build": "tsup src/index.ts src/supabase/index.ts src/cli/index.ts src/cli/lib.ts --format esm,cjs --dts --shims && cp -r src/database/migrations dist/migrations",
     "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "test": "vitest",
+    "test:all-databases": "docker compose -f ../../docker/test-databases.yml up -d --wait && vitest run src/database/adapters/multi-db.test.ts && docker compose -f ../../docker/test-databases.yml down",
+    "test:postgres": "TEST_DATABASES=postgres vitest run src/database/adapters/multi-db.test.ts",
+    "test:mysql": "TEST_DATABASES=mysql vitest run src/database/adapters/multi-db.test.ts",
+    "test:sqlite": "TEST_DATABASES=sqlite vitest run src/database/adapters/multi-db.test.ts",
+    "test:duckdb": "TEST_DATABASES=duckdb vitest run src/database/adapters/multi-db.test.ts",
+    "test:memory-dbs": "TEST_DATABASES=sqlite,duckdb vitest run src/database/adapters/multi-db.test.ts"
   },
   "files": [
     "dist"
