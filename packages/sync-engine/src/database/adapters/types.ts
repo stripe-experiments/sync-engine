@@ -73,10 +73,9 @@ export interface DatabaseAdapter {
   getLastInsertId?(): Promise<string | number | null>
 }
 
-/**
- * Supported database types
- */
-export type DatabaseType = 'postgres' | 'mysql' | 'sqlite' | 'duckdb'
+// DatabaseType is defined in SyncDatabaseClient.ts - re-export for convenience
+export type { DatabaseType } from '../SyncDatabaseClient.js'
+import type { DatabaseType } from '../SyncDatabaseClient.js'
 
 /**
  * Configuration for creating a database adapter

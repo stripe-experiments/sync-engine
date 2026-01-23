@@ -13,6 +13,7 @@ export interface CliOptions {
   stripeKey?: string
   ngrokToken?: string
   databaseUrl?: string
+  databaseType?: 'postgres' | 'duckdb' | 'sqlite' | 'mysql'
   enableSigma?: boolean
 }
 

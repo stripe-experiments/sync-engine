@@ -14,6 +14,86 @@ import {
 } from '../index'
 import { createTunnel, type NgrokTunnel } from './ngrok'
 import { install, uninstall } from '../supabase'
+import type { BaseSyncClient } from '../database/BaseSyncClient'
+import type { DatabaseType } from '../database/SyncDatabaseClient'
+
+/**
+ * Database URL prompt configuration by type
+ */
+const DATABASE_PROMPTS: Record<DatabaseType, {
+  type: 'input' | 'password'
+  message: string
+  default?: string
+  prefix?: string
+}> = {
+  duckdb: {
+    type: 'input',
+    message: 'Enter your DuckDB file path (or :memory: for in-memory):',
+    default: './stripe.duckdb',
+  },
+  sqlite: {
+    type: 'input',
+    message: 'Enter your SQLite file path (or :memory: for in-memory):',
+    default: './stripe.sqlite',
+  },
+  mysql: {
+    type: 'password',
+    message: 'Enter your MySQL connection URL:',
+    prefix: 'mysql://',
+  },
+  postgres: {
+    type: 'password',
+    message: 'Enter your Postgres DATABASE_URL:',
+    prefix: 'postgres://',
+  },
+}
+
+/**
+ * Get the inquirer prompt config for database URL
+ */
+function getDatabaseUrlPrompt(databaseType: DatabaseType) {
+  const config = DATABASE_PROMPTS[databaseType]
+  return {
+    type: config.type,
+    name: 'databaseUrl',
+    message: config.message,
+    default: config.default,
+    mask: config.type === 'password' ? '*' : undefined,
+    validate: (input: string) => {
+      if (!input || input.trim() === '') {
+        return `${databaseType} database URL/path is required`
+      }
+      if (config.prefix && !input.startsWith(config.prefix) &&
+          !(config.prefix === 'postgres://' && input.startsWith('postgresql://'))) {
+        return `URL should start with "${config.prefix}"`
+      }
+      return true
+    },
+  }
+}
+
+/**
+ * Mask sensitive parts of database URL for logging
+ */
+function maskDatabaseUrl(url: string, databaseType: DatabaseType): string {
+  if (databaseType === 'duckdb' || databaseType === 'sqlite') {
+    return url // File paths aren't sensitive
+  }
+  return url.replace(/:[^:@]+@/, ':****@')
+}
+
+/**
+ * Get display name for database type
+ */
+function getDatabaseDisplayName(databaseType: DatabaseType): string {
+  const names: Record<DatabaseType, string> = {
+    postgres: 'PostgreSQL',
+    mysql: 'MySQL',
+    sqlite: 'SQLite',
+    duckdb: 'DuckDB',
+  }
+  return names[databaseType]
+}
 
 export interface DeployOptions {
   supabaseAccessToken?: string
@@ -70,6 +150,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     // For backfill, we only need stripe key and database URL (not ngrok token)
     dotenv.config()
 
+    const databaseType = options.databaseType || 'postgres'
     let stripeApiKey =
       options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
     let databaseUrl = options.databaseUrl || process.env.DATABASE_URL || ''
@@ -97,21 +178,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
       }
 
       if (!databaseUrl) {
-        questions.push({
-          type: 'password',
-          name: 'databaseUrl',
-          message: 'Enter your Postgres DATABASE_URL:',
-          mask: '*',
-          validate: (input: string) => {
-            if (!input || input.trim() === '') {
-              return 'DATABASE_URL is required'
-            }
-            if (!input.startsWith('postgres://') && !input.startsWith('postgresql://')) {
-              return 'DATABASE_URL should start with "postgres://" or "postgresql://"'
-            }
-            return true
-          },
-        })
+        questions.push(getDatabaseUrlPrompt(databaseType))
       }
 
       if (questions.length > 0) {
@@ -125,40 +192,48 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     const config = {
       stripeApiKey,
       databaseUrl,
+      databaseType,
       ngrokAuthToken: '', // Not needed for backfill
     }
-    console.log(chalk.blue(`Backfilling ${entityName} from Stripe in 'stripe' schema...`))
-    console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
-    // Run migrations first (will check for legacy installations and throw if detected)
-    try {
-      await runMigrations({
-        databaseUrl: config.databaseUrl,
-      })
-    } catch (migrationError) {
-      console.error(chalk.red('Failed to run migrations:'))
-      console.error(
-        migrationError instanceof Error ? migrationError.message : String(migrationError)
-      )
-      throw migrationError
+    // Log what we're about to do
+    const dbDisplayName = getDatabaseDisplayName(databaseType)
+    console.log(chalk.blue(`Backfilling ${entityName} from Stripe to ${dbDisplayName}...`))
+    console.log(chalk.gray(`Database: ${maskDatabaseUrl(config.databaseUrl, databaseType)}`))
+
+    // PostgreSQL needs migrations run separately
+    if (databaseType === 'postgres') {
+      try {
+        await runMigrations({ databaseUrl: config.databaseUrl })
+      } catch (migrationError) {
+        console.error(chalk.red('Failed to run migrations:'))
+        console.error(migrationError instanceof Error ? migrationError.message : String(migrationError))
+        throw migrationError
+      }
     }
 
     // Create StripeSync instance
-    const poolConfig: PoolConfig = {
-      max: 10,
-      connectionString: config.databaseUrl,
-      keepAlive: true,
-    }
-
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
+      databaseType,
       stripeSecretKey: config.stripeApiKey,
-      enableSigma: process.env.ENABLE_SIGMA === 'true',
+      enableSigma: databaseType === 'postgres' ? process.env.ENABLE_SIGMA === 'true' : undefined,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
-      poolConfig,
+      poolConfig: databaseType === 'postgres' ? {
+        max: 10,
+        connectionString: config.databaseUrl,
+        keepAlive: true,
+      } : undefined,
     })
+
+    // Non-PostgreSQL databases need schema migration via the client
+    if (databaseType !== 'postgres') {
+      console.log(chalk.gray(`Initializing ${dbDisplayName} schema...`))
+      const client = stripeSync.postgresClient as BaseSyncClient
+      await client.migrate()
+    }
 
     // Run sync for the specified entity
     const result = await stripeSync.processUntilDone({ object: entityName as SyncObject })

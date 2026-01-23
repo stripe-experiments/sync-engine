@@ -1,4 +1,5 @@
 export * from './types.js'
+export { BaseDialect } from './base.js'
 export { PostgresDialect, postgresDialect } from './postgres.js'
 export { MySQLDialect, mysqlDialect } from './mysql.js'
 export { SQLiteDialect, sqliteDialect } from './sqlite.js'
