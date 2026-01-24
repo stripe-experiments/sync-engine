@@ -30,7 +30,7 @@
     "lint": "eslint src --ext .ts",
     "test": "vitest",
     "test:integration": "TEST_POSTGRES_DB_URL=postgresql://postgres:postgres@localhost:55432/postgres vitest run src/stripeSync*integration.test.ts",
-    "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts"
+    "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts",
   },
   "files": [
     "dist"
