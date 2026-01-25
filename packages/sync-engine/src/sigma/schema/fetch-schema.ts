@@ -58,7 +58,7 @@ async function fetchSchema() {
 
   await fs.mkdir(ARTIFACTS_DIR, { recursive: true })
   await fs.writeFile(OUTPUT_FILE, JSON.stringify(data, null, 2))
-  
+
   logSection('Schema Artifact', [`Saved: ${chalk.gray(OUTPUT_FILE)}`])
 
   return data
@@ -130,6 +130,12 @@ function buildConfig(table: ReportingTable, pks: ReportingTable['columns']) {
         type: mapSigmaTypeToCursor(c.type),
       })),
     },
+    columns: table.columns.map((c) => ({
+      name: c.name,
+      sigmaType: c.type,
+      pgType: mapSigmaTypeToPg(c.type, c.name),
+      primaryKey: !!c.primary_key,
+    })),
     upsert: {
       conflictTarget: ['_account_id', ...pks.map((c) => c.name)],
       extraColumns: pks.map((c) => ({

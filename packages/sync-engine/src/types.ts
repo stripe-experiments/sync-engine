@@ -45,6 +45,12 @@ export type StripeSyncConfig = {
    */
   enableSigma?: boolean
 
+  /**
+   * Postgres schema name for Sigma tables.
+   * Default: "sigma"
+   */
+  sigmaSchemaName?: string
+
   /** Stripe account ID. If not provided, will be retrieved from Stripe API. Used as fallback option. */
   stripeAccountId?: string
 
@@ -133,8 +139,6 @@ export type SyncObject =
   | 'early_fraud_warning'
   | 'refund'
   | 'checkout_sessions'
-  | 'subscription_item_change_events_v2_beta'
-  | 'exchange_rates_from_usd'
 export interface Sync {
   synced: number
 }
@@ -159,6 +163,8 @@ export interface SyncBackfill {
   checkoutSessions?: Sync
   subscriptionItemChangeEventsV2Beta?: Sync
   exchangeRatesFromUsd?: Sync
+  /** Sigma-backed results by table name (e.g. subscription_item_change_events_v2_beta). */
+  sigma?: Record<string, Sync>
 }
 
 export interface SyncParams {

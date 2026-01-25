@@ -33,7 +33,9 @@ type MockStripeObject = { id: string; created: number; [key: string]: unknown }
 let customerIdCounter = 0
 let planIdCounter = 0
 
-export function createMockCustomer(overrides: { id?: string; created?: number } = {}): MockStripeObject {
+export function createMockCustomer(
+  overrides: { id?: string; created?: number } = {}
+): MockStripeObject {
   customerIdCounter++
   return {
     id: overrides.id ?? `cus_test_${customerIdCounter.toString().padStart(6, '0')}`,
@@ -42,7 +44,9 @@ export function createMockCustomer(overrides: { id?: string; created?: number } 
   }
 }
 
-export function createMockPlan(overrides: { id?: string; created?: number } = {}): MockStripeObject {
+export function createMockPlan(
+  overrides: { id?: string; created?: number } = {}
+): MockStripeObject {
   planIdCounter++
   return {
     id: overrides.id ?? `plan_test_${planIdCounter.toString().padStart(6, '0')}`,
@@ -51,7 +55,10 @@ export function createMockPlan(overrides: { id?: string; created?: number } = {}
   }
 }
 
-export function createMockCustomerBatch(count: number, startTimestamp?: number): MockStripeObject[] {
+export function createMockCustomerBatch(
+  count: number,
+  startTimestamp?: number
+): MockStripeObject[] {
   const baseTimestamp = startTimestamp ?? Math.floor(Date.now() / 1000)
   return Array.from({ length: count }, (_, i) => createMockCustomer({ created: baseTimestamp - i }))
 }
@@ -85,7 +92,6 @@ export function createPaginatedResponse(
     }
   }
 
-
   const pageItems = items.slice(0, limit)
 
   return { data: pageItems, has_more: items.length > limit, object: 'list' }
@@ -103,22 +109,34 @@ export class DatabaseValidator {
   }
 
   async getCustomerCount(accountId: string): Promise<number> {
-    const result = await this.pool.query('SELECT COUNT(*) as count FROM stripe.customers WHERE _account_id = $1', [accountId])
+    const result = await this.pool.query(
+      'SELECT COUNT(*) as count FROM stripe.customers WHERE _account_id = $1',
+      [accountId]
+    )
     return parseInt(result.rows[0].count, 10)
   }
 
   async getPlanCount(accountId: string): Promise<number> {
-    const result = await this.pool.query('SELECT COUNT(*) as count FROM stripe.plans WHERE _account_id = $1', [accountId])
+    const result = await this.pool.query(
+      'SELECT COUNT(*) as count FROM stripe.plans WHERE _account_id = $1',
+      [accountId]
+    )
     return parseInt(result.rows[0].count, 10)
   }
 
   async getCustomerIds(accountId: string): Promise<string[]> {
-    const result = await this.pool.query('SELECT id FROM stripe.customers WHERE _account_id = $1 ORDER BY id', [accountId])
+    const result = await this.pool.query(
+      'SELECT id FROM stripe.customers WHERE _account_id = $1 ORDER BY id',
+      [accountId]
+    )
     return result.rows.map((row) => row.id)
   }
 
   async getPlanIds(accountId: string): Promise<string[]> {
-    const result = await this.pool.query('SELECT id FROM stripe.plans WHERE _account_id = $1 ORDER BY id', [accountId])
+    const result = await this.pool.query(
+      'SELECT id FROM stripe.plans WHERE _account_id = $1 ORDER BY id',
+      [accountId]
+    )
     return result.rows.map((row) => row.id)
   }
 
@@ -177,21 +195,40 @@ describeWithDb('StripeSync Integration Tests', () => {
     })
 
     // Create test account in database (required for foreign key constraints)
-    await sync.postgresClient.upsertAccount({ id: TEST_ACCOUNT_ID, raw_data: { id: TEST_ACCOUNT_ID } }, 'test_hash')
+    await sync.postgresClient.upsertAccount(
+      { id: TEST_ACCOUNT_ID, raw_data: { id: TEST_ACCOUNT_ID } },
+      'test_hash'
+    )
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(sync as any).getCurrentAccount = vi.fn().mockResolvedValue({ id: TEST_ACCOUNT_ID })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(sync.stripe as any).customers = {
-      list: vi.fn().mockImplementation((params) => Promise.resolve(createPaginatedResponse(mockCustomers, params))),
-      retrieve: vi.fn().mockImplementation((id: string) => Promise.resolve(mockCustomers.find((c) => c.id === id) ?? null)),
+      list: vi
+        .fn()
+        .mockImplementation((params) =>
+          Promise.resolve(createPaginatedResponse(mockCustomers, params))
+        ),
+      retrieve: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(mockCustomers.find((c) => c.id === id) ?? null)
+        ),
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(sync.stripe as any).plans = {
-      list: vi.fn().mockImplementation((params) => Promise.resolve(createPaginatedResponse(mockPlans, params))),
-      retrieve: vi.fn().mockImplementation((id: string) => Promise.resolve(mockPlans.find((p) => p.id === id) ?? null)),
+      list: vi
+        .fn()
+        .mockImplementation((params) =>
+          Promise.resolve(createPaginatedResponse(mockPlans, params))
+        ),
+      retrieve: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(mockPlans.find((p) => p.id === id) ?? null)
+        ),
     }
   })
   it('should have validator connected to database', async () => {
@@ -202,27 +239,27 @@ describeWithDb('StripeSync Integration Tests', () => {
   describe('processNext', () => {
     it('should sync historical data by paginating through it', async () => {
       mockCustomers = createMockCustomerBatch(350)
-  
+
       //every run of processNext should add 100 items
-      for(let i = 1; i <= 3; i++){
-        const syncReturnVal = await sync.processNext('customer');
-      
-        expect(syncReturnVal.hasMore).toStrictEqual(true);
-        expect(syncReturnVal.processed).toStrictEqual(100);
+      for (let i = 1; i <= 3; i++) {
+        const syncReturnVal = await sync.processNext('customer')
+
+        expect(syncReturnVal.hasMore).toStrictEqual(true)
+        expect(syncReturnVal.processed).toStrictEqual(100)
 
         const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-        expect(countInDb).toStrictEqual(100 * i);
+        expect(countInDb).toStrictEqual(100 * i)
       }
 
-      const syncReturnVal = await sync.processNext('customer');
-    
-      expect(syncReturnVal.hasMore).toStrictEqual(false);
+      const syncReturnVal = await sync.processNext('customer')
+
+      expect(syncReturnVal.hasMore).toStrictEqual(false)
 
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(350);
+      expect(countInDb).toStrictEqual(350)
 
-      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID);
-      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id));
+      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID)
+      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id))
     })
 
     it('should sync new records for incremental consistency', async () => {
@@ -232,69 +269,75 @@ describeWithDb('StripeSync Integration Tests', () => {
         (await sync.processNext('customer', { runStartedAt: initialRun.runStartedAt })).hasMore
       ).toStrictEqual(false)
 
-      const testStartTimestamp = Math.floor(Date.now() / 1000) - 1000;
+      const testStartTimestamp = Math.floor(Date.now() / 1000) - 1000
 
-      mockCustomers = createMockCustomerBatch(100);
+      mockCustomers = createMockCustomerBatch(100)
 
       const { runKey: nextRun } = await sync.joinOrCreateSyncRun('test', 'customer')
-      const syncReturnVal = await sync.processNext('customer', { runStartedAt: nextRun.runStartedAt });
+      const syncReturnVal = await sync.processNext('customer', {
+        runStartedAt: nextRun.runStartedAt,
+      })
 
-      expect(syncReturnVal.hasMore).toStrictEqual(false);
+      expect(syncReturnVal.hasMore).toStrictEqual(false)
 
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(100);
+      expect(countInDb).toStrictEqual(100)
 
-      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID);
+      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID)
 
-      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id));
+      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id))
       mockCustomers.forEach((c) => {
-        expect(c.created).toBeGreaterThan(testStartTimestamp);
+        expect(c.created).toBeGreaterThan(testStartTimestamp)
       })
     })
 
     it('should backfill historical records and then pick up new records created during paging', async () => {
-      const historicalStartTimestamp = Math.floor(Date.now() / 1000) - 10000;
-      const historicalCustomers = createMockCustomerBatch(200, historicalStartTimestamp);
-      mockCustomers = historicalCustomers;
+      const historicalStartTimestamp = Math.floor(Date.now() / 1000) - 10000
+      const historicalCustomers = createMockCustomerBatch(200, historicalStartTimestamp)
+      mockCustomers = historicalCustomers
 
       const { runKey: historicalRun } = await sync.joinOrCreateSyncRun('test', 'customer')
 
-      const firstPage = await sync.processNext('customer', { runStartedAt: historicalRun.runStartedAt });
-      expect(firstPage.hasMore).toStrictEqual(true);
-      expect(firstPage.processed).toStrictEqual(100);
+      const firstPage = await sync.processNext('customer', {
+        runStartedAt: historicalRun.runStartedAt,
+      })
+      expect(firstPage.hasMore).toStrictEqual(true)
+      expect(firstPage.processed).toStrictEqual(100)
 
       let countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(100);
+      expect(countInDb).toStrictEqual(100)
 
       // Simulate new records created while the worker is still paging through history.
-      const newStartTimestamp = Math.floor(Date.now() / 1000);
-      const newCustomers = createMockCustomerBatch(5, newStartTimestamp);
-      mockCustomers = [...newCustomers, ...mockCustomers];
+      const newStartTimestamp = Math.floor(Date.now() / 1000)
+      const newCustomers = createMockCustomerBatch(5, newStartTimestamp)
+      mockCustomers = [...newCustomers, ...mockCustomers]
 
-      const secondPage = await sync.processNext('customer', { runStartedAt: historicalRun.runStartedAt });
-      expect(secondPage.hasMore).toStrictEqual(false);
+      const secondPage = await sync.processNext('customer', {
+        runStartedAt: historicalRun.runStartedAt,
+      })
+      expect(secondPage.hasMore).toStrictEqual(false)
 
       countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(200);
+      expect(countInDb).toStrictEqual(200)
 
-      const customersAfterBackfill = await validator.getCustomerIds(TEST_ACCOUNT_ID);
-      expect(customersAfterBackfill).toStrictEqual(historicalCustomers.map((c) => c.id));
+      const customersAfterBackfill = await validator.getCustomerIds(TEST_ACCOUNT_ID)
+      expect(customersAfterBackfill).toStrictEqual(historicalCustomers.map((c) => c.id))
 
       // Next run should pick up the new records via the incremental cursor.
       const { runKey: incrementalRun } = await sync.joinOrCreateSyncRun('test', 'customer')
       const incrementalResult = await sync.processNext('customer', {
         runStartedAt: incrementalRun.runStartedAt,
-      });
+      })
 
-      expect(incrementalResult.hasMore).toStrictEqual(false);
+      expect(incrementalResult.hasMore).toStrictEqual(false)
 
       countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(205);
+      expect(countInDb).toStrictEqual(205)
 
-      const customersAfterIncremental = await validator.getCustomerIds(TEST_ACCOUNT_ID);
+      const customersAfterIncremental = await validator.getCustomerIds(TEST_ACCOUNT_ID)
       expect(customersAfterIncremental).toStrictEqual(
         [...historicalCustomers, ...newCustomers].map((c) => c.id)
-      );
+      )
     })
   })
 
@@ -309,36 +352,36 @@ describeWithDb('StripeSync Integration Tests', () => {
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(350)
 
-      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID);
-      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id));
+      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID)
+      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id))
     })
 
     it('should sync new records for incremental consistency', async () => {
       const initialResult = await sync.processUntilDone({ object: 'customer' })
       expect(initialResult.customers?.synced ?? 0).toStrictEqual(0)
 
-      const testStartTimestamp = Math.floor(Date.now() / 1000) - 1000;
+      const testStartTimestamp = Math.floor(Date.now() / 1000) - 1000
 
-      mockCustomers = createMockCustomerBatch(100);
+      mockCustomers = createMockCustomerBatch(100)
 
       const result = await sync.processUntilDone({ object: 'customer' })
 
       expect(result.customers?.synced).toStrictEqual(100)
 
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(100);
+      expect(countInDb).toStrictEqual(100)
 
-      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID);
-      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id));
+      const customersInDb = await validator.getCustomerIds(TEST_ACCOUNT_ID)
+      expect(customersInDb).toStrictEqual(mockCustomers.map((c) => c.id))
       mockCustomers.forEach((c) => {
-        expect(c.created).toBeGreaterThan(testStartTimestamp);
+        expect(c.created).toBeGreaterThan(testStartTimestamp)
       })
     })
 
     it('should backfill historical records and then pick up new records created during paging', async () => {
-      const historicalStartTimestamp = Math.floor(Date.now() / 1000) - 10000;
-      const historicalCustomers = createMockCustomerBatch(200, historicalStartTimestamp);
-      mockCustomers = historicalCustomers;
+      const historicalStartTimestamp = Math.floor(Date.now() / 1000) - 10000
+      const historicalCustomers = createMockCustomerBatch(200, historicalStartTimestamp)
+      mockCustomers = historicalCustomers
 
       let newCustomers: MockStripeObject[] = []
       let listCallCount = 0
@@ -348,9 +391,9 @@ describeWithDb('StripeSync Integration Tests', () => {
         listCallCount += 1
         const response = createPaginatedResponse(mockCustomers, params)
         if (listCallCount === 1) {
-          const newStartTimestamp = Math.floor(Date.now() / 1000);
-          newCustomers = createMockCustomerBatch(5, newStartTimestamp);
-          mockCustomers = [...newCustomers, ...mockCustomers];
+          const newStartTimestamp = Math.floor(Date.now() / 1000)
+          newCustomers = createMockCustomerBatch(5, newStartTimestamp)
+          mockCustomers = [...newCustomers, ...mockCustomers]
         }
         return Promise.resolve(response)
       })
@@ -359,21 +402,21 @@ describeWithDb('StripeSync Integration Tests', () => {
       expect(result.customers?.synced).toStrictEqual(200)
 
       let countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(200);
+      expect(countInDb).toStrictEqual(200)
 
-      const customersAfterBackfill = await validator.getCustomerIds(TEST_ACCOUNT_ID);
-      expect(customersAfterBackfill).toStrictEqual(historicalCustomers.map((c) => c.id));
+      const customersAfterBackfill = await validator.getCustomerIds(TEST_ACCOUNT_ID)
+      expect(customersAfterBackfill).toStrictEqual(historicalCustomers.map((c) => c.id))
 
       // Run again to pick up the new records
       await sync.processUntilDone({ object: 'customer' })
 
       countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
-      expect(countInDb).toStrictEqual(205);
+      expect(countInDb).toStrictEqual(205)
 
-      const customersAfterIncremental = await validator.getCustomerIds(TEST_ACCOUNT_ID);
+      const customersAfterIncremental = await validator.getCustomerIds(TEST_ACCOUNT_ID)
       expect(customersAfterIncremental).toStrictEqual(
         [...historicalCustomers, ...newCustomers].map((c) => c.id)
-      );
+      )
     })
   })
 })

@@ -130,11 +130,16 @@ export class PostgresClient {
     table: string,
     accountId: string,
     syncTimestamp?: string,
-    upsertOptions?: RawJsonUpsertOptions
+    upsertOptions?: RawJsonUpsertOptions,
+    schemaOverride?: string
   ): Promise<T[]> {
     const timestamp = syncTimestamp || new Date().toISOString()
 
     if (!entries.length) return []
+
+    const targetSchema = table.startsWith('_')
+      ? this.config.schema
+      : (schemaOverride ?? this.config.schema)
 
     // Max 5 in parallel to avoid exhausting connection pool
     const chunkSize = 5
@@ -152,7 +157,7 @@ export class PostgresClient {
           )
 
           const upsertSql = `
-            INSERT INTO "${this.config.schema}"."${table}" (
+            INSERT INTO "${targetSchema}"."${table}" (
               ${columns.map((c) => `"${c}"`).join(', ')}, "last_synced_at", "account_id"
             )
             VALUES (
@@ -201,7 +206,7 @@ export class PostgresClient {
           }
 
           const { sql: upsertSql, params } = QueryUtils.buildRawJsonUpsertQuery(
-            this.config.schema,
+            targetSchema,
             table,
             columns,
             conflictTarget
