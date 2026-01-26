@@ -31,7 +31,10 @@ echo "✓ jq found"
 load_env_file
 
 # Check required environment variables
-check_env_vars DATABASE_URL STRIPE_API_KEY NGROK_AUTH_TOKEN
+# (the other webhook-reuse test uses STRIPE_API_KEY and STRIPE_API_KEY_2 for multi-account testing)
+check_env_vars DATABASE_URL STRIPE_API_KEY_3 NGROK_AUTH_TOKEN
+
+export STRIPE_API_KEY="${STRIPE_API_KEY_3}"
 
 echo "✓ Environment variables loaded"
 echo ""

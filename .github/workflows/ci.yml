@@ -8,8 +8,47 @@ on:
   workflow_dispatch:
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ./.nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Formatting checks
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build all packages
+        run: pnpm build
+
+      # upload only the built dist folders (deps are cached by setup-node)
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            packages/sync-engine/dist
+            packages/fastify-app/dist
+            packages/dashboard/.next
+          retention-days: 1
+
   test:
-    name: Test
+    name: Unit Tests
+    needs: build
     runs-on: ubuntu-24.04
 
     services:
@@ -39,6 +78,16 @@ jobs:
           node-version-file: ./.nvmrc
           cache: pnpm
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # skip rebuild
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: packages
+
       - name: Set up .env file
         run: |
           touch packages/fastify-app/.env
@@ -50,22 +99,6 @@ jobs:
           echo PORT=8080 >> packages/fastify-app/.env
           echo API_KEY=api_key_test >> packages/fastify-app/.env
 
-      - name: Install dependencies
-        run: |
-          pnpm install --frozen-lockfile
-
-      - name: Formatting checks
-        run: |
-          pnpm format:check
-
-      - name: Lint
-        run: |
-          pnpm lint
-
-      - name: Builds successfully
-        run: |
-          pnpm build
-
       - name: Initialize DB schema
         run: |
           docker run --rm \
@@ -75,13 +108,121 @@ jobs:
             psql -h localhost -p 55432 -U postgres -d postgres -c 'create schema if not exists "stripe";'
 
       - name: Tests
-        run: |
-          npm run test
+        run: npm run test
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&search_path=stripe'
 
   integration-test:
-    name: CLI Integration Test
+    name: Integration (${{ matrix.test }})
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - wss
+          - sigma
+          - sync-run-lifecycle
+          - deploy
+          - recoverable-backfill
+          - account-management
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ./.nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: packages
+
+      - name: Set up .env file for CLI
+        run: |
+          cd packages/sync-engine
+          touch .env
+          echo DATABASE_URL='postgresql://postgres:postgres@localhost:5432/app_db' >> .env
+          echo STRIPE_API_KEY='${{ secrets.STRIPE_API_KEY }}' >> .env
+          echo STRIPE_API_KEY_2='${{ secrets.STRIPE_API_KEY_2 }}' >> .env
+          echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
+          echo NGROK_AUTH_TOKEN='${{ secrets.NGROK_AUTH_TOKEN }}' >> .env
+
+      - name: Run Integration Test
+        run: |
+          cd packages/sync-engine
+          chmod +x ./scripts/test-integration-${{ matrix.test }}.sh
+          ./scripts/test-integration-${{ matrix.test }}.sh
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  integration-test-ngrok:
+    name: Integration (ngrok - ${{ matrix.test }})
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # run sequentially to avoid ngrok domain conflicts
+      matrix:
+        test:
+          - webhooks
+          - webhook-reuse
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ./.nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: packages
+
+      - name: Set up .env file for CLI
+        run: |
+          cd packages/sync-engine
+          touch .env
+          echo DATABASE_URL='postgresql://postgres:postgres@localhost:5432/app_db' >> .env
+          echo STRIPE_API_KEY='${{ secrets.STRIPE_API_KEY }}' >> .env
+          echo STRIPE_API_KEY_2='${{ secrets.STRIPE_API_KEY_2 }}' >> .env
+          echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
+          echo NGROK_AUTH_TOKEN='${{ secrets.NGROK_AUTH_TOKEN }}' >> .env
+
+      - name: Run Integration Test
+        run: |
+          cd packages/sync-engine
+          chmod +x ./scripts/test-integration-${{ matrix.test }}.sh
+          ./scripts/test-integration-${{ matrix.test }}.sh
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+
+  integration-test-backfill:
+    name: Integration (backfill)
+    needs: [build, integration-test] # Wait for parallel tests to finish
     runs-on: ubuntu-24.04
 
     steps:
@@ -99,8 +240,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all packages
-        run: pnpm build
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: packages
 
       - name: Set up .env file for CLI
         run: |
@@ -112,61 +256,10 @@ jobs:
           echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
           echo NGROK_AUTH_TOKEN='${{ secrets.NGROK_AUTH_TOKEN }}' >> .env
 
-      - name: Run CLI Webhook Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-webhooks.sh
-          ./scripts/test-integration-webhooks.sh
-
-      - name: Run CLI Backfill Integration Test
+      - name: Run Backfill Integration Test
         run: |
           cd packages/sync-engine
           chmod +x ./scripts/test-integration-backfill.sh
           ./scripts/test-integration-backfill.sh
-
-      - name: Run Sync Run Lifecycle Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-sync-run-lifecycle.sh
-          ./scripts/test-integration-sync-run-lifecycle.sh
-
-      - name: Run Sigma Sync Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-sigma.sh
-          ./scripts/test-integration-sigma.sh
-
-      - name: Run CLI Error Recovery Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-recoverable-backfill.sh
-          ./scripts/test-integration-recoverable-backfill.sh
-
-      - name: Run CLI Account Management Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-account-management.sh
-          ./scripts/test-integration-account-management.sh
-
-      - name: Run Webhook Reuse Verification Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-webhook-reuse.sh
-          ./scripts/test-integration-webhook-reuse.sh
-
-      - name: Run Managed WebSocket for Webhooks Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-wss.sh
-          ./scripts/test-integration-wss.sh
-
-      - name: Run Deploy Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-deploy.sh
-          ./scripts/test-integration-deploy.sh
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

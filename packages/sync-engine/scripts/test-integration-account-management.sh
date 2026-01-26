@@ -207,8 +207,8 @@ echo "✓ Created 10 test products"
 for i in {1..5}; do
     CUST_JSON=$(curl -s -X POST https://api.stripe.com/v1/customers \
         -u "${STRIPE_API_KEY}:" \
-        -d "name=Test Customer $i" \
-        -d "email=test$i@example.com")
+        -d "name=AcctMgmt Test Customer $i" \
+        -d "email=acctmgmt-test$i@example.com")
     CUST_ID=$(echo "$CUST_JSON" | jq -r '.id')
     CUSTOMER_IDS+=("$CUST_ID")
 done
@@ -225,7 +225,7 @@ echo ""
 PRODUCT_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c \
   "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%AccountMgmt%';" 2>/dev/null | tr -d ' ')
 CUSTOMER_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c \
-  "SELECT COUNT(*) FROM stripe.customers WHERE email LIKE 'test%@example.com';" 2>/dev/null | tr -d ' ')
+  "SELECT COUNT(*) FROM stripe.customers WHERE email LIKE 'acctmgmt-test%@example.com';" 2>/dev/null | tr -d ' ')
 
 echo "Setup verification:"
 echo "  Products synced: $PRODUCT_COUNT / 10"
