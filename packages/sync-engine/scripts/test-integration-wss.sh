@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # End-to-end integration test for Stripe Sync Engine using WebSocket mode
-# Tests WebSocket connection, event processing, webhook_response messages, and database writes
+# Tests WebSocket connection, event processing, webhook_response messages, database writes,
+# and connection stability over time
 # This test does NOT require ngrok or Stripe CLI - uses Stripe's WebSocket API directly
+#
+# Test Duration: ~2 minutes
 
 set -e  # Exit on error
 
@@ -220,8 +223,76 @@ else
 fi
 echo ""
 
-# Step 5: Verify database writes
-echo "🗄️  Step 5: Checking database for synced data..."
+# Step 5: Test connection stability over 70 seconds
+echo "🔄 Step 5: Testing connection stability (70s wait)..."
+echo "   Verifying WebSocket connection remains active over time"
+echo ""
+
+# Wait 70 seconds, checking connection every 10 seconds
+for i in {1..7}; do
+    sleep 10
+
+    # Check if CLI is still running
+    if ! ps -p $CLI_PID > /dev/null 2>&1; then
+        echo "   ❌ CLI process died unexpectedly"
+        echo "   Log output:"
+        tail -30 /tmp/cli-wss-test.log
+        exit 1
+    fi
+
+    ELAPSED=$((i * 10))
+    echo "   ${ELAPSED}s... CLI still running"
+done
+
+echo "✓ Connection remained stable for 70 seconds"
+echo ""
+
+# Step 6: Create test objects after stability wait and verify incremental data change
+echo "🎯 Step 6: Creating test objects after stability wait..."
+echo "   Testing that events still work after 70s by checking incremental DB change"
+echo ""
+
+# Record customer count before creating new customer
+CUSTOMER_COUNT_BEFORE=$(docker exec stripe-sync-wss-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.customers;" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   Customers in database before: $CUSTOMER_COUNT_BEFORE"
+
+# Create another customer after waiting
+echo "   Creating customer..."
+POST_WAIT_CUSTOMER_RESPONSE=$(curl -s -X POST https://api.stripe.com/v1/customers \
+    -u "$STRIPE_API_KEY:" \
+    -d "name=Post-Wait Customer $(date +%s)" \
+    -d "email=post-wait-$(date +%s)@example.com" \
+    -d "metadata[test]=wss-stability-test")
+POST_WAIT_CUSTOMER_ID=$(echo "$POST_WAIT_CUSTOMER_RESPONSE" | jq -r '.id // empty')
+if [ -n "$POST_WAIT_CUSTOMER_ID" ]; then
+    echo "   ✓ Customer created: $POST_WAIT_CUSTOMER_ID"
+else
+    echo "   ⚠️ Customer creation may have failed"
+fi
+sleep 5  # Wait for event to be processed
+
+# Verify incremental data change in database
+CUSTOMER_COUNT_AFTER=$(docker exec stripe-sync-wss-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.customers;" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   Customers in database after: $CUSTOMER_COUNT_AFTER"
+
+if [ "$CUSTOMER_COUNT_AFTER" -gt "$CUSTOMER_COUNT_BEFORE" ]; then
+    echo "✓ Customer count increased ($CUSTOMER_COUNT_BEFORE -> $CUSTOMER_COUNT_AFTER)"
+    echo "   WebSocket connection still working after 70s wait"
+    echo ""
+    echo "   Recent events in log:"
+    grep "← " /tmp/cli-wss-test.log | tail -3 || true
+else
+    echo "❌ Customer count did not increase after 70s wait"
+    echo "   Before: $CUSTOMER_COUNT_BEFORE, After: $CUSTOMER_COUNT_AFTER"
+    echo "   This indicates the WebSocket connection may have failed"
+    echo "   Log output:"
+    tail -20 /tmp/cli-wss-test.log
+    exit 1
+fi
+echo ""
+
+# Step 7: Verify database writes
+echo "🗄️  Step 7: Checking database for synced data..."
 echo ""
 
 # Check customers table
@@ -242,7 +313,9 @@ echo ""
 echo "📊 Test Summary"
 echo "==============="
 echo "   WebSocket connection: $(grep -q 'Connected to Stripe WebSocket' /tmp/cli-wss-test.log && echo '✓ Success' || echo '⚠️ Unknown')"
+echo "   Connection stability (70s): ✓ Verified"
 echo "   Events received via WebSocket: $EVENT_COUNT"
+echo "   Post-wait incremental check: ✓ Passed ($CUSTOMER_COUNT_BEFORE -> $CUSTOMER_COUNT_AFTER customers)"
 echo "   webhook_response sent: $(grep -q 'Error processing event' /tmp/cli-wss-test.log && echo '⚠️ Some with errors' || echo '✓ All with status 200')"
 echo "   Database records: Customers=$CUSTOMER_COUNT, Products=$PRODUCT_COUNT, Prices=$PRICE_COUNT"
 echo ""
