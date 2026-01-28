@@ -1,6 +1,3 @@
--- Consolidated Sigma sync updates
--- Final state: remove legacy sigma query state table and allow parallel sync runs per triggered_by.
-
 -- Allow parallel sync runs per triggered_by (sigma-worker vs stripe-worker)
 ALTER TABLE "stripe"."_sync_runs" DROP CONSTRAINT IF EXISTS one_active_run_per_account;
 ALTER TABLE "stripe"."_sync_runs"
