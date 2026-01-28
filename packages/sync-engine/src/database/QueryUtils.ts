@@ -34,7 +34,8 @@ export class QueryUtils {
     schema: string,
     table: string,
     columns: InsertColumn[],
-    conflictTarget: string[]
+    conflictTarget: string[],
+    extraColumns?: string[]
   ): { sql: string; params: unknown[] } {
     const { columnsSql, valuesSql, params } = QueryUtils.buildInsertParts(columns)
     const conflictSql = QueryUtils.quotedList(conflictTarget)
@@ -45,6 +46,11 @@ export class QueryUtils {
       throw new Error('buildRawJsonUpsertQuery requires _last_synced_at column')
     }
 
+    // Build the SET clause for extra columns (update them on conflict)
+    const extraSetClauses = (extraColumns ?? [])
+      .map((col) => `${QueryUtils.quoteIdent(col)} = EXCLUDED.${QueryUtils.quoteIdent(col)}`)
+      .join(',\n      ')
+
     const sql = `
     INSERT INTO ${QueryUtils.quoteIdent(schema)}.${QueryUtils.quoteIdent(table)} (${columnsSql})
     VALUES (${valuesSql})
@@ -52,7 +58,7 @@ export class QueryUtils {
     DO UPDATE SET
       "_raw_data" = EXCLUDED."_raw_data",
       "_last_synced_at" = $${tsParamIdx},
-      "_account_id" = EXCLUDED."_account_id"
+      "_account_id" = EXCLUDED."_account_id"${extraSetClauses ? ',\n      ' + extraSetClauses : ''}
     WHERE ${QueryUtils.quoteIdent(table)}."_last_synced_at" IS NULL
        OR ${QueryUtils.quoteIdent(table)}."_last_synced_at" < $${tsParamIdx}
     RETURNING *

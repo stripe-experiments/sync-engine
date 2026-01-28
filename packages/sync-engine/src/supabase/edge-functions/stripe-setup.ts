@@ -1,5 +1,5 @@
-import { StripeSync, runMigrations, VERSION } from 'npm:stripe-experiment-sync'
-import postgres from 'npm:postgres'
+import { StripeSync, runMigrations, VERSION } from 'stripe-experiment-sync'
+import postgres from 'postgres'
 
 // Get management API base URL from environment variable (for testing against localhost/staging)
 // Caller should provide full URL with protocol (e.g., http://localhost:54323 or https://api.supabase.com)
@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Unschedule pg_cron job
+      // Unschedule pg_cron jobs
       try {
         await stripeSync.postgresClient.query(`
           DO $$
@@ -221,20 +221,32 @@ Deno.serve(async (req) => {
             IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-worker') THEN
               PERFORM cron.unschedule('stripe-sync-worker');
             END IF;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'stripe-sigma-worker') THEN
+              PERFORM cron.unschedule('stripe-sigma-worker');
+            END IF;
           END $$;
         `)
       } catch (err) {
         console.warn('Could not unschedule pg_cron job:', err)
       }
 
-      // Delete vault secret
+      // Delete vault secrets
       try {
         await stripeSync.postgresClient.query(`
           DELETE FROM vault.secrets
-          WHERE name = 'stripe_sync_worker_secret'
+          WHERE name IN ('stripe_sync_worker_secret', 'stripe_sigma_worker_secret')
         `)
       } catch (err) {
         console.warn('Could not delete vault secret:', err)
+      }
+
+      // Drop Sigma self-trigger function if present
+      try {
+        await stripeSync.postgresClient.query(`
+          DROP FUNCTION IF EXISTS stripe.trigger_sigma_worker();
+        `)
+      } catch (err) {
+        console.warn('Could not drop sigma trigger function:', err)
       }
 
       // Terminate connections holding locks on stripe schema

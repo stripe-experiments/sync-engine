@@ -46,6 +46,12 @@ export type StripeSyncConfig = {
   enableSigma?: boolean
 
   /**
+   * Optional override for Sigma page size (per query).
+   * Useful for edge function CPU limits; lower values reduce per-invocation work.
+   */
+  sigmaPageSizeOverride?: number
+
+  /**
    * Postgres schema name for Sigma tables.
    * Default: "sigma"
    */
@@ -213,6 +219,8 @@ export interface ProcessNextResult {
   hasMore: boolean
   /** The sync run this processing belongs to */
   runStartedAt: Date
+  /** Sigma-only: whether this step started a new Sigma query run */
+  startedQuery?: boolean
 }
 
 /**

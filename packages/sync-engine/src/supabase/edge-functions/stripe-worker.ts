@@ -20,8 +20,8 @@
  *   processing on timeout/crash is safe.
  */
 
-import { StripeSync } from 'npm:stripe-experiment-sync'
-import postgres from 'npm:postgres'
+import { StripeSync } from 'stripe-experiment-sync'
+import postgres from 'postgres'
 
 const QUEUE_NAME = 'stripe_sync_work'
 const VISIBILITY_TIMEOUT = 60 // seconds

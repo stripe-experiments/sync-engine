@@ -209,13 +209,24 @@ export class PostgresClient {
             targetSchema,
             table,
             columns,
-            conflictTarget
+            conflictTarget,
+            extraColumns.map((c) => c.column) // Pass extra column names for ON CONFLICT UPDATE
           )
           queries.push(this.pool.query(upsertSql, params))
         }
       })
 
-      results.push(...(await Promise.all(queries)))
+      const chunkResults = await Promise.all(queries)
+      results.push(...chunkResults)
+
+      // if upsert returns 0 rows for non-empty input
+      const chunkRowCount = chunkResults.reduce((sum, r) => sum + (r.rowCount ?? 0), 0)
+      if (chunkRowCount === 0 && chunk.length > 0) {
+        console.warn(
+          `[upsert] 0 rows returned for ${targetSchema}.${table} ` +
+            `(input: ${chunk.length} entries, timestamp: ${timestamp}, accountId: ${accountId}). `
+        )
+      }
     }
 
     return results.flatMap((it) => it.rows)
@@ -509,9 +520,10 @@ export class PostgresClient {
 
   /**
    * Get or create a sync run for this account.
-   * Returns existing run if one is active, otherwise creates new one.
+   * Returns existing run if one is active for the given triggeredBy, otherwise creates new one.
    * Auto-cancels stale runs before checking.
    *
+   * @param triggeredBy - Worker type (e.g., 'worker', 'sigma-worker'). Runs are isolated per triggeredBy.
    * @returns RunKey with isNew flag, or null if constraint violation (race condition)
    */
   async getOrCreateSyncRun(
@@ -521,26 +533,34 @@ export class PostgresClient {
     // 1. Auto-cancel stale runs
     await this.cancelStaleRuns(accountId)
 
-    // 2. Check for existing active run (closed_at IS NULL = still running)
-    const existing = await this.query(
-      `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
-       WHERE "_account_id" = $1 AND closed_at IS NULL`,
-      [accountId]
-    )
+    // 2. Check for existing active run for this triggeredBy (closed_at IS NULL = still running)
+    // Runs are isolated per (accountId, triggeredBy)
+    const triggeredByValue = triggeredBy ?? null
+    const existing = triggeredByValue
+      ? await this.query(
+          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+           WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by = $2`,
+          [accountId, triggeredByValue]
+        )
+      : await this.query(
+          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+           WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by IS NULL`,
+          [accountId]
+        )
 
     if (existing.rows.length > 0) {
       const row = existing.rows[0]
       return { accountId: row._account_id, runStartedAt: row.started_at, isNew: false }
     }
 
-    // 3. Try to create new run (EXCLUDE constraint prevents duplicates)
+    // 3. Try to create new run (EXCLUDE constraint prevents duplicates per triggeredBy)
     // Use date_trunc to ensure millisecond precision for JavaScript Date compatibility
     try {
       const result = await this.query(
         `INSERT INTO "${this.config.schema}"."_sync_runs" ("_account_id", triggered_by, started_at)
          VALUES ($1, $2, date_trunc('milliseconds', now()))
          RETURNING "_account_id", started_at`,
-        [accountId, triggeredBy ?? null]
+        [accountId, triggeredByValue]
       )
       const row = result.rows[0]
       return { accountId: row._account_id, runStartedAt: row.started_at, isNew: true }
@@ -555,15 +575,23 @@ export class PostgresClient {
 
   /**
    * Get the active sync run for an account (if any).
+   * @param triggeredBy - If provided, only returns run matching this triggeredBy value
    */
   async getActiveSyncRun(
-    accountId: string
+    accountId: string,
+    triggeredBy?: string
   ): Promise<{ accountId: string; runStartedAt: Date } | null> {
-    const result = await this.query(
-      `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
-       WHERE "_account_id" = $1 AND closed_at IS NULL`,
-      [accountId]
-    )
+    const result = triggeredBy
+      ? await this.query(
+          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+           WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by = $2`,
+          [accountId, triggeredBy]
+        )
+      : await this.query(
+          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+           WHERE "_account_id" = $1 AND closed_at IS NULL`,
+          [accountId]
+        )
 
     if (result.rows.length === 0) return null
     const row = result.rows[0]
@@ -598,6 +626,22 @@ export class PostgresClient {
       maxConcurrent: row.max_concurrent,
       closedAt: row.closed_at,
     }
+  }
+
+  /**
+   * Ensure a sync run has at least the requested max_concurrent value.
+   */
+  async ensureSyncRunMaxConcurrent(
+    accountId: string,
+    runStartedAt: Date,
+    maxConcurrent: number
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_runs"
+       SET max_concurrent = GREATEST(max_concurrent, $3)
+       WHERE "_account_id" = $1 AND started_at = $2`,
+      [accountId, runStartedAt, maxConcurrent]
+    )
   }
 
   /**
@@ -781,6 +825,46 @@ export class PostgresClient {
     }
   }
 
+  async setObjectCursor(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    cursor: string | null
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET cursor = $4, updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object, cursor]
+    )
+  }
+
+  /**
+   * List object names for a run by status, optionally filtered to a subset.
+   */
+  async listObjectsByStatus(
+    accountId: string,
+    runStartedAt: Date,
+    status: string,
+    objectFilter?: string[]
+  ): Promise<string[]> {
+    const params: Array<string | Date | string[]> = [accountId, runStartedAt, status]
+    const filterClause = objectFilter?.length ? 'AND object = ANY($4::text[])' : ''
+    if (objectFilter?.length) {
+      params.push(objectFilter)
+    }
+
+    const result = await this.query(
+      `SELECT object FROM "${this.config.schema}"."_sync_obj_runs"
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = $3
+       ${filterClause}
+       ORDER BY object`,
+      params
+    )
+
+    return result.rows.map((row) => row.object as string)
+  }
+
   /**
    * Get the highest cursor from previous syncs for an object type.
    * Uses only completed object runs.
@@ -829,6 +913,30 @@ export class PostgresClient {
          AND o.cursor IS NOT NULL
          AND o.status = 'complete'
          AND o.run_started_at < $3`,
+      [accountId, object, runStartedAt]
+    )
+    return result.rows[0]?.cursor ?? null
+  }
+
+  /**
+   * Get the most recent cursor for an object run before the given run.
+   * This returns the raw cursor value without interpretation.
+   */
+  async getLastObjectCursorBeforeRun(
+    accountId: string,
+    object: string,
+    runStartedAt: Date
+  ): Promise<string | null> {
+    const result = await this.query(
+      `SELECT cursor
+       FROM "${this.config.schema}"."_sync_obj_runs"
+       WHERE "_account_id" = $1
+         AND object = $2
+         AND cursor IS NOT NULL
+         AND status = 'complete'
+         AND run_started_at < $3
+       ORDER BY run_started_at DESC
+       LIMIT 1`,
       [accountId, object, runStartedAt]
     )
     return result.rows[0]?.cursor ?? null

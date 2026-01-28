@@ -238,15 +238,26 @@ export class StripeSync {
     }
 
     const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
+    const sigmaOverrideRaw = this.config.sigmaPageSizeOverride
+    const sigmaOverride =
+      typeof sigmaOverrideRaw === 'number' && Number.isFinite(sigmaOverrideRaw) && sigmaOverrideRaw > 0
+        ? Math.floor(sigmaOverrideRaw)
+        : undefined
+
     const sigmaEntries: Record<string, ResourceConfig> = Object.fromEntries(
-      Object.entries(SIGMA_INGESTION_CONFIGS).map(([key, sigmaConfig], idx) => [
-        key,
-        {
-          order: maxOrder + 1 + idx,
-          supportsCreatedFilter: false,
-          sigma: sigmaConfig,
-        },
-      ])
+      Object.entries(SIGMA_INGESTION_CONFIGS).map(([key, sigmaConfig], idx) => {
+        const pageSize = sigmaOverride
+          ? Math.min(sigmaConfig.pageSize, sigmaOverride)
+          : sigmaConfig.pageSize
+        return [
+          key,
+          {
+            order: maxOrder + 1 + idx,
+            supportsCreatedFilter: false,
+            sigma: { ...sigmaConfig, pageSize },
+          },
+        ]
+      })
     )
 
     return { ...core, ...sigmaEntries }
@@ -612,6 +623,23 @@ export class StripeSync {
     }
 
     return all
+  }
+
+  /**
+   * Get the list of Sigma-backed object types that can be synced.
+   * Only returns sigma objects when enableSigma is true.
+   *
+   * @returns Array of sigma object names (e.g. 'subscription_item_change_events_v2_beta')
+   */
+  public getSupportedSigmaObjects(): string[] {
+    if (!this.config.enableSigma) {
+      return []
+    }
+
+    return Object.entries(this.resourceRegistry)
+      .filter(([, config]) => Boolean(config.sigma))
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([key]) => key)
   }
 
   // Event handler methods
