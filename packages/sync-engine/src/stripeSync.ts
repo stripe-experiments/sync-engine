@@ -932,7 +932,7 @@ export class StripeSync {
     if (!entity.id) return { entity, refetched: false }
 
     // This can be used as an optimization to avoid re-fetching unnecessarily
-    if (entityInFinalState && entityInFinalState(entity)) return { entity, refetched: false }
+    if (entityInFinalState?.(entity)) return { entity, refetched: false }
 
     if (this.shouldRefetchEntity(entity)) {
       const fetchedEntity = await fetchFn(entity.id!)
