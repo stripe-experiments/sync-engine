@@ -1,45 +1,55 @@
 import type { SigmaIngestionConfig } from './sigmaIngestion'
+import { SIGMA_INGESTION_CONFIGS as AUTO_GENERATED_SIGMA_INGESTION_CONFIGS } from './schema/artifacts/sigmaIngestionConfigs'
 
-export const SIGMA_INGESTION_CONFIGS: Record<string, SigmaIngestionConfig> = {
-  subscription_item_change_events_v2_beta: {
-    sigmaTable: 'subscription_item_change_events_v2_beta',
-    destinationTable: 'subscription_item_change_events_v2_beta',
-    pageSize: 10_000,
-    cursor: {
-      version: 1,
-      columns: [
-        { column: 'event_timestamp', type: 'timestamp' },
-        { column: 'event_type', type: 'string' },
-        { column: 'subscription_item_id', type: 'string' },
-      ],
-    },
-    upsert: {
-      conflictTarget: ['_account_id', 'event_timestamp', 'event_type', 'subscription_item_id'],
-      extraColumns: [
-        { column: 'event_timestamp', pgType: 'timestamptz', entryKey: 'event_timestamp' },
-        { column: 'event_type', pgType: 'text', entryKey: 'event_type' },
-        { column: 'subscription_item_id', pgType: 'text', entryKey: 'subscription_item_id' },
-      ],
-    },
-  },
+type SigmaColumnMetadata = { primaryKey?: boolean }
+type SigmaConfigWithColumns = SigmaIngestionConfig & { columns?: SigmaColumnMetadata[] }
 
-  exchange_rates_from_usd: {
-    sigmaTable: 'exchange_rates_from_usd',
-    destinationTable: 'exchange_rates_from_usd',
-    pageSize: 10_000,
-    cursor: {
-      version: 1,
-      columns: [
-        { column: 'date', type: 'string' },
-        { column: 'sell_currency', type: 'string' },
-      ],
-    },
-    upsert: {
-      conflictTarget: ['_account_id', 'date', 'sell_currency'],
-      extraColumns: [
-        { column: 'date', pgType: 'date', entryKey: 'date' },
-        { column: 'sell_currency', pgType: 'text', entryKey: 'sell_currency' },
-      ],
-    },
-  },
+const isConnectedAccountVariant = (
+  name: string,
+  config: SigmaIngestionConfig
+): boolean =>
+  [name, config.sigmaTable, config.destinationTable].some((value) =>
+    value.includes('connected_account_')
+  )
+
+const hasPrimaryKey = (config: SigmaIngestionConfig): boolean => {
+  const columns = (config as SigmaConfigWithColumns).columns
+  return Array.isArray(columns) && columns.some((column) => column.primaryKey)
 }
+
+const hasColumnMetadata = (config: SigmaIngestionConfig): boolean => {
+  const columns = (config as SigmaConfigWithColumns).columns
+  return Array.isArray(columns) && columns.length > 0
+}
+
+const filterSigmaIngestionConfigs = (
+  configs: Record<string, SigmaIngestionConfig>
+): Record<string, SigmaIngestionConfig> =>
+  Object.fromEntries(
+    Object.entries(configs).filter(
+      ([name, config]) =>
+        !isConnectedAccountVariant(name, config) &&
+        hasColumnMetadata(config) &&
+        hasPrimaryKey(config)
+    )
+  )
+
+const MANUAL_SIGMA_INGESTION_CONFIGS: Record<string, SigmaIngestionConfig> = {
+  // Add any manual overrides here
+  // Example:
+  // 'my_table': {
+  //   sigmaTable: 'my_table',
+  //   destinationTable: 'my_table',
+  //   pageSize: 10000,
+  //   cursor: {
+  //     version: 1,
+  //     columns: [{ column: 'id', type: 'string' }],
+  //   },
+  // },
+}
+
+export const SIGMA_INGESTION_CONFIGS: Record<string, SigmaIngestionConfig> =
+  filterSigmaIngestionConfigs({
+    ...AUTO_GENERATED_SIGMA_INGESTION_CONFIGS,
+    ...MANUAL_SIGMA_INGESTION_CONFIGS,
+  })

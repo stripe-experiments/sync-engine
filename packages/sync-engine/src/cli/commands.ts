@@ -474,15 +474,40 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       console.log(chalk.green(`✓ Server started on port ${port}`))
     }
 
-    // Run initial sync of all Stripe data (unless disabled)
+    // Run historical backfill sweep (unless disabled)
     if (process.env.SKIP_BACKFILL !== 'true') {
-      console.log(chalk.blue('\nStarting initial sync of all Stripe data...'))
-      const syncResult = await stripeSync.processUntilDone()
-      const totalSynced = Object.values(syncResult).reduce(
-        (sum, result) => sum + (result?.synced || 0),
-        0
+      if (!stripeSync) {
+        throw new Error('StripeSync not initialized.')
+      }
+
+      console.log(chalk.blue('\nStarting historical backfill (parallel sweep)...'))
+      const backfill = await stripeSync.processUntilDoneParallel({
+        triggeredBy: 'cli-historical-backfill',
+        maxParallel: 10,
+        skipInaccessibleSigmaTables: true,
+      })
+      const objectCount = Object.keys(backfill.totals).length
+      console.log(
+        chalk.green(
+          `✓ Historical backfill complete: ${backfill.totalSynced} rows synced across ${objectCount} objects`
+        )
       )
-      console.log(chalk.green(`✓ Sync complete: ${totalSynced} objects synced`))
+      if (backfill.skipped.length > 0) {
+        console.log(
+          chalk.yellow(
+            `Skipped ${backfill.skipped.length} Sigma tables without access: ${backfill.skipped.join(', ')}`
+          )
+        )
+      }
+      if (backfill.errors.length > 0) {
+        console.log(
+          chalk.red(`Historical backfill finished with ${backfill.errors.length} errors. See logs above.`)
+        )
+      }
+
+      console.log(chalk.blue('\nStarting incremental backfill...'))
+      await stripeSync.processUntilDone()
+      console.log(chalk.green('✓ Incremental backfill complete'))
     } else {
       console.log(chalk.yellow('\n⏭️  Skipping initial sync (SKIP_BACKFILL=true)'))
     }

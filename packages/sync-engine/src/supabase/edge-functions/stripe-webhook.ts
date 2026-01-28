@@ -1,4 +1,4 @@
-import { StripeSync } from 'npm:stripe-experiment-sync'
+import { StripeSync } from 'stripe-experiment-sync'
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {

@@ -1,6 +1,13 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
-import { setupFunctionCode, webhookFunctionCode, workerFunctionCode } from './edge-function-code'
+import { build, type OnResolveArgs, type PluginBuild } from 'esbuild'
+import { existsSync } from 'fs'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import pkg from '../../package.json' with { type: 'json' }
+
+// Get the directory of this module for resolving paths to supabase/ directory
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
 export const INSTALLATION_STARTED_SUFFIX = 'installation:started'
@@ -76,6 +83,89 @@ export class SupabaseSetupClient {
         body: code,
         verify_jwt: verifyJwt,
       })
+    }
+  }
+
+  private getEdgeFunctionEntry(slug: string): string {
+    // Prefer local src/ for development; fallback to dist if available
+    const srcEntry = resolve(__dirname, 'edge-functions', `${slug}.ts`)
+    if (existsSync(srcEntry)) {
+      return srcEntry
+    }
+
+    const distEntry = resolve(__dirname, 'edge-functions', `${slug}.js`)
+    if (existsSync(distEntry)) {
+      return distEntry
+    }
+
+    throw new Error(`Edge function entry not found for ${slug}`)
+  }
+
+  private async bundleEdgeFunction(entryPath: string): Promise<string> {
+    const packageRoot = resolve(__dirname, '..')
+    const localSyncEntry = resolve(packageRoot, 'index.ts')
+    const localSyncEntryFallback = resolve(packageRoot, 'index.js')
+    const syncEntry = existsSync(localSyncEntry) ? localSyncEntry : localSyncEntryFallback
+
+    if (!existsSync(syncEntry)) {
+      throw new Error(`Local sync-engine entry not found at ${syncEntry}`)
+    }
+
+    const npmDeps = new Map([
+      ['stripe', '^17.7.0'],
+      ['pg', '^8.16.3'],
+      ['pg-node-migrations', '0.0.8'],
+      ['postgres', '^3.4.4'],
+      ['yesql', '^7.0.0'],
+      ['papaparse', '5.4.1'],
+      ['ws', '^8.18.0'],
+      ['dotenv', '^16.4.7'],
+      ['express', '^4.18.2'],
+      ['inquirer', '^12.3.0'],
+    ])
+
+    const result = await build({
+      entryPoints: [entryPath],
+      bundle: true,
+      write: false,
+      format: 'esm',
+      platform: 'neutral',
+      target: 'es2020',
+      external: ['node:*', 'crypto'],
+      plugins: [
+        {
+          name: 'stripe-sync-local-resolver',
+          setup: (buildApi: PluginBuild) => {
+            buildApi.onResolve({ filter: /^stripe-experiment-sync$/ }, () => ({
+              path: syncEntry,
+            }))
+
+            buildApi.onResolve({ filter: /^[^./].*/ }, (args: OnResolveArgs) => {
+              const version = npmDeps.get(args.path)
+              if (version) {
+                return { path: `npm:${args.path}@${version}`, external: true }
+              }
+              return null
+            })
+          },
+        },
+      ],
+    })
+
+    const output = result.outputFiles?.[0]?.text
+    if (!output) {
+      throw new Error('Failed to bundle edge function')
+    }
+    return output
+  }
+
+  async deployLocalEdgeFunctions(): Promise<void> {
+    const functions = ['stripe-setup', 'stripe-webhook', 'stripe-worker', 'sigma-data-worker']
+
+    for (const fn of functions) {
+      const entryPath = this.getEdgeFunctionEntry(fn)
+      const bundled = await this.bundleEdgeFunction(entryPath)
+      await this.deployFunction(fn, bundled, false)
     }
   }
 
@@ -170,6 +260,64 @@ export class SupabaseSetupClient {
           url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker',
           headers := jsonb_build_object(
             'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
+          )
+        )
+        $$
+      );
+    `
+    await this.runSQL(sql)
+  }
+
+  /**
+   * Setup pg_cron job for Sigma data worker (every 12 hours)
+   * Creates secret, self-trigger function, and cron job
+   */
+  async setupSigmaPgCronJob(): Promise<void> {
+    // Generate a unique secret for sigma-data-worker authentication
+    const sigmaWorkerSecret = crypto.randomUUID()
+    const escapedSigmaWorkerSecret = sigmaWorkerSecret.replace(/'/g, "''")
+
+    const sql = `
+      -- Enable extensions
+      CREATE EXTENSION IF NOT EXISTS pg_cron;
+      CREATE EXTENSION IF NOT EXISTS pg_net;
+
+      -- Store unique sigma worker secret in vault
+      DELETE FROM vault.secrets WHERE name = 'stripe_sigma_worker_secret';
+      SELECT vault.create_secret('${escapedSigmaWorkerSecret}', 'stripe_sigma_worker_secret');
+
+      -- Create self-trigger function for sigma worker continuation
+      -- This allows the worker to trigger itself when there's more work
+      CREATE OR REPLACE FUNCTION stripe.trigger_sigma_worker()
+      RETURNS void
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      BEGIN
+        PERFORM net.http_post(
+          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/sigma-data-worker',
+          headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sigma_worker_secret')
+          )
+        );
+      END;
+      $$;
+
+      -- Delete existing sigma job if it exists
+      SELECT cron.unschedule('stripe-sigma-worker') WHERE EXISTS (
+        SELECT 1 FROM cron.job WHERE jobname = 'stripe-sigma-worker'
+      );
+
+      -- Create cron job for Sigma sync
+      -- Runs at 00:00 and 12:00 UTC
+      SELECT cron.schedule(
+        'stripe-sigma-worker',
+        '0 */12 * * *',
+        $$
+        SELECT net.http_post(
+          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/sigma-data-worker',
+          headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sigma_worker_secret')
           )
         )
         $$
@@ -386,32 +534,15 @@ export class SupabaseSetupClient {
     }
   }
 
-  /**
-   * Inject package version into Edge Function code
-   */
-  private injectPackageVersion(code: string, version: string): string {
-    if (version === 'latest') {
-      return code
-    }
-    // Replace unversioned npm imports with versioned ones
-    return code.replace(
-      /from ['"]npm:stripe-experiment-sync['"]/g,
-      `from 'npm:stripe-experiment-sync@${version}'`
-    )
-  }
-
   async install(
     stripeKey: string,
-    packageVersion?: string,
+    _packageVersion?: string, // Unused - local bundle always used
     workerIntervalSeconds?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
       throw new Error('Stripe key should start with "sk_" or "rk_"')
     }
-
-    // Default to 'latest' if no version specified
-    const version = packageVersion || 'latest'
 
     try {
       // Validate project
@@ -425,15 +556,8 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
       )
 
-      // Deploy Edge Functions with specified package version
-      // Replace the package import with the specific version
-      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
-      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
-      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
-
-      await this.deployFunction('stripe-setup', versionedSetup, false)
-      await this.deployFunction('stripe-webhook', versionedWebhook, false)
-      await this.deployFunction('stripe-worker', versionedWorker, false)
+      // Deploy Edge Functions using Management API with local bundled code
+      await this.deployLocalEdgeFunctions()
 
       // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]
@@ -453,6 +577,9 @@ export class SupabaseSetupClient {
 
       // Setup pg_cron - this is required for automatic syncing
       await this.setupPgCronJob(workerIntervalSeconds)
+
+      // Setup Sigma pg_cron - dedicated hourly worker for Sigma data
+      await this.setupSigmaPgCronJob()
 
       // Set final version comment
       await this.updateInstallationComment(

@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import pkg from '../../package.json' with { type: 'json' }
 import type { Logger } from '../types'
 
-type SigmaQueryRunStatus = 'running' | 'succeeded' | 'failed'
+export type SigmaQueryRunStatus = 'running' | 'succeeded' | 'failed'
 
 type SigmaQueryRun = {
   id: string
@@ -54,6 +54,16 @@ export function normalizeSigmaTimestampToIso(value: string): string | null {
   return d.toISOString()
 }
 
+function createStripeClient(apiKey: string): Stripe {
+  return new Stripe(apiKey, {
+    appInfo: {
+      name: 'Stripe Sync Engine',
+      version: pkg.version,
+      url: pkg.homepage,
+    },
+  })
+}
+
 async function fetchStripeText(url: string, apiKey: string, options: RequestInit): Promise<string> {
   const res = await fetch(url, {
     ...options,
@@ -69,6 +79,47 @@ async function fetchStripeText(url: string, apiKey: string, options: RequestInit
   return text
 }
 
+export async function createSigmaQueryRun(params: {
+  apiKey: string
+  sql: string
+}): Promise<{ queryRunId: string }> {
+  const stripe = createStripeClient(params.apiKey)
+  const created = (await stripe.rawRequest('POST', '/v1/sigma/query_runs', {
+    sql: params.sql,
+  })) as unknown as SigmaQueryRun
+
+  return { queryRunId: created.id }
+}
+
+export async function getSigmaQueryRun(params: {
+  apiKey: string
+  queryRunId: string
+}): Promise<{ status: SigmaQueryRunStatus; fileId?: string; error?: unknown }> {
+  const stripe = createStripeClient(params.apiKey)
+  const current = (await stripe.rawRequest(
+    'GET',
+    `/v1/sigma/query_runs/${params.queryRunId}`,
+    {}
+  )) as unknown as SigmaQueryRun
+
+  return {
+    status: current.status,
+    fileId: current.result?.file ?? undefined,
+    error: current.error ?? undefined,
+  }
+}
+
+export async function downloadSigmaFile(params: {
+  apiKey: string
+  fileId: string
+}): Promise<string> {
+  return await fetchStripeText(
+    `${STRIPE_FILES_BASE}/files/${params.fileId}/contents`,
+    params.apiKey,
+    { method: 'GET' }
+  )
+}
+
 export async function runSigmaQueryAndDownloadCsv(params: {
   apiKey: string
   sql: string
@@ -79,24 +130,17 @@ export async function runSigmaQueryAndDownloadCsv(params: {
   const pollTimeoutMs = params.pollTimeoutMs ?? 5 * 60 * 1000
   const pollIntervalMs = params.pollIntervalMs ?? 2000
 
-  const stripe = new Stripe(params.apiKey, {
-    appInfo: {
-      name: 'Stripe Sync Engine',
-      version: pkg.version,
-      url: pkg.homepage,
-    },
-  })
-
   // 1) Create query run
-  const created = (await stripe.rawRequest('POST', '/v1/sigma/query_runs', {
-    sql: params.sql,
-  })) as unknown as SigmaQueryRun
-
-  const queryRunId = created.id
+  const { queryRunId } = await createSigmaQueryRun({ apiKey: params.apiKey, sql: params.sql })
 
   // 2) Poll until succeeded
   const start = Date.now()
-  let current: SigmaQueryRun = created
+  let current: SigmaQueryRun = {
+    id: queryRunId,
+    status: 'running',
+    error: null,
+    result: {},
+  }
 
   while (current.status === 'running') {
     if (Date.now() - start > pollTimeoutMs) {
@@ -104,11 +148,13 @@ export async function runSigmaQueryAndDownloadCsv(params: {
     }
     await sleep(pollIntervalMs)
 
-    current = (await stripe.rawRequest(
-      'GET',
-      `/v1/sigma/query_runs/${queryRunId}`,
-      {}
-    )) as unknown as SigmaQueryRun
+    const next = await getSigmaQueryRun({ apiKey: params.apiKey, queryRunId })
+    current = {
+      id: queryRunId,
+      status: next.status,
+      error: next.error ?? null,
+      result: { file: next.fileId ?? null },
+    }
   }
 
   if (current.status !== 'succeeded') {
@@ -125,11 +171,7 @@ export async function runSigmaQueryAndDownloadCsv(params: {
   }
 
   // 3) Download file contents (CSV)
-  const csv = await fetchStripeText(
-    `${STRIPE_FILES_BASE}/files/${fileId}/contents`,
-    params.apiKey,
-    { method: 'GET' }
-  )
+  const csv = await downloadSigmaFile({ apiKey: params.apiKey, fileId })
 
   return { queryRunId, fileId, csv }
 }

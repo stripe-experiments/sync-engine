@@ -15,6 +15,13 @@ export type SigmaCursorSpec = {
   columns: SigmaCursorColumnSpec[]
 }
 
+export type SigmaColumnSpec = {
+  name: string
+  sigmaType: string
+  pgType: string
+  primaryKey: boolean
+}
+
 export type SigmaIngestionConfig = {
   /**
    * The Sigma table name to query (no quoting, no schema).
@@ -33,6 +40,12 @@ export type SigmaIngestionConfig = {
    * Defines the ordering and cursor semantics. The columns must form a total order (i.e. be unique together) or pagination can be incorrect.
    */
   cursor: SigmaCursorSpec
+
+  /**
+   * Column metadata for the destination table.
+   * If provided, used to dynamically create/reconcile the table.
+   */
+  columns?: SigmaColumnSpec[]
 
   /** Optional additional WHERE clause appended with AND (must not include leading WHERE). */
   additionalWhere?: string
