@@ -93,25 +93,25 @@ echo ""
 echo "Step 5: Verifying synced data in database..."
 echo ""
 
-# Check subscription_item_change_events_v2_beta table (sigma)
-SICE_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.subscription_item_change_events_v2_beta;" 2>/dev/null | tr -d ' ' || echo "0")
-echo "   subscription_item_change_events_v2_beta table: $SICE_COUNT rows"
+# Check subscription_item_change_events_v2_beta table (sigma schema)
+SICE_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM sigma.subscription_item_change_events_v2_beta;" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   sigma.subscription_item_change_events_v2_beta table: $SICE_COUNT rows"
 if [ "$SICE_COUNT" -gt 0 ]; then
     echo "   ✓ Subscription item change events data successfully synced (sigma)"
 else
-    echo "   ❌ Expected at least 1 row in subscription_item_change_events_v2_beta, found $SICE_COUNT"
+    echo "   ❌ Expected at least 1 row in sigma.subscription_item_change_events_v2_beta, found $SICE_COUNT"
     exit 1
 fi
 
 echo ""
 
-# Check exchange_rates_from_usd table (sigma)
-EXCHANGE_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.exchange_rates_from_usd;" 2>/dev/null | tr -d ' ' || echo "0")
-echo "   exchange_rates_from_usd table: $EXCHANGE_COUNT rows"
+# Check exchange_rates_from_usd table (sigma schema)
+EXCHANGE_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM sigma.exchange_rates_from_usd;" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   sigma.exchange_rates_from_usd table: $EXCHANGE_COUNT rows"
 if [ "$EXCHANGE_COUNT" -gt 0 ]; then
     echo "   ✓ Exchange rates data successfully synced (sigma)"
 else
-    echo "   ❌ Expected at least 1 row in exchange_rates_from_usd, found $EXCHANGE_COUNT"
+    echo "   ❌ Expected at least 1 row in sigma.exchange_rates_from_usd, found $EXCHANGE_COUNT"
     exit 1
 fi
 
@@ -132,11 +132,11 @@ echo ""
 echo "Step 6: Verifying sync status..."
 echo ""
 
-# Get the account ID
-ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT DISTINCT _account_id FROM stripe.subscription_item_change_events_v2_beta LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
+# Get the account ID from sigma tables
+ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT DISTINCT _account_id FROM sigma.subscription_item_change_events_v2_beta LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 if [ -z "$ACCOUNT_ID" ]; then
     # Try getting from exchange_rates table if the first one is empty
-    ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT DISTINCT _account_id FROM stripe.exchange_rates_from_usd LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
+    ACCOUNT_ID=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT DISTINCT _account_id FROM sigma.exchange_rates_from_usd LIMIT 1;" 2>/dev/null | tr -d ' ' || echo "")
 fi
 
 if [ -n "$ACCOUNT_ID" ]; then
@@ -165,8 +165,8 @@ echo ""
 echo "=========================================="
 echo "Sigma Integration Test Completed!"
 echo "- ✓ Targeted backfill of specific sigma tables worked"
-echo "- ✓ subscription_item_change_events_v2_beta: $SICE_COUNT rows (sigma)"
-echo "- ✓ exchange_rates_from_usd: $EXCHANGE_COUNT rows (sigma)"
-echo "- ✓ products: test product synced (non-sigma)"
+echo "- ✓ sigma.subscription_item_change_events_v2_beta: $SICE_COUNT rows"
+echo "- ✓ sigma.exchange_rates_from_usd: $EXCHANGE_COUNT rows"
+echo "- ✓ stripe.products: test product synced"
 echo ""
 

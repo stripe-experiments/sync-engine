@@ -136,7 +136,8 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
       databaseUrl,
       ngrokAuthToken: '', // Not needed for backfill
     }
-    console.log(chalk.blue(`Backfilling ${entityName} from Stripe in 'stripe' schema...`))
+    const schemaName = isSigmaTable ? 'sigma' : 'stripe'
+    console.log(chalk.blue(`Backfilling ${entityName} from Stripe in '${schemaName}' schema...`))
     console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
 
     // Run migrations first (will check for legacy installations and throw if detected)
