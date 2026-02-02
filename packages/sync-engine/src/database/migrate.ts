@@ -24,6 +24,7 @@ type MigrationConfig = {
   databaseUrl: string
   ssl?: ConnectionOptions
   logger?: Logger
+  enableSigma?: boolean
 }
 
 function truncateIdentifier(name: string, maxBytes: number): string {
@@ -355,8 +356,10 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
 
     await connectAndMigrate(client, path.resolve(__dirname, './migrations'), config)
 
-    // Run Sigma dynamic migrations after core migrations
-    await migrateSigmaSchema(client, config)
+    // Run Sigma dynamic migrations after core migrations (only if sigma is enabled)
+    if (config.enableSigma) {
+      await migrateSigmaSchema(client, config)
+    }
   } catch (err) {
     config.logger?.error(err, 'Error running migrations')
     throw err

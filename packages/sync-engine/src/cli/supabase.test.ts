@@ -3,8 +3,8 @@ import { webhookFunctionCode, workerFunctionCode, sigmaWorkerFunctionCode } from
 
 describe('Edge Function Files', () => {
   describe('webhookFunctionCode', () => {
-    test('imports StripeSync (resolved via import map)', () => {
-      expect(webhookFunctionCode).toContain("import { StripeSync } from 'stripe-experiment-sync'")
+    test('imports StripeSync from npm', () => {
+      expect(webhookFunctionCode).toContain("import { StripeSync } from 'npm:stripe-experiment-sync'")
     })
 
     test('uses poolConfig for database connection', () => {
@@ -45,12 +45,12 @@ describe('Edge Function Files', () => {
   })
 
   describe('workerFunctionCode', () => {
-    test('imports StripeSync (resolved via import map)', () => {
-      expect(workerFunctionCode).toContain("import { StripeSync } from 'stripe-experiment-sync'")
+    test('imports StripeSync from npm', () => {
+      expect(workerFunctionCode).toContain("import { StripeSync } from 'npm:stripe-experiment-sync'")
     })
 
-    test('imports postgres for pgmq operations (resolved via import map)', () => {
-      expect(workerFunctionCode).toContain("import postgres from 'postgres'")
+    test('imports postgres from npm for pgmq operations', () => {
+      expect(workerFunctionCode).toContain("import postgres from 'npm:postgres'")
     })
 
     test('uses poolConfig for database connection', () => {
@@ -110,14 +110,14 @@ describe('Edge Function Files', () => {
   })
 
   describe('sigmaWorkerFunctionCode', () => {
-    test('imports StripeSync (resolved via import map)', () => {
+    test('imports StripeSync from npm', () => {
       expect(sigmaWorkerFunctionCode).toContain(
-        "import { StripeSync } from 'stripe-experiment-sync'"
+        "import { StripeSync } from 'npm:stripe-experiment-sync'"
       )
     })
 
-    test('imports postgres for database operations (resolved via import map)', () => {
-      expect(sigmaWorkerFunctionCode).toContain("import postgres from 'postgres'")
+    test('imports postgres from npm for database operations', () => {
+      expect(sigmaWorkerFunctionCode).toContain("import postgres from 'npm:postgres'")
     })
 
     test('uses poolConfig for database connection', () => {

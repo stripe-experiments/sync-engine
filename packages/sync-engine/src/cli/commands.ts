@@ -133,6 +133,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     try {
       await runMigrations({
         databaseUrl: config.databaseUrl,
+        enableSigma: process.env.ENABLE_SIGMA === 'true',
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))
@@ -226,6 +227,7 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
     try {
       await runMigrations({
         databaseUrl,
+        enableSigma: process.env.ENABLE_SIGMA === 'true',
       })
       console.log(chalk.green('✓ Migrations completed successfully'))
     } catch (migrationError) {
@@ -347,6 +349,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     try {
       await runMigrations({
         databaseUrl: config.databaseUrl,
+        enableSigma: config.enableSigma,
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))

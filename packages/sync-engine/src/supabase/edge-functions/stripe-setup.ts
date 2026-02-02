@@ -354,7 +354,8 @@ Deno.serve(async (req) => {
     // Remove sslmode from connection string (not supported by pg in Deno)
     const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
-    await runMigrations({ databaseUrl: dbUrl })
+    const enableSigma = (Deno.env.get('ENABLE_SIGMA') ?? 'false') === 'true'
+    await runMigrations({ databaseUrl: dbUrl, enableSigma })
 
     stripeSync = new StripeSync({
       poolConfig: { connectionString: dbUrl, max: 2 }, // Need 2 for advisory lock + queries
