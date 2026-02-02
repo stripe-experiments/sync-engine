@@ -64,35 +64,18 @@ function mockSigmaApiRuns(params: {
   sqlCalls?: string[]
   validateSql?: (sql: string) => void
 }): void {
-  const runMap = new Map<string, { fileId: string; csv: string }>()
   let runCount = 0
 
-  vi.spyOn(sigmaApi, 'createSigmaQueryRun').mockImplementation(async ({ sql }) => {
+  // Mock runSigmaQueryAndDownloadCsv directly since it's what stripeSync.ts imports
+  // (ES module mocking of internal function calls doesn't work with spyOn)
+  vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockImplementation(async ({ sql }) => {
     params.validateSql?.(sql)
     params.sqlCalls?.push(sql)
     runCount += 1
     const queryRunId = `qr_${runCount}`
     const fileId = `file_${runCount}`
     const csv = params.csvs.shift() ?? ''
-    runMap.set(queryRunId, { fileId, csv })
-    return { queryRunId }
-  })
-
-  vi.spyOn(sigmaApi, 'getSigmaQueryRun').mockImplementation(async ({ queryRunId }) => {
-    const run = runMap.get(queryRunId)
-    if (!run) {
-      throw new Error(`Unexpected queryRunId: ${queryRunId}`)
-    }
-    return { status: 'succeeded', fileId: run.fileId }
-  })
-
-  vi.spyOn(sigmaApi, 'downloadSigmaFile').mockImplementation(async ({ fileId }) => {
-    for (const run of runMap.values()) {
-      if (run.fileId === fileId) {
-        return run.csv
-      }
-    }
-    throw new Error(`Unexpected fileId: ${fileId}`)
+    return { queryRunId, fileId, csv }
   })
 }
 
