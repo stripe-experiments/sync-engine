@@ -167,6 +167,22 @@ if [ -n "$PRODUCT_ID" ]; then
 else
     echo "   ⚠️ Skipping price creation (no product)"
 fi
+sleep 2
+
+# Create a coupon via API (triggers coupon.created event)
+echo "   Creating coupon..."
+COUPON_RESPONSE=$(curl -s -X POST https://api.stripe.com/v1/coupons \
+    -u "$STRIPE_API_KEY:" \
+    -d "percent_off=20" \
+    -d "duration=once" \
+    -d "name=Test Coupon $(date +%s)" \
+    -d "metadata[test]=wss-integration")
+COUPON_ID=$(echo "$COUPON_RESPONSE" | jq -r '.id // empty')
+if [ -n "$COUPON_ID" ]; then
+    echo "   ✓ Coupon created: $COUPON_ID"
+else
+    echo "   ⚠️ Coupon creation may have failed"
+fi
 sleep 5  # Wait for events to be processed
 
 echo "✓ Test objects created"
@@ -183,10 +199,12 @@ echo "   Events received via WebSocket: $EVENT_COUNT"
 CUSTOMER_EVENTS=$(grep -c "customer.created" /tmp/cli-wss-test.log 2>/dev/null || echo "0")
 PRODUCT_EVENTS=$(grep -c "product.created" /tmp/cli-wss-test.log 2>/dev/null || echo "0")
 PRICE_EVENTS=$(grep -c "price.created" /tmp/cli-wss-test.log 2>/dev/null || echo "0")
+COUPON_EVENTS=$(grep -c "coupon.created" /tmp/cli-wss-test.log 2>/dev/null || echo "0")
 
 echo "   - customer.created: $CUSTOMER_EVENTS"
 echo "   - product.created: $PRODUCT_EVENTS"
 echo "   - price.created: $PRICE_EVENTS"
+echo "   - coupon.created: $COUPON_EVENTS"
 
 if [ "$EVENT_COUNT" -gt 0 ]; then
     echo "✓ Events were received and processed via WebSocket"
@@ -236,6 +254,10 @@ echo "   Products in database: ${PRODUCT_COUNT:-0}"
 PRICE_COUNT=$(docker exec stripe-sync-wss-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.prices;" 2>/dev/null | tr -d ' ' || echo "0")
 echo "   Prices in database: ${PRICE_COUNT:-0}"
 
+# Check coupons table
+COUPON_COUNT=$(docker exec stripe-sync-wss-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.coupons;" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   Coupons in database: ${COUPON_COUNT:-0}"
+
 echo ""
 
 # Summary
@@ -244,7 +266,7 @@ echo "==============="
 echo "   WebSocket connection: $(grep -q 'Connected to Stripe WebSocket' /tmp/cli-wss-test.log && echo '✓ Success' || echo '⚠️ Unknown')"
 echo "   Events received via WebSocket: $EVENT_COUNT"
 echo "   webhook_response sent: $(grep -q 'Error processing event' /tmp/cli-wss-test.log && echo '⚠️ Some with errors' || echo '✓ All with status 200')"
-echo "   Database records: Customers=$CUSTOMER_COUNT, Products=$PRODUCT_COUNT, Prices=$PRICE_COUNT"
+echo "   Database records: Customers=$CUSTOMER_COUNT, Products=$PRODUCT_COUNT, Prices=$PRICE_COUNT, Coupons=$COUPON_COUNT"
 echo ""
 
 # Check for any errors in logs

@@ -13,6 +13,7 @@ export interface Logger {
 
 export type RevalidateEntity =
   | 'charge'
+  | 'coupon'
   | 'credit_note'
   | 'customer'
   | 'dispute'
@@ -128,6 +129,7 @@ export type SyncObject =
   | 'charge'
   | 'payment_intent'
   | 'plan'
+  | 'coupon'
   | 'tax_id'
   | 'credit_note'
   | 'early_fraud_warning'
@@ -143,6 +145,7 @@ export interface SyncBackfill {
   products?: Sync
   prices?: Sync
   plans?: Sync
+  coupons?: Sync
   customers?: Sync
   subscriptions?: Sync
   subscriptionSchedules?: Sync
