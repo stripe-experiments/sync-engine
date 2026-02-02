@@ -4,10 +4,7 @@ import { SIGMA_INGESTION_CONFIGS as AUTO_GENERATED_SIGMA_INGESTION_CONFIGS } fro
 type SigmaColumnMetadata = { primaryKey?: boolean }
 type SigmaConfigWithColumns = SigmaIngestionConfig & { columns?: SigmaColumnMetadata[] }
 
-const isConnectedAccountVariant = (
-  name: string,
-  config: SigmaIngestionConfig
-): boolean =>
+const isConnectedAccountVariant = (name: string, config: SigmaIngestionConfig): boolean =>
   [name, config.sigmaTable, config.destinationTable].some((value) =>
     value.includes('connected_account_')
   )

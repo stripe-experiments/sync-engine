@@ -156,7 +156,8 @@ export class StripeSync {
       subscription: {
         order: 5, // Depends on customer, price
         listFn: (p) => this.stripe.subscriptions.list(p),
-        upsertFn: (items, id, bf) => this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
+        upsertFn: (items, id, bf) =>
+          this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
         supportsCreatedFilter: true,
       },
       subscription_schedules: {
@@ -232,7 +233,8 @@ export class StripeSync {
       checkout_sessions: {
         order: 17, // Depends on customer (optional)
         listFn: (p) => this.stripe.checkout.sessions.list(p),
-        upsertFn: (items, id) => this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
+        upsertFn: (items, id) =>
+          this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
         supportsCreatedFilter: true,
       },
     }
@@ -240,7 +242,9 @@ export class StripeSync {
     const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
     const sigmaOverrideRaw = this.config.sigmaPageSizeOverride
     const sigmaOverride =
-      typeof sigmaOverrideRaw === 'number' && Number.isFinite(sigmaOverrideRaw) && sigmaOverrideRaw > 0
+      typeof sigmaOverrideRaw === 'number' &&
+      Number.isFinite(sigmaOverrideRaw) &&
+      sigmaOverrideRaw > 0
         ? Math.floor(sigmaOverrideRaw)
         : undefined
 
@@ -1701,9 +1705,7 @@ export class StripeSync {
           const message = error instanceof Error ? error.message : String(error)
           if (skipInaccessibleSigmaTables && shouldSkipInaccessibleTable(message)) {
             skipped.push(obj)
-            this.config.logger?.warn(
-              `Skipping Sigma table ${obj}: not accessible for this account`
-            )
+            this.config.logger?.warn(`Skipping Sigma table ${obj}: not accessible for this account`)
             continue
           }
           errors.push({ object: obj, message })

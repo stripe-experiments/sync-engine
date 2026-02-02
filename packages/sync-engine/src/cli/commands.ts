@@ -499,7 +499,9 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       }
       if (backfill.errors.length > 0) {
         console.log(
-          chalk.red(`Historical backfill finished with ${backfill.errors.length} errors. See logs above.`)
+          chalk.red(
+            `Historical backfill finished with ${backfill.errors.length} errors. See logs above.`
+          )
         )
       }
 

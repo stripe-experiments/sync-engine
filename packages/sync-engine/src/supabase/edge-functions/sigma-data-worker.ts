@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
       sigmaObjects
     )
 
-    let objectsToProcess = runningObjects.slice(0, BATCH_SIZE)
+    const objectsToProcess = runningObjects.slice(0, BATCH_SIZE)
     let pendingObjects: string[] = []
 
     if (objectsToProcess.length === 0) {
@@ -198,6 +198,7 @@ Deno.serve(async (req) => {
         console.info(`Sigma worker: processing ${object}`)
 
         // Process one sigma page and upsert results.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await stripeSync.processNext(object as any, {
           runStartedAt,
           triggeredBy: 'sigma-worker',
@@ -257,7 +258,8 @@ Deno.serve(async (req) => {
     const remainingMinutes = Math.round(remainingMs / 1000 / 60)
 
     // Only self-trigger if there are pending or running objects AND run hasn't timed out
-    const shouldSelfTrigger = (pendingAfter.length > 0 || runningAfter.length > 0) && remainingMs > 0
+    const shouldSelfTrigger =
+      (pendingAfter.length > 0 || runningAfter.length > 0) && remainingMs > 0
 
     let selfTriggered = false
     if (shouldSelfTrigger) {

@@ -151,6 +151,7 @@ function buildConfig(table: ReportingTable, pks: ReportingTable['columns']) {
  * Iterates over all tables in the schema and writes the generated configs to disk.
  */
 async function writeGeneratedConfigs(data: ReportingSchema) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const configs: Record<string, any> = {}
   const stats = {
     datasetCount: data.schema.length,
