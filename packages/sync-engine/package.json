@@ -1,6 +1,6 @@
 {
   "name": "stripe-experiment-sync",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "private": false,
   "description": "Stripe Sync Engine to sync Stripe data to Postgres",
   "type": "module",

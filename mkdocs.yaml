@@ -14,7 +14,6 @@ nav:
   - Usage:
       - 'docker.md'
       - 'typescript.md'
-      - 'stripe-sigma-reporting-data-schema.md'
       - 'edge-function.md'
   - 'contributing.md'
 

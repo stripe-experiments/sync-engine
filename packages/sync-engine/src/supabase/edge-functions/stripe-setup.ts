@@ -1,5 +1,5 @@
-import { StripeSync, runMigrations, VERSION } from 'stripe-experiment-sync'
-import postgres from 'postgres'
+import { StripeSync, runMigrations, VERSION } from 'npm:stripe-experiment-sync'
+import postgres from 'npm:postgres'
 
 // Get management API base URL from environment variable (for testing against localhost/staging)
 // Caller should provide full URL with protocol (e.g., http://localhost:54323 or https://api.supabase.com)

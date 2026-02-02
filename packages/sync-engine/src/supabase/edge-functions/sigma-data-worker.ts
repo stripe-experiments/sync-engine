@@ -5,8 +5,8 @@
  * Progress persists in _sync_runs and _sync_obj_runs across invocations.
  */
 
-import { StripeSync } from 'stripe-experiment-sync'
-import postgres from 'postgres'
+import { StripeSync } from 'npm:stripe-experiment-sync'
+import postgres from 'npm:postgres'
 
 const BATCH_SIZE = 1
 const MAX_RUN_AGE_MS = 6 * 60 * 60 * 1000
