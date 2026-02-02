@@ -248,6 +248,9 @@ export class StripeSync {
         ? Math.floor(sigmaOverrideRaw)
         : undefined
 
+    // TODO: Dedupe sigma tables that overlap with core Stripe objects (e.g. subscription_schedules).
+    // Currently we just let core take precedence, but ideally sigma configs should exclude
+    // tables that are already handled by the core Stripe API integration.
     const sigmaEntries: Record<string, ResourceConfig> = Object.fromEntries(
       Object.entries(SIGMA_INGESTION_CONFIGS).map(([key, sigmaConfig], idx) => {
         const pageSize = sigmaOverride
@@ -264,7 +267,8 @@ export class StripeSync {
       })
     )
 
-    return { ...core, ...sigmaEntries }
+    // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
+    return { ...sigmaEntries, ...core }
   }
 
   private isSigmaResource(object: string): boolean {
