@@ -366,6 +366,9 @@ export class StripeSync {
     'plan.created': this.handlePlanEvent.bind(this),
     'plan.updated': this.handlePlanEvent.bind(this),
     'plan.deleted': this.handlePlanDeletedEvent.bind(this),
+    'coupon.created': this.handleCouponEvent.bind(this),
+    'coupon.updated': this.handleCouponEvent.bind(this),
+    'coupon.deleted': this.handleCouponDeletedEvent.bind(this),
     'setup_intent.canceled': this.handleSetupIntentEvent.bind(this),
     'setup_intent.created': this.handleSetupIntentEvent.bind(this),
     'setup_intent.requires_action': this.handleSetupIntentEvent.bind(this),
@@ -521,14 +524,20 @@ export class StripeSync {
       upsertFn: (items, id) => this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
       supportsCreatedFilter: true,
     },
+    coupon: {
+      order: 18, // No dependencies
+      listFn: (p) => this.stripe.coupons.list(p),
+      upsertFn: (items, id) => this.upsertCoupons(items as Stripe.Coupon[], id),
+      supportsCreatedFilter: true,
+    },
     // Sigma-backed resources
     subscription_item_change_events_v2_beta: {
-      order: 18,
+      order: 19,
       supportsCreatedFilter: false,
       sigma: SIGMA_INGESTION_CONFIGS.subscription_item_change_events_v2_beta,
     },
     exchange_rates_from_usd: {
-      order: 19,
+      order: 20,
       supportsCreatedFilter: false,
       sigma: SIGMA_INGESTION_CONFIGS.exchange_rates_from_usd,
     },
@@ -761,6 +770,33 @@ export class StripeSync {
     const plan = event.data.object
 
     await this.deletePlan(plan.id)
+  }
+
+  private async handleCouponEvent(event: Stripe.Event, accountId: string): Promise<void> {
+    try {
+      const { entity: coupon, refetched } = await this.fetchOrUseWebhookData(
+        event.data.object as Stripe.Coupon,
+        (id) => this.stripe.coupons.retrieve(id)
+      )
+
+      await this.upsertCoupons([coupon], accountId, this.getSyncTimestamp(event, refetched))
+    } catch (err) {
+      if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
+        const coupon = event.data.object as Stripe.Coupon
+        await this.deleteCoupon(coupon.id)
+      } else {
+        throw err
+      }
+    }
+  }
+
+  private async handleCouponDeletedEvent(
+    event: Stripe.CouponDeletedEvent,
+    _accountId: string
+  ): Promise<void> {
+    const coupon = event.data.object
+
+    await this.deleteCoupon(coupon.id)
   }
 
   private async handleSetupIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -1795,6 +1831,30 @@ export class StripeSync {
     })
   }
 
+  async syncCoupons(syncParams?: SyncParams): Promise<Sync> {
+    this.config.logger?.info('Syncing coupons')
+
+    return this.withSyncRun('coupons', 'syncCoupons', async (cursor, runStartedAt) => {
+      const accountId = await this.getAccountId()
+      const params: Stripe.CouponListParams = { limit: 100 }
+
+      if (syncParams?.created) {
+        params.created = syncParams.created
+      } else if (cursor) {
+        params.created = { gte: cursor }
+        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
+      }
+
+      return this.fetchAndUpsert(
+        (pagination) => this.stripe.coupons.list({ ...params, ...pagination }),
+        (coupons) => this.upsertCoupons(coupons, accountId),
+        accountId,
+        'coupons',
+        runStartedAt
+      )
+    })
+  }
+
   async syncCustomers(syncParams?: SyncParams): Promise<Sync> {
     this.config.logger?.info('Syncing customers')
 
@@ -2725,6 +2785,23 @@ export class StripeSync {
 
   async deletePlan(id: string): Promise<boolean> {
     return this.postgresClient.delete('plans', id)
+  }
+
+  async upsertCoupons(
+    coupons: Stripe.Coupon[],
+    accountId: string,
+    syncTimestamp?: string
+  ): Promise<Stripe.Coupon[]> {
+    return this.postgresClient.upsertManyWithTimestampProtection(
+      coupons,
+      'coupons',
+      accountId,
+      syncTimestamp
+    )
+  }
+
+  async deleteCoupon(id: string): Promise<boolean> {
+    return this.postgresClient.delete('coupons', id)
   }
 
   async upsertPrices(

@@ -41,6 +41,7 @@ const VALID_SYNC_OBJECTS: SyncObject[] = [
   'charge',
   'payment_intent',
   'plan',
+  'coupon',
   'tax_id',
   'credit_note',
   'early_fraud_warning',
