@@ -143,6 +143,17 @@ if ps -p $CLI_PID > /dev/null 2>&1; then
     sleep 2
     echo "   ✓ price.created event triggered (ID: $PRICE_ID)"
 
+    # Create coupon via Stripe API (triggers coupon.created webhook)
+    echo "   Creating coupon via Stripe API..."
+    COUPON_RESPONSE=$(curl -s https://api.stripe.com/v1/coupons \
+        -u "$STRIPE_API_KEY:" \
+        -d "percent_off=15" \
+        -d "duration=once" \
+        -d "name=Integration Test Coupon")
+    COUPON_ID=$(echo "$COUPON_RESPONSE" | jq -r '.id // empty')
+    sleep 2
+    echo "   ✓ coupon.created event triggered (ID: $COUPON_ID)"
+
     # Send unsupported event directly to webhook endpoint (should be handled gracefully)
     echo "   Sending unsupported event (balance.available) directly to webhook..."
     TIMESTAMP=$(date +%s)
@@ -246,6 +257,18 @@ EOF
         echo "   ⚠ No price data found (webhook may not have processed yet)"
     fi
 
+    echo ""
+
+    # Check coupons table
+    COUPON_COUNT=$(docker exec stripe-sync-test-db psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.coupons;" 2>/dev/null | tr -d ' ' || echo "0")
+    echo "   Coupons table: $COUPON_COUNT rows"
+    if [ "$COUPON_COUNT" -gt 0 ]; then
+        echo "   ✓ Coupon data found"
+        docker exec stripe-sync-test-db psql -U postgres -d app_db -c "SELECT id, name, percent_off, duration, created FROM stripe.coupons LIMIT 1;" 2>/dev/null | head -n 5
+    else
+        echo "   ⚠ No coupon data found (webhook may not have processed yet)"
+    fi
+
     # Step 6: Gracefully shutdown CLI
     echo ""
     echo "🛑 Step 7: Shutting down CLI gracefully..."
@@ -289,8 +312,8 @@ echo "- ✓ CLI built successfully"
 echo "- ✓ CLI started and created webhook in Stripe"
 echo "- ✓ Migrations run automatically via StripeSync"
 echo "- ✓ Webhook persisted to database"
-echo "- ✓ Test webhook events triggered (customer, product, price)"
-echo "- ✓ Webhook processing verified ($CUSTOMER_COUNT customers, $PRODUCT_COUNT products, $PRICE_COUNT prices)"
+echo "- ✓ Test webhook events triggered (customer, product, price, coupon)"
+echo "- ✓ Webhook processing verified ($CUSTOMER_COUNT customers, $PRODUCT_COUNT products, $PRICE_COUNT prices, $COUPON_COUNT coupons)"
 echo "- ✓ Graceful shutdown completed"
 echo "- ✓ Webhook cleanup verified (removed from Stripe + DB)"
 echo ""

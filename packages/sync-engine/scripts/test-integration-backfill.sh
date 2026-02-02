@@ -29,6 +29,7 @@ start_postgres "stripe-sync-test-db" "app_db"
 declare -a CUSTOMER_IDS=()
 declare -a PRODUCT_IDS=()
 declare -a PRICE_IDS=()
+declare -a COUPON_IDS=()
 
 # Cleanup function
 cleanup() {
@@ -57,6 +58,14 @@ cleanup() {
         echo "   Deleting customers from Stripe..."
         for cust_id in "${CUSTOMER_IDS[@]}"; do
             curl -s -X DELETE "https://api.stripe.com/v1/customers/${cust_id}" \
+                -u "${STRIPE_API_KEY}:" > /dev/null 2>&1 || true
+        done
+    fi
+
+    if [ ${#COUPON_IDS[@]} -gt 0 ]; then
+        echo "   Deleting coupons from Stripe..."
+        for coupon_id in "${COUPON_IDS[@]}"; do
+            curl -s -X DELETE "https://api.stripe.com/v1/coupons/${coupon_id}" \
                 -u "${STRIPE_API_KEY}:" > /dev/null 2>&1 || true
         done
     fi
@@ -177,6 +186,39 @@ PRICE_IDS+=("$PRICE3_ID")
 echo "   ✓ Created price: $PRICE3_ID"
 
 echo ""
+
+# Create coupons
+echo "   Creating test coupons..."
+COUPON1_JSON=$(curl -s -X POST https://api.stripe.com/v1/coupons \
+    -u "${STRIPE_API_KEY}:" \
+    -d "percent_off=10" \
+    -d "duration=once" \
+    -d "name=Test Coupon 1 - Backfill")
+COUPON1_ID=$(echo "$COUPON1_JSON" | jq -r '.id')
+COUPON_IDS+=("$COUPON1_ID")
+echo "   ✓ Created coupon: $COUPON1_ID"
+
+COUPON2_JSON=$(curl -s -X POST https://api.stripe.com/v1/coupons \
+    -u "${STRIPE_API_KEY}:" \
+    -d "amount_off=500" \
+    -d "currency=usd" \
+    -d "duration=repeating" \
+    -d "duration_in_months=3" \
+    -d "name=Test Coupon 2 - Backfill")
+COUPON2_ID=$(echo "$COUPON2_JSON" | jq -r '.id')
+COUPON_IDS+=("$COUPON2_ID")
+echo "   ✓ Created coupon: $COUPON2_ID"
+
+COUPON3_JSON=$(curl -s -X POST https://api.stripe.com/v1/coupons \
+    -u "${STRIPE_API_KEY}:" \
+    -d "percent_off=25" \
+    -d "duration=forever" \
+    -d "name=Test Coupon 3 - Backfill")
+COUPON3_ID=$(echo "$COUPON3_JSON" | jq -r '.id')
+COUPON_IDS+=("$COUPON3_ID")
+echo "   ✓ Created coupon: $COUPON3_ID"
+
+echo ""
 echo "✓ Test data created in Stripe"
 echo ""
 
@@ -229,6 +271,19 @@ if [ "$PRICE_COUNT" -ge 3 ]; then
     docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -c "SELECT id, product, currency, unit_amount, nickname FROM stripe.prices WHERE nickname LIKE 'Test Price%' LIMIT 3;" 2>/dev/null | head -n 7
 else
     echo "   ❌ Expected at least 3 prices, found $PRICE_COUNT"
+    exit 1
+fi
+
+echo ""
+
+# Check coupons table
+COUPON_COUNT=$(docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -t -c "SELECT COUNT(*) FROM stripe.coupons WHERE name LIKE '%Backfill%';" 2>/dev/null | tr -d ' ' || echo "0")
+echo "   Coupons table: $COUPON_COUNT rows (expected: 3)"
+if [ "$COUPON_COUNT" -ge 3 ]; then
+    echo "   ✓ Coupon data successfully backfilled"
+    docker exec $POSTGRES_CONTAINER psql -U postgres -d app_db -c "SELECT id, name, percent_off, amount_off, duration FROM stripe.coupons WHERE name LIKE '%Backfill%' LIMIT 3;" 2>/dev/null | head -n 7
+else
+    echo "   ❌ Expected at least 3 coupons, found $COUPON_COUNT"
     exit 1
 fi
 
@@ -364,11 +419,11 @@ echo "- ✓ Prerequisites checked (jq for Stripe API JSON parsing)"
 echo "- ✓ PostgreSQL started in Docker"
 echo "- ✓ CLI built successfully"
 echo "- ✓ Database migrations completed"
-echo "- ✓ Test data created in Stripe (3 customers, 3 products, 3 prices)"
+echo "- ✓ Test data created in Stripe (3 customers, 3 products, 3 prices, 3 coupons)"
 echo "- ✓ Backfill 'all' command executed"
-echo "- ✓ Data verified in database ($CUSTOMER_COUNT customers, $PRODUCT_COUNT products, $PRICE_COUNT prices)"
+echo "- ✓ Data verified in database ($CUSTOMER_COUNT customers, $PRODUCT_COUNT products, $PRICE_COUNT prices, $COUPON_COUNT coupons)"
 echo "- ✓ Incremental sync cursor saved and updated correctly"
 echo "- ✓ New product created and synced incrementally"
 echo "- ✓ Cursor advanced from $CURSOR to $NEW_CURSOR"
-echo "- ✓ Test data cleaned up from Stripe (4 products)"
+echo "- ✓ Test data cleaned up from Stripe (4 products, 3 coupons)"
 echo ""
