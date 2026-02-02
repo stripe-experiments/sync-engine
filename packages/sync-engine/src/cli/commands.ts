@@ -193,9 +193,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
         )
       }
       if (backfill.errors.length > 0) {
-        console.log(
-          chalk.red(`Backfill finished with ${backfill.errors.length} errors:`)
-        )
+        console.log(chalk.red(`Backfill finished with ${backfill.errors.length} errors:`))
         for (const err of backfill.errors) {
           console.log(chalk.red(`  - ${err.object}: ${err.message}`))
         }

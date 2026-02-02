@@ -4,7 +4,9 @@ import { webhookFunctionCode, workerFunctionCode, sigmaWorkerFunctionCode } from
 describe('Edge Function Files', () => {
   describe('webhookFunctionCode', () => {
     test('imports StripeSync from npm', () => {
-      expect(webhookFunctionCode).toContain("import { StripeSync } from 'npm:stripe-experiment-sync'")
+      expect(webhookFunctionCode).toContain(
+        "import { StripeSync } from 'npm:stripe-experiment-sync'"
+      )
     })
 
     test('uses poolConfig for database connection', () => {
@@ -46,7 +48,9 @@ describe('Edge Function Files', () => {
 
   describe('workerFunctionCode', () => {
     test('imports StripeSync from npm', () => {
-      expect(workerFunctionCode).toContain("import { StripeSync } from 'npm:stripe-experiment-sync'")
+      expect(workerFunctionCode).toContain(
+        "import { StripeSync } from 'npm:stripe-experiment-sync'"
+      )
     })
 
     test('imports postgres from npm for pgmq operations', () => {

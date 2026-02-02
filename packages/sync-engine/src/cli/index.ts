@@ -53,7 +53,10 @@ program
   .description('Backfill a specific entity type from Stripe (e.g., customer, invoice, product)')
   .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
   .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
-  .option('--sigma', 'Enable Sigma tables (required for sigma table names like exchange_rates_from_usd)')
+  .option(
+    '--sigma',
+    'Enable Sigma tables (required for sigma table names like exchange_rates_from_usd)'
+  )
   .action(async (entityName, options) => {
     await backfillCommand(
       {
