@@ -81,6 +81,7 @@ supabase
     '--management-url <url>',
     'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
+  .option('--sigma', 'Enable Sigma sync (deploy sigma worker and cron job)')
   .action(async (options) => {
     await installCommand({
       supabaseAccessToken: options.token,
@@ -89,6 +90,7 @@ supabase
       packageVersion: options.packageVersion,
       workerInterval: options.workerInterval,
       supabaseManagementUrl: options.managementUrl,
+      enableSigma: options.sigma,
     })
   })
 

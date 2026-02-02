@@ -22,6 +22,7 @@ export interface DeployOptions {
   packageVersion?: string
   workerInterval?: number
   supabaseManagementUrl?: string
+  enableSigma?: boolean
 }
 
 export type { CliOptions }
@@ -606,6 +607,7 @@ export async function installCommand(options: DeployOptions): Promise<void> {
       packageVersion: options.packageVersion,
       workerIntervalSeconds: options.workerInterval,
       supabaseManagementUrl,
+      enableSigma: options.enableSigma,
     })
 
     // Print summary

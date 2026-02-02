@@ -466,7 +466,8 @@ export class SupabaseSetupClient {
   async install(
     stripeKey: string,
     packageVersion?: string,
-    workerIntervalSeconds?: number
+    workerIntervalSeconds?: number,
+    enableSigma?: boolean
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -492,18 +493,26 @@ export class SupabaseSetupClient {
       const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
       const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
       const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
-      const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
 
       await this.deployFunction('stripe-setup', versionedSetup, false)
       await this.deployFunction('stripe-webhook', versionedWebhook, false)
       await this.deployFunction('stripe-worker', versionedWorker, false)
-      await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
+
+      // Deploy sigma worker only if enabled
+      if (enableSigma) {
+        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
+        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
+      }
 
       // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]
       // Add MANAGEMENT_API_URL if custom URL provided (for localhost/staging testing)
       if (this.supabaseManagementUrl) {
         secrets.push({ name: 'MANAGEMENT_API_URL', value: this.supabaseManagementUrl })
+      }
+      // Set ENABLE_SIGMA for edge functions to read
+      if (enableSigma) {
+        secrets.push({ name: 'ENABLE_SIGMA', value: 'true' })
       }
       await this.setSecrets(secrets)
 
@@ -518,8 +527,10 @@ export class SupabaseSetupClient {
       // Setup pg_cron - this is required for automatic syncing
       await this.setupPgCronJob(workerIntervalSeconds)
 
-      // Setup Sigma pg_cron - dedicated hourly worker for Sigma data
-      await this.setupSigmaPgCronJob()
+      // Setup Sigma pg_cron only if enabled - dedicated 12-hourly worker for Sigma data
+      if (enableSigma) {
+        await this.setupSigmaPgCronJob()
+      }
 
       // Set final version comment
       await this.updateInstallationComment(
@@ -544,6 +555,7 @@ export async function install(params: {
   workerIntervalSeconds?: number
   baseProjectUrl?: string
   supabaseManagementUrl?: string
+  enableSigma?: boolean
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -551,6 +563,7 @@ export async function install(params: {
     stripeKey,
     packageVersion,
     workerIntervalSeconds,
+    enableSigma,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -560,7 +573,7 @@ export async function install(params: {
     supabaseManagementUrl: params.supabaseManagementUrl,
   })
 
-  await client.install(stripeKey, packageVersion, workerIntervalSeconds)
+  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma)
 }
 
 export async function uninstall(params: {
