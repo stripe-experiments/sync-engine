@@ -38,6 +38,64 @@ function buildCsvContentString(rows: CsvRow[]): string {
   return lines.join('\n')
 }
 
+async function processSigmaUntilDone(
+  sync: StripeSync,
+  object: string,
+  runStartedAt: Date,
+  maxSteps: number = 20
+): Promise<{ total: number; result: { processed: number; hasMore: boolean } }> {
+  let total = 0
+  let result: { processed: number; hasMore: boolean } = { processed: 0, hasMore: true }
+
+  for (let i = 0; i < maxSteps; i += 1) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    result = await sync.processNext(object as any, { runStartedAt })
+    total += result.processed
+    if (!result.hasMore) {
+      break
+    }
+  }
+
+  return { total, result }
+}
+
+function mockSigmaApiRuns(params: {
+  csvs: string[]
+  sqlCalls?: string[]
+  validateSql?: (sql: string) => void
+}): void {
+  const runMap = new Map<string, { fileId: string; csv: string }>()
+  let runCount = 0
+
+  vi.spyOn(sigmaApi, 'createSigmaQueryRun').mockImplementation(async ({ sql }) => {
+    params.validateSql?.(sql)
+    params.sqlCalls?.push(sql)
+    runCount += 1
+    const queryRunId = `qr_${runCount}`
+    const fileId = `file_${runCount}`
+    const csv = params.csvs.shift() ?? ''
+    runMap.set(queryRunId, { fileId, csv })
+    return { queryRunId }
+  })
+
+  vi.spyOn(sigmaApi, 'getSigmaQueryRun').mockImplementation(async ({ queryRunId }) => {
+    const run = runMap.get(queryRunId)
+    if (!run) {
+      throw new Error(`Unexpected queryRunId: ${queryRunId}`)
+    }
+    return { status: 'succeeded', fileId: run.fileId }
+  })
+
+  vi.spyOn(sigmaApi, 'downloadSigmaFile').mockImplementation(async ({ fileId }) => {
+    for (const run of runMap.values()) {
+      if (run.fileId === fileId) {
+        return run.csv
+      }
+    }
+    throw new Error(`Unexpected fileId: ${fileId}`)
+  })
+}
+
 const BASE_EVENT_TIMESTAMP = new Date(Date.UTC(2023, 0, 1, 0, 0, 0))
 
 function formatTimestamp(date: Date): string {
@@ -210,22 +268,19 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
   describe('processNext (sigma)', () => {
     it('should sync subscription item change events from Sigma', async () => {
-      const sigmaSpy = vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockResolvedValue({
-        queryRunId: 'qr_sub_1',
-        fileId: 'file_sub_1',
-        csv: SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV,
-      })
+      mockSigmaApiRuns({ csvs: [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV] })
 
       const { runKey } = await sync.joinOrCreateSyncRun(
         'test',
         'subscription_item_change_events_v2_beta'
       )
-      const result = await sync.processNext('subscription_item_change_events_v2_beta', {
-        runStartedAt: runKey.runStartedAt,
-      })
+      const { total, result } = await processSigmaUntilDone(
+        sync,
+        'subscription_item_change_events_v2_beta',
+        runKey.runStartedAt
+      )
 
-      expect(sigmaSpy).toHaveBeenCalledTimes(1)
-      expect(result.processed).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
+      expect(total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
       expect(result.hasMore).toStrictEqual(false)
 
       const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
@@ -239,32 +294,37 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
     it('should pick up new subscription item change events on subsequent runs', async () => {
       const csvs = [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV, SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_CSV]
-      vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockImplementation(async ({ sql }) => {
-        if (!sql.includes('subscription_item_change_events_v2_beta')) {
-          throw new Error(`Unexpected Sigma query: ${sql}`)
-        }
-        const csv = csvs.shift() ?? SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV
-        return { queryRunId: 'qr_sub_2', fileId: 'file_sub_2', csv }
+      mockSigmaApiRuns({
+        csvs,
+        validateSql: (sql) => {
+          if (!sql.includes('subscription_item_change_events_v2_beta')) {
+            throw new Error(`Unexpected Sigma query: ${sql}`)
+          }
+        },
       })
 
       const { runKey: runA } = await sync.joinOrCreateSyncRun(
         'test',
         'subscription_item_change_events_v2_beta'
       )
-      await sync.processNext('subscription_item_change_events_v2_beta', {
-        runStartedAt: runA.runStartedAt,
-      })
+      const first = await processSigmaUntilDone(
+        sync,
+        'subscription_item_change_events_v2_beta',
+        runA.runStartedAt
+      )
+      expect(first.total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
 
       const { runKey: runB } = await sync.joinOrCreateSyncRun(
         'test',
         'subscription_item_change_events_v2_beta'
       )
-      const result = await sync.processNext('subscription_item_change_events_v2_beta', {
-        runStartedAt: runB.runStartedAt,
-      })
-
-      expect(result.processed).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length)
-      expect(result.hasMore).toStrictEqual(false)
+      const second = await processSigmaUntilDone(
+        sync,
+        'subscription_item_change_events_v2_beta',
+        runB.runStartedAt
+      )
+      expect(second.total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length)
+      expect(second.result.hasMore).toStrictEqual(false)
 
       const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
       expect(count).toStrictEqual(
@@ -274,19 +334,23 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
     })
 
     it('should sync exchange rates from Sigma', async () => {
-      vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockImplementation(async ({ sql }) => {
-        if (!sql.includes('exchange_rates_from_usd')) {
-          throw new Error(`Unexpected Sigma query: ${sql}`)
-        }
-        return { queryRunId: 'qr_fx_1', fileId: 'file_fx_1', csv: EXCHANGE_RATES_CSV }
+      mockSigmaApiRuns({
+        csvs: [EXCHANGE_RATES_CSV],
+        validateSql: (sql) => {
+          if (!sql.includes('exchange_rates_from_usd')) {
+            throw new Error(`Unexpected Sigma query: ${sql}`)
+          }
+        },
       })
 
       const { runKey } = await sync.joinOrCreateSyncRun('test', 'exchange_rates_from_usd')
-      const result = await sync.processNext('exchange_rates_from_usd', {
-        runStartedAt: runKey.runStartedAt,
-      })
+      const { total, result } = await processSigmaUntilDone(
+        sync,
+        'exchange_rates_from_usd',
+        runKey.runStartedAt
+      )
 
-      expect(result.processed).toStrictEqual(1)
+      expect(total).toStrictEqual(1)
       expect(result.hasMore).toStrictEqual(false)
 
       const count = await validator.getExchangeRatesCount(TEST_ACCOUNT_ID)
@@ -299,11 +363,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
   describe('processUntilDone (sigma)', () => {
     it('should sync subscription item change events from Sigma', async () => {
-      vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockResolvedValue({
-        queryRunId: 'qr_sub_3',
-        fileId: 'file_sub_3',
-        csv: SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV,
-      })
+      mockSigmaApiRuns({ csvs: [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV] })
 
       const result = await sync.processUntilDone({
         object: 'subscription_item_change_events_v2_beta',
@@ -330,28 +390,18 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
       sigmaConfig.pageSize = 100
 
       const sqlCalls: string[] = []
-      const sigmaSpy = vi
-        .spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv')
-        .mockImplementation(async ({ sql }) => {
-          sqlCalls.push(sql)
-          const start = (sqlCalls.length - 1) * sigmaConfig.pageSize
-          const pageRows = SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.slice(
-            start,
-            start + sigmaConfig.pageSize
-          )
-          return {
-            queryRunId: `qr_page_${sqlCalls.length}`,
-            fileId: `file_page_${sqlCalls.length}`,
-            csv: buildCsvContentString(pageRows),
-          }
-        })
+      const csvs = []
+      for (let i = 0; i < SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length; i += sigmaConfig.pageSize) {
+        const pageRows = SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.slice(i, i + sigmaConfig.pageSize)
+        csvs.push(buildCsvContentString(pageRows))
+      }
+      mockSigmaApiRuns({ csvs, sqlCalls })
 
       try {
         const result = await sync.processUntilDone({
           object: 'subscription_item_change_events_v2_beta',
         })
 
-        expect(sigmaSpy).toHaveBeenCalled()
         expect(sqlCalls.length).toBeGreaterThan(1)
         expect(sqlCalls[0]).not.toContain('WHERE')
         expect(sqlCalls[1]).toContain('WHERE')
@@ -365,12 +415,13 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
     it('should pick up new subscription item change events on subsequent runs', async () => {
       const csvs = [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV, SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_CSV]
-      vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockImplementation(async ({ sql }) => {
-        if (!sql.includes('subscription_item_change_events_v2_beta')) {
-          throw new Error(`Unexpected Sigma query: ${sql}`)
-        }
-        const csv = csvs.shift() ?? SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV
-        return { queryRunId: 'qr_sub_4', fileId: 'file_sub_4', csv }
+      mockSigmaApiRuns({
+        csvs,
+        validateSql: (sql) => {
+          if (!sql.includes('subscription_item_change_events_v2_beta')) {
+            throw new Error(`Unexpected Sigma query: ${sql}`)
+          }
+        },
       })
 
       const first = await sync.processUntilDone({

@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'vitest'
-import { webhookFunctionCode, workerFunctionCode } from '../supabase'
+import { webhookFunctionCode, workerFunctionCode, sigmaWorkerFunctionCode } from '../supabase'
 
 describe('Edge Function Files', () => {
   describe('webhookFunctionCode', () => {
-    test('imports StripeSync from npm package', () => {
-      expect(webhookFunctionCode).toMatch(
-        /import \{ StripeSync \} from 'npm:stripe-experiment-sync(@[\d.]+)?'/
+    test('imports StripeSync (resolved via import map)', () => {
+      expect(webhookFunctionCode).toContain(
+        "import { StripeSync } from 'stripe-experiment-sync'"
       )
     })
 
@@ -47,14 +47,14 @@ describe('Edge Function Files', () => {
   })
 
   describe('workerFunctionCode', () => {
-    test('imports StripeSync from npm package', () => {
-      expect(workerFunctionCode).toMatch(
-        /import \{ StripeSync \} from 'npm:stripe-experiment-sync(@[\d.]+)?'/
+    test('imports StripeSync (resolved via import map)', () => {
+      expect(workerFunctionCode).toContain(
+        "import { StripeSync } from 'stripe-experiment-sync'"
       )
     })
 
-    test('imports postgres for pgmq operations', () => {
-      expect(workerFunctionCode).toContain("import postgres from 'npm:postgres'")
+    test('imports postgres for pgmq operations (resolved via import map)', () => {
+      expect(workerFunctionCode).toContain("import postgres from 'postgres'")
     })
 
     test('uses poolConfig for database connection', () => {
@@ -110,6 +110,77 @@ describe('Edge Function Files', () => {
 
     test('returns 500 on error', () => {
       expect(workerFunctionCode).toContain('status: 500')
+    })
+  })
+
+  describe('sigmaWorkerFunctionCode', () => {
+    test('imports StripeSync (resolved via import map)', () => {
+      expect(sigmaWorkerFunctionCode).toContain(
+        "import { StripeSync } from 'stripe-experiment-sync'"
+      )
+    })
+
+    test('imports postgres for database operations (resolved via import map)', () => {
+      expect(sigmaWorkerFunctionCode).toContain("import postgres from 'postgres'")
+    })
+
+    test('uses poolConfig for database connection', () => {
+      expect(sigmaWorkerFunctionCode).toContain('poolConfig:')
+      expect(sigmaWorkerFunctionCode).toContain('connectionString: dbUrl')
+    })
+
+    test('uses SUPABASE_DB_URL environment variable', () => {
+      expect(sigmaWorkerFunctionCode).toContain("Deno.env.get('SUPABASE_DB_URL')")
+    })
+
+    test('uses STRIPE_SECRET_KEY environment variable', () => {
+      expect(sigmaWorkerFunctionCode).toContain("Deno.env.get('STRIPE_SECRET_KEY')")
+    })
+
+    test('verifies authorization header', () => {
+      expect(sigmaWorkerFunctionCode).toContain("req.headers.get('Authorization')")
+      expect(sigmaWorkerFunctionCode).toContain("startsWith('Bearer ')")
+    })
+
+    test('returns 401 for unauthorized requests', () => {
+      expect(sigmaWorkerFunctionCode).toContain('Unauthorized')
+      expect(sigmaWorkerFunctionCode).toContain('status: 401')
+    })
+
+    test('uses sigma-specific vault secret', () => {
+      expect(sigmaWorkerFunctionCode).toContain('stripe_sigma_worker_secret')
+    })
+
+    test('enables sigma mode', () => {
+      expect(sigmaWorkerFunctionCode).toContain('enableSigma: true')
+    })
+
+    test('initializes sigma sync run and object runs', () => {
+      expect(sigmaWorkerFunctionCode).toContain('getSupportedSigmaObjects')
+      expect(sigmaWorkerFunctionCode).toContain('getOrCreateSyncRun')
+      expect(sigmaWorkerFunctionCode).toContain('createObjectRuns')
+    })
+
+    test('claims pending objects via object runs', () => {
+      expect(sigmaWorkerFunctionCode).toContain('listObjectsByStatus')
+      expect(sigmaWorkerFunctionCode).toContain('tryStartObjectSync')
+    })
+
+    test('calls processNext for each object', () => {
+      expect(sigmaWorkerFunctionCode).toContain('processNext')
+    })
+
+    test('self-triggers via trigger function', () => {
+      expect(sigmaWorkerFunctionCode).toContain('trigger_sigma_worker')
+    })
+
+    test('uses JSON responses', () => {
+      expect(sigmaWorkerFunctionCode).toContain('jsonResponse')
+    })
+
+    test('returns 500 on error', () => {
+      expect(sigmaWorkerFunctionCode).toContain('jsonResponse({ error')
+      expect(sigmaWorkerFunctionCode).toContain('500')
     })
   })
 })

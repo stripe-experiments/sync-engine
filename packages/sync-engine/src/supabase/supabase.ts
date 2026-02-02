@@ -1,13 +1,11 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
-import { build, type OnResolveArgs, type PluginBuild } from 'esbuild'
-import { existsSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import {
+  setupFunctionCode,
+  webhookFunctionCode,
+  workerFunctionCode,
+  sigmaWorkerFunctionCode,
+} from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
-
-// Get the directory of this module for resolving paths to supabase/ directory
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
 
 export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
 export const INSTALLATION_STARTED_SUFFIX = 'installation:started'
@@ -86,87 +84,18 @@ export class SupabaseSetupClient {
     }
   }
 
-  private getEdgeFunctionEntry(slug: string): string {
-    // Prefer local src/ for development; fallback to dist if available
-    const srcEntry = resolve(__dirname, 'edge-functions', `${slug}.ts`)
-    if (existsSync(srcEntry)) {
-      return srcEntry
+  /**
+   * Inject package version into Edge Function code
+   */
+  private injectPackageVersion(code: string, version: string): string {
+    if (version === 'latest') {
+      return code
     }
-
-    const distEntry = resolve(__dirname, 'edge-functions', `${slug}.js`)
-    if (existsSync(distEntry)) {
-      return distEntry
-    }
-
-    throw new Error(`Edge function entry not found for ${slug}`)
-  }
-
-  private async bundleEdgeFunction(entryPath: string): Promise<string> {
-    const packageRoot = resolve(__dirname, '..')
-    const localSyncEntry = resolve(packageRoot, 'index.ts')
-    const localSyncEntryFallback = resolve(packageRoot, 'index.js')
-    const syncEntry = existsSync(localSyncEntry) ? localSyncEntry : localSyncEntryFallback
-
-    if (!existsSync(syncEntry)) {
-      throw new Error(`Local sync-engine entry not found at ${syncEntry}`)
-    }
-
-    const npmDeps = new Map([
-      ['stripe', '^17.7.0'],
-      ['pg', '^8.16.3'],
-      ['pg-node-migrations', '0.0.8'],
-      ['postgres', '^3.4.4'],
-      ['yesql', '^7.0.0'],
-      ['papaparse', '5.4.1'],
-      ['ws', '^8.18.0'],
-      ['dotenv', '^16.4.7'],
-      ['express', '^4.18.2'],
-      ['inquirer', '^12.3.0'],
-    ])
-
-    const result = await build({
-      entryPoints: [entryPath],
-      bundle: true,
-      write: false,
-      format: 'esm',
-      platform: 'neutral',
-      target: 'es2020',
-      external: ['node:*', 'crypto'],
-      plugins: [
-        {
-          name: 'stripe-sync-local-resolver',
-          setup: (buildApi: PluginBuild) => {
-            buildApi.onResolve({ filter: /^stripe-experiment-sync$/ }, () => ({
-              path: syncEntry,
-            }))
-
-            buildApi.onResolve({ filter: /^[^./].*/ }, (args: OnResolveArgs) => {
-              const version = npmDeps.get(args.path)
-              if (version) {
-                return { path: `npm:${args.path}@${version}`, external: true }
-              }
-              return null
-            })
-          },
-        },
-      ],
-    })
-
-    const output = result.outputFiles?.[0]?.text
-    if (!output) {
-      throw new Error('Failed to bundle edge function')
-    }
-    return output
-  }
-
-  async deployLocalEdgeFunctions(): Promise<void> {
-    const functions = ['stripe-setup', 'stripe-webhook', 'stripe-worker', 'sigma-data-worker']
-
-    for (const fn of functions) {
-      const entryPath = this.getEdgeFunctionEntry(fn)
-      const bundled = await this.bundleEdgeFunction(entryPath)
-      await this.deployFunction(fn, bundled, false)
-    }
+    // Replace unversioned npm imports with versioned ones
+    return code.replace(
+      /from ['"]npm:stripe-experiment-sync['"]/g,
+      `from 'npm:stripe-experiment-sync@${version}'`
+    )
   }
 
   /**
@@ -536,13 +465,16 @@ export class SupabaseSetupClient {
 
   async install(
     stripeKey: string,
-    _packageVersion?: string, // Unused - local bundle always used
+    packageVersion?: string,
     workerIntervalSeconds?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
       throw new Error('Stripe key should start with "sk_" or "rk_"')
     }
+
+    // Default to 'latest' if no version specified
+    const version = packageVersion || 'latest'
 
     try {
       // Validate project
@@ -556,8 +488,16 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
       )
 
-      // Deploy Edge Functions using Management API with local bundled code
-      await this.deployLocalEdgeFunctions()
+      // Deploy Edge Functions with specified package version
+      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
+      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
+      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
+      const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
+
+      await this.deployFunction('stripe-setup', versionedSetup, false)
+      await this.deployFunction('stripe-webhook', versionedWebhook, false)
+      await this.deployFunction('stripe-worker', versionedWorker, false)
+      await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
 
       // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]

@@ -555,6 +555,8 @@ describe('SupabaseDeployClient', () => {
       // @ts-expect-error - mocking for test
       client.setupPgCronJob = vi.fn().mockResolvedValue(null)
       // @ts-expect-error - mocking for test
+      client.setupSigmaPgCronJob = vi.fn().mockResolvedValue(null)
+      // @ts-expect-error - mocking for test
       client.updateInstallationComment = vi.fn().mockResolvedValue(null)
 
       await client.install('sk_test_key')
@@ -589,6 +591,8 @@ describe('SupabaseDeployClient', () => {
       client.invokeFunction = vi.fn().mockResolvedValue({ success: true })
       // @ts-expect-error - mocking for test
       client.setupPgCronJob = vi.fn().mockResolvedValue(null)
+      // @ts-expect-error - mocking for test
+      client.setupSigmaPgCronJob = vi.fn().mockResolvedValue(null)
       // @ts-expect-error - mocking for test
       client.updateInstallationComment = vi.fn().mockResolvedValue(null)
 
