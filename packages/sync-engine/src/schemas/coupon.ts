@@ -1,9 +1,5 @@
 import type { EntitySchema } from './types'
 
-import Stripe from 'stripe'
-
-// The Coupon type
-export type Coupon = Stripe.Coupon
 
 export const couponSchema: EntitySchema = {
   properties: [
