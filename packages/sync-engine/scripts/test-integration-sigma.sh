@@ -53,8 +53,8 @@ npm run build > /dev/null 2>&1
 echo "✓ CLI built successfully"
 echo ""
 
-echo "Step 2: Running database migrations..."
-STRIPE_API_KEY="$STRIPE_API_KEY_3" node dist/cli/index.js migrate > /dev/null 2>&1
+echo "Step 2: Running database migrations (with sigma tables)..."
+STRIPE_API_KEY="$STRIPE_API_KEY_3" node dist/cli/index.js migrate --sigma > /dev/null 2>&1
 echo "✓ Migrations completed"
 echo ""
 
@@ -69,14 +69,24 @@ PRODUCT_IDS+=("$PROD_ID")
 echo "   ✓ Created product: $PROD_ID"
 echo ""
 
-echo "Step 4: Running backfill all (syncs both sigma and non-sigma entities)..."
-echo "   Executing: stripe-sync backfill all"
+echo "Step 4: Running backfill for specific sigma tables..."
 echo ""
 
-STRIPE_API_KEY="$STRIPE_API_KEY_3" ENABLE_SIGMA=true node dist/cli/index.js backfill all
-
+# Backfill the product first (non-sigma)
+echo "   Backfilling products..."
+STRIPE_API_KEY="$STRIPE_API_KEY_3" node dist/cli/index.js backfill product
 echo ""
-echo "✓ Backfill all completed"
+
+# Backfill specific sigma tables (using --sigma flag)
+echo "   Backfilling subscription_item_change_events_v2_beta (sigma)..."
+STRIPE_API_KEY="$STRIPE_API_KEY_3" node dist/cli/index.js backfill --sigma subscription_item_change_events_v2_beta
+echo ""
+
+echo "   Backfilling exchange_rates_from_usd (sigma)..."
+STRIPE_API_KEY="$STRIPE_API_KEY_3" node dist/cli/index.js backfill --sigma exchange_rates_from_usd
+echo ""
+
+echo "✓ Backfill completed"
 echo ""
 
 # Step 5: Verify data in database
@@ -154,7 +164,7 @@ fi
 echo ""
 echo "=========================================="
 echo "Sigma Integration Test Completed!"
-echo "- ✓ backfill all synced both sigma and non-sigma entities"
+echo "- ✓ Targeted backfill of specific sigma tables worked"
 echo "- ✓ subscription_item_change_events_v2_beta: $SICE_COUNT rows (sigma)"
 echo "- ✓ exchange_rates_from_usd: $EXCHANGE_COUNT rows (sigma)"
 echo "- ✓ products: test product synced (non-sigma)"

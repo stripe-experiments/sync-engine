@@ -14,6 +14,7 @@ import {
 } from '../index'
 import { createTunnel, type NgrokTunnel } from './ngrok'
 import { install, uninstall } from '../supabase'
+import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
 
 export interface DeployOptions {
   supabaseAccessToken?: string
@@ -56,18 +57,27 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
   let stripeSync: StripeSync | null = null
 
   try {
-    // Validate entity name
-    if (!VALID_SYNC_OBJECTS.includes(entityName as SyncObject)) {
+    // For backfill, we only need stripe key and database URL (not ngrok token)
+    dotenv.config()
+
+    // Check if sigma is enabled via CLI option or env var
+    const enableSigma = options.enableSigma ?? process.env.ENABLE_SIGMA === 'true'
+
+    // Validate entity name - allow sigma table names when sigma is enabled
+    const sigmaTableNames = enableSigma ? Object.keys(SIGMA_INGESTION_CONFIGS) : []
+    const validEntities = [...VALID_SYNC_OBJECTS, ...sigmaTableNames]
+    if (!validEntities.includes(entityName as SyncObject)) {
+      const entityList = enableSigma
+        ? `${VALID_SYNC_OBJECTS.join(', ')}, and ${sigmaTableNames.length} sigma tables`
+        : VALID_SYNC_OBJECTS.join(', ')
       console.error(
-        chalk.red(
-          `Error: Invalid entity name "${entityName}". Valid entities are: ${VALID_SYNC_OBJECTS.join(', ')}`
-        )
+        chalk.red(`Error: Invalid entity name "${entityName}". Valid entities are: ${entityList}`)
       )
       process.exit(1)
     }
 
-    // For backfill, we only need stripe key and database URL (not ngrok token)
-    dotenv.config()
+    // Check if this is a sigma table
+    const isSigmaTable = sigmaTableNames.includes(entityName)
 
     let stripeApiKey =
       options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
@@ -133,7 +143,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     try {
       await runMigrations({
         databaseUrl: config.databaseUrl,
-        enableSigma: process.env.ENABLE_SIGMA === 'true',
+        enableSigma,
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))
@@ -153,7 +163,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     stripeSync = new StripeSync({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
-      enableSigma: process.env.ENABLE_SIGMA === 'true',
+      enableSigma,
       stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
@@ -161,13 +171,48 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     })
 
     // Run sync for the specified entity
-    const result = await stripeSync.processUntilDone({ object: entityName as SyncObject })
-    const totalSynced = Object.values(result).reduce(
-      (sum, syncResult) => sum + (syncResult?.synced || 0),
-      0
-    )
-
-    console.log(chalk.green(`✓ Backfill complete: ${totalSynced} ${entityName} objects synced`))
+    // Use processUntilDoneParallel for 'all' to get better error handling with skipInaccessibleSigmaTables
+    if (entityName === 'all') {
+      const backfill = await stripeSync.processUntilDoneParallel({
+        object: 'all',
+        triggeredBy: 'cli-backfill',
+        maxParallel: 10,
+        skipInaccessibleSigmaTables: true,
+      })
+      const objectCount = Object.keys(backfill.totals).length
+      console.log(
+        chalk.green(
+          `✓ Backfill complete: ${backfill.totalSynced} rows synced across ${objectCount} objects`
+        )
+      )
+      if (backfill.skipped.length > 0) {
+        console.log(
+          chalk.yellow(
+            `Skipped ${backfill.skipped.length} Sigma tables without access: ${backfill.skipped.join(', ')}`
+          )
+        )
+      }
+      if (backfill.errors.length > 0) {
+        console.log(
+          chalk.red(`Backfill finished with ${backfill.errors.length} errors:`)
+        )
+        for (const err of backfill.errors) {
+          console.log(chalk.red(`  - ${err.object}: ${err.message}`))
+        }
+      }
+    } else {
+      // Use processUntilDone for specific objects (including sigma tables)
+      // Cast to any to allow sigma table names which aren't in SyncObject type
+      const result = await stripeSync.processUntilDone({ object: entityName as SyncObject })
+      const totalSynced = Object.values(result).reduce(
+        (sum, syncResult) => sum + (syncResult?.synced || 0),
+        0
+      )
+      const tableType = isSigmaTable ? '(sigma)' : ''
+      console.log(
+        chalk.green(`✓ Backfill complete: ${totalSynced} ${entityName} ${tableType} rows synced`)
+      )
+    }
 
     // Clean up database pool
     await stripeSync.close()
@@ -221,13 +266,19 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
       databaseUrl = answers.databaseUrl
     }
 
+    // Check if sigma is enabled via CLI option or env var
+    const enableSigma = options.enableSigma ?? process.env.ENABLE_SIGMA === 'true'
+
     console.log(chalk.blue("Running database migrations in 'stripe' schema..."))
     console.log(chalk.gray(`Database: ${databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
+    if (enableSigma) {
+      console.log(chalk.blue('Sigma tables enabled'))
+    }
 
     try {
       await runMigrations({
         databaseUrl,
-        enableSigma: process.env.ENABLE_SIGMA === 'true',
+        enableSigma,
       })
       console.log(chalk.green('✓ Migrations completed successfully'))
     } catch (migrationError) {
