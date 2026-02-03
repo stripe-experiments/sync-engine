@@ -4,15 +4,9 @@
  * Translated from scripts/verify-webhook-reuse.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { execSync } from 'child_process'
 import pg from 'pg'
-import {
-  startPostgres,
-  stopPostgres,
-  getDatabaseUrl,
-} from './helpers/test-db.js'
+import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
 import { checkEnvVars } from './helpers/stripe-client.js'
-import { buildCli } from './helpers/cli-process.js'
 import { StripeSync, runMigrations } from '../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-webhook-reuse-test'
@@ -22,7 +16,6 @@ const PORT = 5439
 describe('Webhook Reuse Integration', () => {
   let pool: pg.Pool
   let sync: StripeSync
-  const cwd = process.cwd()
   const createdWebhookIds: string[] = []
 
   beforeAll(async () => {
@@ -69,6 +62,7 @@ describe('Webhook Reuse Integration', () => {
     createdWebhookIds.push(webhook.id)
 
     // Verify webhook count
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
   })
@@ -87,6 +81,7 @@ describe('Webhook Reuse Integration', () => {
     expect(webhook2.id).toBe(webhook1.id)
 
     // Verify still only one webhook
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
   })
@@ -116,10 +111,10 @@ describe('Webhook Reuse Integration', () => {
     createdWebhookIds.push(orphanedId)
 
     // Delete from database only (simulate orphaned state)
-    await (sync as any).postgresClient.query(
-      `DELETE FROM stripe._managed_webhooks WHERE id = $1`,
-      [orphanedId]
-    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (sync as any).postgresClient.query(`DELETE FROM stripe._managed_webhooks WHERE id = $1`, [
+      orphanedId,
+    ])
 
     // Call again - should clean up orphan and create new one
     const newWebhook = await sync.findOrCreateManagedWebhook(
@@ -137,9 +132,7 @@ describe('Webhook Reuse Integration', () => {
     // Create 5 concurrent requests
     const promises = Array(5)
       .fill(null)
-      .map(() =>
-        sync.findOrCreateManagedWebhook(concurrentUrl, { enabled_events: ['*'] })
-      )
+      .map(() => sync.findOrCreateManagedWebhook(concurrentUrl, { enabled_events: ['*'] }))
 
     const results = await Promise.all(promises)
 
@@ -150,7 +143,9 @@ describe('Webhook Reuse Integration', () => {
     createdWebhookIds.push(results[0].id)
 
     // Verify only one webhook in database
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync as any).listManagedWebhooks()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matching = webhooks.filter((w: any) => w.url === concurrentUrl)
     expect(matching.length).toBe(1)
   })

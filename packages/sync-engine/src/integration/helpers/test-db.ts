@@ -42,10 +42,9 @@ export async function startPostgres(config: TestDbConfig): Promise<pg.Pool> {
   let retries = 30
   while (retries > 0) {
     try {
-      execSync(
-        `docker exec ${containerName} pg_isready -U postgres -d ${dbName}`,
-        { stdio: 'pipe' }
-      )
+      execSync(`docker exec ${containerName} pg_isready -U postgres -d ${dbName}`, {
+        stdio: 'pipe',
+      })
       break
     } catch {
       retries--

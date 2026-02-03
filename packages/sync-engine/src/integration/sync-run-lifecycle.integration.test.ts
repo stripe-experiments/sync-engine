@@ -7,13 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
-import {
-  startPostgres,
-  stopPostgres,
-  queryDbSingle,
-  queryDbCount,
-  getDatabaseUrl,
-} from './helpers/test-db.js'
+import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
 import { checkEnvVars } from './helpers/stripe-client.js'
 import { buildCli } from './helpers/cli-process.js'
 import { StripeSync } from '../index.js'
@@ -170,7 +164,8 @@ describe('Sync Run Lifecycle', () => {
 
   it('should isolate multiple runs without interference', async () => {
     // Create first run and complete it
-    const { runKey: runKey1, objects: objects1 } = await sync.joinOrCreateSyncRun('test-isolation-1')
+    const { runKey: runKey1, objects: objects1 } =
+      await sync.joinOrCreateSyncRun('test-isolation-1')
 
     for (const obj of objects1) {
       let hasMore = true
@@ -181,7 +176,8 @@ describe('Sync Run Lifecycle', () => {
     }
 
     // Create second run
-    const { runKey: runKey2, objects: objects2 } = await sync.joinOrCreateSyncRun('test-isolation-2')
+    const { runKey: runKey2, objects: objects2 } =
+      await sync.joinOrCreateSyncRun('test-isolation-2')
 
     // Verify different timestamps
     expect(runKey2.runStartedAt.getTime()).not.toBe(runKey1.runStartedAt.getTime())

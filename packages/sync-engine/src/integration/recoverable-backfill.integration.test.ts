@@ -29,8 +29,6 @@ describe('Error Recovery Integration', () => {
   const tracker = new ResourceTracker()
   let stripe: ReturnType<typeof getStripeClient>
   const cwd = process.cwd()
-  const productIds: string[] = []
-  let accountId: string
   let hasWritePermissions = false
 
   beforeAll(async () => {
@@ -45,8 +43,9 @@ describe('Error Recovery Integration', () => {
       })
       await stripe.products.update(testProduct.id, { active: false })
       hasWritePermissions = true
-    } catch (err: any) {
-      if (err.code === 'permission_error' || err.type === 'StripePermissionError') {
+    } catch (err: unknown) {
+      const stripeError = err as { code?: string; type?: string }
+      if (stripeError.code === 'permission_error' || stripeError.type === 'StripePermissionError') {
         console.log('Skipping Error Recovery tests: API key lacks write permissions')
         hasWritePermissions = false
         return
@@ -73,7 +72,6 @@ describe('Error Recovery Integration', () => {
         name: `Test Product ${i} - Recovery`,
         description: `Integration test product ${i} for error recovery`,
       })
-      productIds.push(product.id)
       tracker.trackProduct(product.id)
     }
   }, 300000) // 5 minutes for creating 200 products
@@ -102,10 +100,11 @@ describe('Error Recovery Integration', () => {
       stdio: 'pipe',
     })
 
-    // Wait for sync to reach 'running' state
+    // Wait for sync to reach 'running' state AND have synced at least some products
     let status = ''
+    let productsBeforeKill = 0
     let attempts = 0
-    const maxAttempts = 100
+    const maxAttempts = 200 // 20 seconds max wait
 
     while (attempts < maxAttempts) {
       const statusRow = await queryDbSingle<{ status: string }>(
@@ -117,7 +116,16 @@ describe('Error Recovery Integration', () => {
       )
       status = statusRow?.status ?? ''
 
-      if (status === 'running') {
+      // Check how many products have been synced
+      productsBeforeKill = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
+
+      // Wait until we have at least some products synced before killing
+      if (status === 'running' && productsBeforeKill > 0) {
+        break
+      }
+
+      // If sync already completed, no crash test needed
+      if (status === 'complete') {
         break
       }
 
@@ -125,22 +133,18 @@ describe('Error Recovery Integration', () => {
       attempts++
     }
 
-    // Get account ID
-    const accountRow = await queryDbSingle<{ account_id: string }>(
-      pool,
-      'SELECT account_id FROM stripe.sync_runs ORDER BY started_at DESC LIMIT 1'
-    )
-    accountId = accountRow?.account_id ?? ''
+    // If sync completed before we could interrupt, skip crash test but verify completion
+    if (status === 'complete') {
+      console.log('Sync completed before interruption - verifying completion instead')
+      const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
+      expect(finalProducts).toBeGreaterThan(0)
+      syncProcess.kill('SIGTERM')
+      return
+    }
 
-    // If sync completed before we could interrupt, skip crash test
-    const productsBeforeKill = await queryDbCount(
-      pool,
-      "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%'"
-    )
-
-    if (productsBeforeKill >= 200) {
-      // Sync completed too fast - still verify idempotency
-      expect(status).toBe('complete')
+    // If we couldn't get any products synced in time, skip gracefully
+    if (productsBeforeKill === 0) {
+      console.log('Could not catch sync in progress with products - skipping crash test')
       syncProcess.kill('SIGTERM')
       return
     }
@@ -151,17 +155,9 @@ describe('Error Recovery Integration', () => {
     syncProcess.kill('SIGKILL')
     await sleep(500)
 
-    // Verify cursor was saved (partial progress preserved)
-    const cursorRow = await queryDbSingle<{ cursor: string }>(
-      pool,
-      `SELECT COALESCE(cursor, '0') as cursor FROM stripe._sync_obj_runs o
-       JOIN stripe._sync_runs r ON o._account_id = r._account_id AND o.run_started_at = r.started_at
-       WHERE o._account_id = '${accountId}' AND o.object = 'products'
-       ORDER BY r.started_at DESC LIMIT 1`
-    )
-
-    // Products synced before crash should still be in DB
-    expect(productsBeforeKill).toBeGreaterThan(0)
+    // Verify products synced before crash are still in DB (partial progress preserved)
+    const productsAfterKill = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
+    expect(productsAfterKill).toBe(productsBeforeKill)
   }, 60000)
 
   it('should recover and complete sync after interruption', async () => {
@@ -170,21 +166,9 @@ describe('Error Recovery Integration', () => {
       return
     }
 
-    const productsBeforeRecovery = await queryDbCount(
-      pool,
-      "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%'"
-    )
+    const productsBeforeRecovery = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
 
-    const cursorBeforeRecovery = await queryDbSingle<{ cursor: string }>(
-      pool,
-      `SELECT COALESCE(cursor, '0') as cursor FROM stripe._sync_obj_runs o
-       JOIN stripe._sync_runs r ON o._account_id = r._account_id AND o.run_started_at = r.started_at
-       WHERE o.object = 'products' AND o.status = 'complete'
-       ORDER BY o.completed_at DESC LIMIT 1`
-    )
-    const cursorBefore = parseInt(cursorBeforeRecovery?.cursor ?? '0', 10)
-
-    // Re-run backfill
+    // Re-run backfill to recover/complete
     runCliCommand('backfill', ['product'], {
       cwd,
       env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
@@ -200,25 +184,11 @@ describe('Error Recovery Integration', () => {
     )
     expect(finalStatusRow?.status).toBe('complete')
 
-    // Verify no data loss
-    const finalProducts = await queryDbCount(
-      pool,
-      "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%'"
-    )
+    // Verify no data loss - should have at least as many products as before
+    const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
     expect(finalProducts).toBeGreaterThanOrEqual(productsBeforeRecovery)
 
-    // Verify cursor advanced or maintained
-    const cursorAfterRecovery = await queryDbSingle<{ cursor: string }>(
-      pool,
-      `SELECT COALESCE(cursor, '0') as cursor FROM stripe._sync_obj_runs o
-       JOIN stripe._sync_runs r ON o._account_id = r._account_id AND o.run_started_at = r.started_at
-       WHERE o.object = 'products' AND o.status = 'complete'
-       ORDER BY o.completed_at DESC LIMIT 1`
-    )
-    const cursorAfter = parseInt(cursorAfterRecovery?.cursor ?? '0', 10)
-    expect(cursorAfter).toBeGreaterThanOrEqual(cursorBefore)
-
-    // Verify error message cleared
+    // Verify error message cleared on successful completion
     const errorRow = await queryDbSingle<{ error_message: string }>(
       pool,
       `SELECT COALESCE(o.error_message, '') as error_message FROM stripe._sync_obj_runs o

@@ -6,12 +6,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
-import {
-  startPostgres,
-  stopPostgres,
-  queryDbCount,
-  getDatabaseUrl,
-} from './helpers/test-db.js'
+import { startPostgres, stopPostgres, queryDbCount, getDatabaseUrl } from './helpers/test-db.js'
 import { getStripeClient, checkEnvVars } from './helpers/stripe-client.js'
 import { ResourceTracker } from './helpers/cleanup.js'
 import { CliProcess, buildCli } from './helpers/cli-process.js'

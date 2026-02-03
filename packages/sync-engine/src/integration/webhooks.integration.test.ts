@@ -74,10 +74,7 @@ describe('Webhook Integration', () => {
     expect(logs).toContain('Webhook created:')
 
     // Verify webhook in database
-    const webhookCount = await queryDbCount(
-      pool,
-      'SELECT COUNT(*) FROM stripe._managed_webhooks'
-    )
+    const webhookCount = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe._managed_webhooks')
     expect(webhookCount).toBeGreaterThan(0)
   })
 
@@ -179,10 +176,7 @@ describe('Webhook Integration', () => {
 
     // Generate signature
     const signaturePayload = `${timestamp}.${payload}`
-    const signature = crypto
-      .createHmac('sha256', secret)
-      .update(signaturePayload)
-      .digest('hex')
+    const signature = crypto.createHmac('sha256', secret).update(signaturePayload).digest('hex')
 
     // Send request
     const response = await fetch(url, {
@@ -209,10 +203,7 @@ describe('Webhook Integration', () => {
     await sleep(2000)
 
     // Verify webhook removed from database
-    const webhookCount = await queryDbCount(
-      pool,
-      'SELECT COUNT(*) FROM stripe._managed_webhooks'
-    )
+    const webhookCount = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe._managed_webhooks')
     expect(webhookCount).toBe(0)
   })
 })

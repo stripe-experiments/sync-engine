@@ -9,7 +9,6 @@ import pg from 'pg'
 import {
   startPostgres,
   stopPostgres,
-  queryDb,
   queryDbCount,
   queryDbSingle,
   getDatabaseUrl,
@@ -74,7 +73,13 @@ describe('Backfill Integration', () => {
 
     // Create 3 prices
     for (let i = 0; i < 3; i++) {
-      const priceParams: any = {
+      const priceParams: {
+        product: string
+        unit_amount: number
+        currency: string
+        nickname: string
+        recurring?: { interval: 'month' | 'year' | 'week' | 'day' }
+      } = {
         product: productIds[i],
         unit_amount: (i + 1) * 1000,
         currency: 'usd',
