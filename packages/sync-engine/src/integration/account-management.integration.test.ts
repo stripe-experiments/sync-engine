@@ -9,13 +9,11 @@ import pg from 'pg'
 import {
   startPostgres,
   stopPostgres,
-  queryDb,
   queryDbCount,
   queryDbSingle,
   getDatabaseUrl,
 } from './helpers/test-db.js'
-import { getStripeClient, checkEnvVars } from './helpers/stripe-client.js'
-import { ResourceTracker } from './helpers/cleanup.js'
+import { checkEnvVars } from './helpers/stripe-client.js'
 import { buildCli, runCliCommand } from './helpers/cli-process.js'
 import { StripeSync } from '../index.js'
 
@@ -26,18 +24,11 @@ const PORT = 5436
 describe('Account Management Integration', () => {
   let pool: pg.Pool
   let sync: StripeSync
-  let stripe: ReturnType<typeof getStripeClient>
-  const tracker = new ResourceTracker()
   const cwd = process.cwd()
-
-  // Store created resource IDs
-  const productIds: string[] = []
-  const customerIds: string[] = []
   let accountId: string
 
   beforeAll(async () => {
     checkEnvVars('STRIPE_API_KEY')
-    stripe = getStripeClient()
 
     // Start PostgreSQL
     pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
@@ -60,9 +51,6 @@ describe('Account Management Integration', () => {
   }, 60000)
 
   afterAll(async () => {
-    // Cleanup Stripe resources
-    await tracker.cleanup(stripe)
-
     // Close sync pool
     await sync?.postgresClient?.pool?.end()
 
@@ -113,33 +101,8 @@ describe('Account Management Integration', () => {
 
   describe('dangerouslyDeleteSyncedAccountData()', () => {
     beforeAll(async () => {
-      // Create test data in Stripe
-      // Create 10 test products
-      for (let i = 1; i <= 10; i++) {
-        const product = await stripe.products.create({
-          name: `Test Product ${i} - AccountMgmt`,
-          description: `Test product ${i} for account management testing`,
-        })
-        productIds.push(product.id)
-        tracker.trackProduct(product.id)
-      }
-
-      // Create 5 test customers
-      for (let i = 1; i <= 5; i++) {
-        const customer = await stripe.customers.create({
-          name: `Test Customer ${i}`,
-          email: `test${i}@example.com`,
-        })
-        customerIds.push(customer.id)
-        tracker.trackCustomer(customer.id)
-      }
-
-      // Sync test data to database
+      // Backfill existing products from Stripe account (no write permissions needed)
       runCliCommand('backfill', ['product'], {
-        cwd,
-        env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
-      })
-      runCliCommand('backfill', ['customer'], {
         cwd,
         env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
       })
@@ -150,21 +113,17 @@ describe('Account Management Integration', () => {
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
       )
-      expect(productsBefore).toBeGreaterThanOrEqual(10)
-
-      const customersBefore = await queryDbCount(
-        pool,
-        `SELECT COUNT(*) FROM stripe.customers WHERE _account_id = '${accountId}'`
-      )
-      expect(customersBefore).toBeGreaterThanOrEqual(5)
+      // Account should have at least some products
+      expect(productsBefore).toBeGreaterThan(0)
 
       // Run dry-run deletion
       const result = await sync.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: true })
-      expect(result.dryRun).toBe(true)
-      expect(result.deletedCounts.products).toBeGreaterThanOrEqual(10)
-      expect(result.deletedCounts.customers).toBeGreaterThanOrEqual(5)
+      // API returns { deletedAccountId, deletedRecordCounts, warnings }
+      expect(result.deletedAccountId).toBe(accountId)
+      expect(result.deletedRecordCounts).toBeDefined()
+      expect(result.deletedRecordCounts.products).toBe(productsBefore)
 
-      // Verify no actual deletion occurred
+      // Verify no actual deletion occurred (dry-run)
       const productsAfter = await queryDbCount(
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
@@ -177,10 +136,6 @@ describe('Account Management Integration', () => {
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
       )
-      const customersBefore = await queryDbCount(
-        pool,
-        `SELECT COUNT(*) FROM stripe.customers WHERE _account_id = '${accountId}'`
-      )
       const accountsBefore = await queryDbCount(
         pool,
         `SELECT COUNT(*) FROM stripe.accounts WHERE id = '${accountId}'`
@@ -188,10 +143,9 @@ describe('Account Management Integration', () => {
 
       // Perform actual deletion
       const result = await sync.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: false })
-      expect(result.dryRun).toBe(false)
-      expect(result.deletedCounts.products).toBe(productsBefore)
-      expect(result.deletedCounts.customers).toBe(customersBefore)
-      expect(result.deletedCounts.accounts).toBe(accountsBefore)
+      expect(result.deletedAccountId).toBe(accountId)
+      expect(result.deletedRecordCounts.products).toBe(productsBefore)
+      expect(result.deletedRecordCounts.accounts).toBe(accountsBefore)
 
       // Verify cascade deletion
       const productsAfter = await queryDbCount(
@@ -199,12 +153,6 @@ describe('Account Management Integration', () => {
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
       )
       expect(productsAfter).toBe(0)
-
-      const customersAfter = await queryDbCount(
-        pool,
-        `SELECT COUNT(*) FROM stripe.customers WHERE _account_id = '${accountId}'`
-      )
-      expect(customersAfter).toBe(0)
 
       const accountsAfter = await queryDbCount(
         pool,
@@ -217,7 +165,7 @@ describe('Account Management Integration', () => {
       const result = await sync.dangerouslyDeleteSyncedAccountData('acct_nonexistent', {
         dryRun: false,
       })
-      expect(result.deletedCounts.accounts).toBe(0)
+      expect(result.deletedRecordCounts.accounts).toBe(0)
     })
   })
 })

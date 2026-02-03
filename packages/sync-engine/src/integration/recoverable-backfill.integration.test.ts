@@ -2,6 +2,9 @@
  * Error Recovery Integration Test
  * Tests that sync can recover from crashes and preserve partial progress
  * Translated from scripts/test-integration-recoverable-backfill.sh
+ *
+ * NOTE: This test requires write permissions to create test products.
+ * It will be skipped if using restricted API keys (rk_*).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync, spawn } from 'child_process'
@@ -9,7 +12,6 @@ import pg from 'pg'
 import {
   startPostgres,
   stopPostgres,
-  queryDb,
   queryDbCount,
   queryDbSingle,
   getDatabaseUrl,
@@ -29,10 +31,28 @@ describe('Error Recovery Integration', () => {
   const cwd = process.cwd()
   const productIds: string[] = []
   let accountId: string
+  let hasWritePermissions = false
 
   beforeAll(async () => {
     checkEnvVars('STRIPE_API_KEY')
     stripe = getStripeClient()
+
+    // Check if we have write permissions by trying to create a test product
+    try {
+      const testProduct = await stripe.products.create({
+        name: 'Permission Test Product',
+        description: 'Testing write permissions',
+      })
+      await stripe.products.update(testProduct.id, { active: false })
+      hasWritePermissions = true
+    } catch (err: any) {
+      if (err.code === 'permission_error' || err.type === 'StripePermissionError') {
+        console.log('Skipping Error Recovery tests: API key lacks write permissions')
+        hasWritePermissions = false
+        return
+      }
+      throw err
+    }
 
     // Start PostgreSQL
     pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
@@ -60,7 +80,9 @@ describe('Error Recovery Integration', () => {
 
   afterAll(async () => {
     // Cleanup Stripe resources
-    await tracker.cleanup(stripe)
+    if (hasWritePermissions) {
+      await tracker.cleanup(stripe)
+    }
 
     // Close pool and stop PostgreSQL
     await pool?.end()
@@ -68,6 +90,11 @@ describe('Error Recovery Integration', () => {
   }, 60000)
 
   it('should preserve partial progress when sync is interrupted', async () => {
+    if (!hasWritePermissions) {
+      console.log('Skipping: requires write permissions')
+      return
+    }
+
     // Start backfill in background
     const syncProcess = spawn('node', ['dist/cli/index.js', 'backfill', 'product'], {
       cwd,
@@ -114,6 +141,7 @@ describe('Error Recovery Integration', () => {
     if (productsBeforeKill >= 200) {
       // Sync completed too fast - still verify idempotency
       expect(status).toBe('complete')
+      syncProcess.kill('SIGTERM')
       return
     }
 
@@ -131,13 +159,17 @@ describe('Error Recovery Integration', () => {
        WHERE o._account_id = '${accountId}' AND o.object = 'products'
        ORDER BY r.started_at DESC LIMIT 1`
     )
-    const cursorAfterCrash = parseInt(cursorRow?.cursor ?? '0', 10)
 
     // Products synced before crash should still be in DB
     expect(productsBeforeKill).toBeGreaterThan(0)
   }, 60000)
 
   it('should recover and complete sync after interruption', async () => {
+    if (!hasWritePermissions) {
+      console.log('Skipping: requires write permissions')
+      return
+    }
+
     const productsBeforeRecovery = await queryDbCount(
       pool,
       "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Recovery%'"
