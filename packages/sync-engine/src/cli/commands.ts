@@ -1,6 +1,10 @@
 import chalk from 'chalk'
 import express from 'express'
 import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
+import { spawn } from 'node:child_process'
 import dotenv from 'dotenv'
 import { type PoolConfig } from 'pg'
 import { loadConfig, type CliOptions } from './config'
@@ -13,7 +17,13 @@ import {
   type StripeWebhookEvent,
 } from '../index'
 import { createTunnel, type NgrokTunnel } from './ngrok'
-import { install, uninstall } from '../supabase'
+import {
+  install,
+  uninstall,
+  setupFunctionCode,
+  webhookFunctionCode,
+  workerFunctionCode,
+} from '../supabase'
 
 export interface DeployOptions {
   supabaseAccessToken?: string
@@ -22,6 +32,9 @@ export interface DeployOptions {
   packageVersion?: string
   workerInterval?: number
   supabaseManagementUrl?: string
+  local?: boolean
+  dockerPath?: string
+  ngrokToken?: string
 }
 
 export type { CliOptions }
@@ -503,6 +516,334 @@ export async function syncCommand(options: CliOptions): Promise<void> {
 }
 
 /**
+ * Parse a docker .env file and return key-value pairs
+ */
+function parseDockerEnv(envPath: string): Record<string, string> {
+  const content = fs.readFileSync(envPath, 'utf-8')
+  const result: Record<string, string> = {}
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+
+    const eqIndex = trimmed.indexOf('=')
+    if (eqIndex > 0) {
+      const key = trimmed.substring(0, eqIndex)
+      const value = trimmed.substring(eqIndex + 1)
+      result[key] = value
+    }
+  }
+
+  return result
+}
+
+/**
+ * Install Edge Functions to local self-hosted Supabase Docker.
+ * Copies function files to volumes/functions/<function-name>/index.ts
+ * Also runs database migrations and sets up pg_cron worker job.
+ */
+async function installLocal(options: DeployOptions): Promise<void> {
+  const dockerPath = options.dockerPath || './docker/supabase'
+  const functionsPath = path.join(dockerPath, 'volumes', 'functions')
+
+  // Verify docker path exists
+  if (!fs.existsSync(dockerPath)) {
+    throw new Error(
+      `Docker Supabase directory not found at: ${dockerPath}\n` +
+        `Please specify the correct path with --docker-path or run from the project root.`
+    )
+  }
+
+  // Verify volumes/functions directory exists
+  if (!fs.existsSync(functionsPath)) {
+    throw new Error(
+      `Functions directory not found at: ${functionsPath}\n` +
+        `Make sure you have a self-hosted Supabase Docker setup.`
+    )
+  }
+
+  // Get Stripe key for .env update
+  let stripeKey =
+    options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
+
+  if (!stripeKey) {
+    const inquirer = (await import('inquirer')).default
+    const answers = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'stripeKey',
+        message: 'Enter your Stripe secret key:',
+        mask: '*',
+        validate: (input: string) => {
+          if (!input.trim()) return 'Stripe key is required'
+          if (!input.startsWith('sk_') && !input.startsWith('rk_'))
+            return 'Stripe key should start with "sk_" or "rk_"'
+          return true
+        },
+      },
+    ])
+    stripeKey = answers.stripeKey
+  }
+
+  console.log(chalk.blue('\n🚀 Installing Stripe Sync to local Supabase Edge Functions...\n'))
+
+  // Define function mappings
+  const functions = [
+    { name: 'stripe-setup', code: setupFunctionCode },
+    { name: 'stripe-webhook', code: webhookFunctionCode },
+    { name: 'stripe-worker', code: workerFunctionCode },
+  ]
+
+  // Copy each function to volumes/functions/<name>/index.ts
+  for (const func of functions) {
+    const funcDir = path.join(functionsPath, func.name)
+    const funcFile = path.join(funcDir, 'index.ts')
+
+    // Create function directory if it doesn't exist
+    if (!fs.existsSync(funcDir)) {
+      fs.mkdirSync(funcDir, { recursive: true })
+      console.log(chalk.gray(`  Created directory: ${funcDir}`))
+    }
+
+    // Write the function code
+    fs.writeFileSync(funcFile, func.code, 'utf-8')
+    console.log(chalk.green(`  ✓ Deployed ${func.name}`))
+  }
+
+  // Check if STRIPE_SECRET_KEY is in the docker .env file
+  const dockerEnvPath = path.join(dockerPath, '.env')
+  let envUpdated = false
+
+  if (fs.existsSync(dockerEnvPath)) {
+    let envContent = fs.readFileSync(dockerEnvPath, 'utf-8')
+
+    // Check if STRIPE_SECRET_KEY already exists
+    if (envContent.includes('STRIPE_SECRET_KEY=')) {
+      // Update existing value
+      envContent = envContent.replace(/STRIPE_SECRET_KEY=.*$/m, `STRIPE_SECRET_KEY=${stripeKey}`)
+      fs.writeFileSync(dockerEnvPath, envContent, 'utf-8')
+      console.log(chalk.green(`  ✓ Updated STRIPE_SECRET_KEY in ${dockerEnvPath}`))
+      envUpdated = true
+    } else {
+      // Append to end of file
+      envContent = envContent.trimEnd() + `\n\n# Stripe Sync\nSTRIPE_SECRET_KEY=${stripeKey}\n`
+      fs.writeFileSync(dockerEnvPath, envContent, 'utf-8')
+      console.log(chalk.green(`  ✓ Added STRIPE_SECRET_KEY to ${dockerEnvPath}`))
+      envUpdated = true
+    }
+  }
+
+  // Ask if user wants to restart the functions service
+  const inquirer = (await import('inquirer')).default
+  const { shouldRestart } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'shouldRestart',
+      message: 'Restart the functions service to pick up changes?',
+      default: true,
+    },
+  ])
+
+  if (shouldRestart) {
+    console.log(chalk.blue('\n  Restarting functions service...'))
+
+    await new Promise<void>((resolve) => {
+      const dockerCompose = spawn('docker', ['compose', 'restart', 'functions', '--no-deps'], {
+        cwd: dockerPath,
+        stdio: 'inherit',
+      })
+
+      dockerCompose.on('close', (code) => {
+        if (code === 0) {
+          console.log(chalk.green('  ✓ Functions service restarted'))
+          resolve()
+        } else {
+          console.log(chalk.yellow(`  ⚠ Failed to restart functions service (exit code: ${code})`))
+          const restartCmd = `cd ${dockerPath} && docker compose restart functions --no-deps`
+          console.log(chalk.gray(`  Run manually: ${restartCmd}`))
+          resolve() // Don't reject, just warn
+        }
+      })
+
+      dockerCompose.on('error', (err) => {
+        console.log(chalk.yellow(`  ⚠ Failed to restart functions service: ${err.message}`))
+        const restartCmd = `cd ${dockerPath} && docker compose restart functions --no-deps`
+        console.log(chalk.gray(`  Run manually: ${restartCmd}`))
+        resolve() // Don't reject, just warn
+      })
+    })
+  } else {
+    console.log(chalk.yellow(`\n  Remember to restart the functions service to pick up changes:`))
+    console.log(chalk.gray(`  cd ${dockerPath} && docker compose restart functions --no-deps`))
+  }
+
+  // Run database setup (migrations + pg_cron)
+  console.log(chalk.blue('\n  Setting up database...'))
+
+  // Parse docker .env to get database credentials
+  const dockerEnv = parseDockerEnv(dockerEnvPath)
+  const dbPassword = dockerEnv.POSTGRES_PASSWORD
+  const dbHost = 'localhost' // Connect from host machine
+  const dbPort = '54322' // Default exposed port in docker-compose
+  const dbName = dockerEnv.POSTGRES_DB || 'postgres'
+
+  if (!dbPassword) {
+    throw new Error('POSTGRES_PASSWORD not found in docker .env file')
+  }
+
+  const databaseUrl = `postgresql://postgres:${dbPassword}@${dbHost}:${dbPort}/${dbName}`
+
+  try {
+    // Run migrations
+    console.log(chalk.gray('  Running database migrations...'))
+    await runMigrations({ databaseUrl })
+    console.log(chalk.green('  ✓ Database migrations complete'))
+
+    // Set up pg_cron, pgmq, and vault secret
+    console.log(chalk.gray('  Setting up pg_cron worker job...'))
+    const { Pool } = await import('pg')
+    const pool = new Pool({ connectionString: databaseUrl })
+
+    try {
+      // Generate worker secret
+      const workerSecret = crypto.randomUUID()
+      const escapedWorkerSecret = workerSecret.replace(/'/g, "''")
+
+      // Calculate schedule (default 60 seconds)
+      const intervalSeconds = options.workerInterval || 60
+      let schedule: string
+      if (intervalSeconds < 60) {
+        schedule = `${intervalSeconds} seconds`
+      } else if (intervalSeconds % 60 === 0 && intervalSeconds < 3600) {
+        schedule = `*/${intervalSeconds / 60} * * * *`
+      } else {
+        schedule = '* * * * *' // Default to every minute
+      }
+
+      // Run pg_cron setup SQL
+      // Note: For local Docker, the worker URL uses the internal Docker network
+      const setupSql = `
+        -- Enable extensions
+        CREATE EXTENSION IF NOT EXISTS pg_cron;
+        CREATE EXTENSION IF NOT EXISTS pg_net;
+        CREATE EXTENSION IF NOT EXISTS pgmq;
+
+        -- Create pgmq queue for sync work (idempotent)
+        SELECT pgmq.create('stripe_sync_work')
+        WHERE NOT EXISTS (
+          SELECT 1 FROM pgmq.list_queues() WHERE queue_name = 'stripe_sync_work'
+        );
+
+        -- Store unique worker secret in vault for pg_cron to use
+        DELETE FROM vault.secrets WHERE name = 'stripe_sync_worker_secret';
+        SELECT vault.create_secret('${escapedWorkerSecret}', 'stripe_sync_worker_secret');
+
+        -- Delete existing jobs if they exist
+        SELECT cron.unschedule('stripe-sync-worker') WHERE EXISTS (
+          SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-worker'
+        );
+        SELECT cron.unschedule('stripe-sync-scheduler') WHERE EXISTS (
+          SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-scheduler'
+        );
+
+        -- Create job to invoke worker at configured interval
+        -- Uses internal Docker network URL (kong:8000)
+        SELECT cron.schedule(
+          'stripe-sync-worker',
+          '${schedule}',
+          $$
+          SELECT net.http_post(
+            url := 'http://kong:8000/functions/v1/stripe-worker',
+            headers := jsonb_build_object(
+              'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
+            )
+          )
+          $$
+        );
+      `
+
+      await pool.query(setupSql)
+      console.log(chalk.green('  ✓ pg_cron worker job configured'))
+    } finally {
+      await pool.end()
+    }
+
+    // Create Stripe webhook via ngrok tunnel if token available
+    const ngrokToken = options.ngrokToken || process.env.NGROK_AUTH_TOKEN
+    let webhookCreated = false
+    let tunnel: NgrokTunnel | null = null
+
+    if (ngrokToken) {
+      console.log(chalk.gray('  Creating ngrok tunnel for webhook...'))
+      try {
+        // Create ngrok tunnel to local Supabase
+        tunnel = await createTunnel(8000, ngrokToken)
+        const webhookUrl = `${tunnel.url}/functions/v1/stripe-webhook`
+        console.log(chalk.green(`  ✓ ngrok tunnel created: ${tunnel.url}`))
+
+        // Create StripeSync instance to register webhook
+        const stripeSync = new StripeSync({
+          poolConfig: { connectionString: databaseUrl, max: 2 },
+          stripeSecretKey: stripeKey,
+        })
+
+        try {
+          console.log(chalk.gray('  Registering Stripe webhook...'))
+          const webhook = await stripeSync.findOrCreateManagedWebhook(webhookUrl)
+          console.log(chalk.green(`  ✓ Stripe webhook registered: ${webhook.id}`))
+          webhookCreated = true
+        } finally {
+          await stripeSync.close()
+        }
+      } catch (ngrokError) {
+        console.log(chalk.yellow(`  ⚠ ngrok/webhook setup failed: ${ngrokError instanceof Error ? ngrokError.message : String(ngrokError)}`))
+        if (tunnel) {
+          try {
+            await tunnel.close()
+          } catch {
+            // Ignore cleanup errors
+          }
+          tunnel = null
+        }
+      }
+    }
+
+    if (!webhookCreated) {
+      console.log(chalk.yellow('  ⚠ Stripe webhook not auto-created'))
+      console.log(chalk.gray('    Provide --ngrok-token or NGROK_AUTH_TOKEN to auto-create webhook'))
+      console.log(chalk.gray('    Or use Stripe CLI: stripe listen --forward-to localhost:8000/functions/v1/stripe-webhook'))
+    }
+  } catch (dbError) {
+    console.log(chalk.yellow(`  ⚠ Database setup failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`))
+    console.log(chalk.gray('    Make sure your Supabase Docker is running and accessible at localhost:54322'))
+  }
+
+  // Print summary
+  console.log(chalk.cyan('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+  console.log(chalk.cyan.bold('  Local Installation Complete!'))
+  console.log(chalk.cyan('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
+
+  console.log(chalk.white('  Edge Functions installed:'))
+  console.log(chalk.gray('    • stripe-setup   - Setup and status endpoint'))
+  console.log(chalk.gray('    • stripe-webhook - Receives Stripe webhook events'))
+  console.log(chalk.gray('    • stripe-worker  - Background sync worker'))
+
+  console.log(chalk.white('\n  Database configured:'))
+  console.log(chalk.gray('    • Migrations applied'))
+  console.log(chalk.gray('    • pg_cron worker job scheduled'))
+  console.log(chalk.gray('    • Vault secret configured'))
+
+  console.log(chalk.white('\n  Next steps:'))
+  console.log(chalk.gray('    1. View your data in Supabase Studio (localhost:8000) under the "stripe" schema'))
+  console.log(chalk.gray('    2. If webhook not created, use Stripe CLI:'))
+  console.log(chalk.gray('       stripe listen --forward-to localhost:8000/functions/v1/stripe-webhook'))
+
+  if (!envUpdated) {
+    console.log(chalk.yellow('\n  ⚠ Remember to add STRIPE_SECRET_KEY to your docker .env file!'))
+  }
+}
+
+/**
  * Install command - installs Stripe sync Edge Functions to Supabase.
  * 1. Validates Supabase project access
  * 2. Deploys stripe-setup, stripe-webhook, and stripe-worker Edge Functions
@@ -512,6 +853,12 @@ export async function syncCommand(options: CliOptions): Promise<void> {
 export async function installCommand(options: DeployOptions): Promise<void> {
   try {
     dotenv.config()
+
+    // Handle local installation
+    if (options.local) {
+      await installLocal(options)
+      return
+    }
 
     let accessToken = options.supabaseAccessToken || process.env.SUPABASE_ACCESS_TOKEN || ''
     let projectRef = options.supabaseProjectRef || process.env.SUPABASE_PROJECT_REF || ''

@@ -8,8 +8,16 @@ const MGMT_API_BASE = MGMT_API_BASE_RAW.match(/^https?:\/\//)
   ? MGMT_API_BASE_RAW
   : `https://${MGMT_API_BASE_RAW}`
 
-// Helper to validate accessToken against Management API
-async function validateAccessToken(projectRef: string, accessToken: string): Promise<boolean> {
+// Detect if running in local Docker mode
+// Local Docker uses internal URLs like http://kong:8000 for SUPABASE_URL
+function isLocalDockerMode(): boolean {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+  // Local Docker typically uses internal hostnames like 'kong' or 'localhost'
+  return supabaseUrl.includes('://kong:') || supabaseUrl.includes('://localhost:')
+}
+
+// Helper to validate accessToken against Management API (for cloud deployments)
+async function validateAccessTokenCloud(projectRef: string, accessToken: string): Promise<boolean> {
   // Try to fetch project details using the access token
   // This validates that the token is valid for the management API
   const url = `${MGMT_API_BASE}/v1/projects/${projectRef}`
@@ -23,6 +31,26 @@ async function validateAccessToken(projectRef: string, accessToken: string): Pro
 
   // If we can successfully get the project, the token is valid
   return response.ok
+}
+
+// Helper to validate service_role key (for local Docker deployments)
+function validateServiceRoleKey(accessToken: string): boolean {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!serviceRoleKey) {
+    console.warn('SUPABASE_SERVICE_ROLE_KEY not set, cannot validate local auth')
+    return false
+  }
+  return accessToken === serviceRoleKey
+}
+
+// Combined validation that works for both cloud and local Docker
+async function validateAccessToken(projectRef: string, accessToken: string): Promise<boolean> {
+  if (isLocalDockerMode()) {
+    // For local Docker, validate against service_role key
+    return validateServiceRoleKey(accessToken)
+  }
+  // For cloud, validate against Management API
+  return validateAccessTokenCloud(projectRef, accessToken)
 }
 
 // Helper to delete edge function via Management API
@@ -352,22 +380,28 @@ Deno.serve(async (req) => {
     // Release any stale advisory locks from previous timeouts
     await stripeSync.postgresClient.query('SELECT pg_advisory_unlock_all()')
 
-    // Construct webhook URL from SUPABASE_URL (available in all Edge Functions)
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    if (!supabaseUrl) {
-      throw new Error('SUPABASE_URL environment variable is not set')
+    // Skip webhook creation in local Docker mode
+    // Local installs handle webhook creation via ngrok in the CLI
+    let webhookId = null
+    if (!isLocalDockerMode()) {
+      // Construct webhook URL from SUPABASE_URL (available in all Edge Functions)
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')
+      if (!supabaseUrl) {
+        throw new Error('SUPABASE_URL environment variable is not set')
+      }
+      const webhookUrl = supabaseUrl + '/functions/v1/stripe-webhook'
+      const webhook = await stripeSync.findOrCreateManagedWebhook(webhookUrl)
+      webhookId = webhook.id
     }
-    const webhookUrl = supabaseUrl + '/functions/v1/stripe-webhook'
-
-    const webhook = await stripeSync.findOrCreateManagedWebhook(webhookUrl)
 
     await stripeSync.postgresClient.pool.end()
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Setup complete',
-        webhookId: webhook.id,
+        message: isLocalDockerMode() ? 'Setup complete (webhook skipped for local mode)' : 'Setup complete',
+        webhookId,
+        localMode: isLocalDockerMode(),
       }),
       {
         status: 200,

@@ -81,6 +81,16 @@ supabase
     '--management-url <url>',
     'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
+  .option('--local', 'Install to local self-hosted Supabase Docker (copies functions to volumes/functions)')
+  .option(
+    '--docker-path <path>',
+    'Path to Docker Supabase directory (defaults to ./docker/supabase)',
+    './docker/supabase'
+  )
+  .option(
+    '--ngrok-token <token>',
+    'ngrok auth token for creating webhook tunnel (or NGROK_AUTH_TOKEN env)'
+  )
   .action(async (options) => {
     await installCommand({
       supabaseAccessToken: options.token,
@@ -89,6 +99,9 @@ supabase
       packageVersion: options.packageVersion,
       workerInterval: options.workerInterval,
       supabaseManagementUrl: options.managementUrl,
+      local: options.local,
+      dockerPath: options.dockerPath,
+      ngrokToken: options.ngrokToken,
     })
   })
 
