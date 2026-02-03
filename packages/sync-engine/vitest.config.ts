@@ -12,10 +12,6 @@ export default defineConfig({
     },
     // Exclude CLI integration tests from default `vitest` command
     // These require STRIPE_API_KEY and run separately via `test:integration:cli`
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      'src/integration/*.integration.test.ts',
-    ],
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/integration/*.integration.test.ts'],
   },
 })
