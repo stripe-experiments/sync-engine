@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
+import Link from 'next/link'
 
 interface DeployFormProps {
   onDeploying: (deploying: boolean) => void
@@ -74,7 +75,14 @@ export function DeployForm({ onDeploying, onSuccess }: DeployFormProps) {
           style={inputStyle}
         />
         <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-          Get from supabase.com/dashboard/account/tokens
+          Get from{' '}
+          <Link
+            style={{ color: '#3b82f6', textDecoration: 'none' }}
+            href="https://supabase.com/dashboard/account/tokens"
+            target="_blank"
+          >
+            supabase.com/dashboard/account/tokens
+          </Link>
         </p>
       </div>
 
