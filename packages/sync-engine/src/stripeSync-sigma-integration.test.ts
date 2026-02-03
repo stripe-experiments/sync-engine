@@ -215,7 +215,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
   beforeAll(async () => {
     if (!TEST_DB_URL) throw new Error('TEST_POSTGRES_DB_URL environment variable is required')
-    await runMigrations({ databaseUrl: TEST_DB_URL })
+    await runMigrations({ databaseUrl: TEST_DB_URL, enableSigma: true })
     validator = new SigmaDatabaseValidator(TEST_DB_URL)
   })
 
