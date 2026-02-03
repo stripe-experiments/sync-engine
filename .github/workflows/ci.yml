@@ -80,6 +80,12 @@ jobs:
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&search_path=stripe'
 
+      - name: Integration Tests
+        run: |
+          cd packages/sync-engine && npm run test:integration
+        env:
+          TEST_POSTGRES_DB_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
+
   integration-test:
     name: CLI Integration Test
     runs-on: ubuntu-24.04
