@@ -156,8 +156,9 @@ describe('Error Recovery Integration', () => {
     await sleep(500)
 
     // Verify products synced before crash are still in DB (partial progress preserved)
+    // Use >= because more products may have synced between measuring and killing (race condition)
     const productsAfterKill = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-    expect(productsAfterKill).toBe(productsBeforeKill)
+    expect(productsAfterKill).toBeGreaterThanOrEqual(productsBeforeKill)
   }, 60000)
 
   it('should recover and complete sync after interruption', async () => {
