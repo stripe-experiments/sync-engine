@@ -31,7 +31,7 @@ describe('Pagination regression tests', () => {
       expect(registry.credit_note.supportsCreatedFilter).toBe(true)
     })
 
-    it('should have supportsCreatedFilter: true for all objects except payment_method and tax_id', () => {
+    it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', () => {
       const sync = new StripeSync({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
@@ -41,18 +41,20 @@ describe('Pagination regression tests', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const registry = (sync as any).resourceRegistry
 
-      // Objects that legitimately don't support created filter
-      // (either require customer context, or are Sigma-backed tables)
-      const expectedFalse = [
-        'payment_method',
-        'tax_id',
-        'subscription_item_change_events_v2_beta', // Sigma-backed table
-        'exchange_rates_from_usd', // Sigma-backed table
-      ]
+      // Core objects that legitimately don't support created filter
+      // (they require customer context and are handled specially)
+      const coreObjectsExpectedFalse = ['payment_method', 'tax_id']
 
       for (const [objectName, config] of Object.entries(registry)) {
-        const resourceConfig = config as { supportsCreatedFilter: boolean }
-        if (expectedFalse.includes(objectName)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const resourceConfig = config as { supportsCreatedFilter: boolean; sigma?: any }
+
+        // Skip sigma-backed tables - they use cursor-based pagination, not created filter
+        if (resourceConfig.sigma) {
+          continue
+        }
+
+        if (coreObjectsExpectedFalse.includes(objectName)) {
           expect(
             resourceConfig.supportsCreatedFilter,
             `${objectName} should have supportsCreatedFilter: false`

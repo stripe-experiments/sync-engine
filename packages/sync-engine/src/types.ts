@@ -45,6 +45,18 @@ export type StripeSyncConfig = {
    */
   enableSigma?: boolean
 
+  /**
+   * Optional override for Sigma page size (per query).
+   * Useful for edge function CPU limits; lower values reduce per-invocation work.
+   */
+  sigmaPageSizeOverride?: number
+
+  /**
+   * Postgres schema name for Sigma tables.
+   * Default: "sigma"
+   */
+  sigmaSchemaName?: string
+
   /** Stripe account ID. If not provided, will be retrieved from Stripe API. Used as fallback option. */
   stripeAccountId?: string
 
@@ -133,8 +145,6 @@ export type SyncObject =
   | 'early_fraud_warning'
   | 'refund'
   | 'checkout_sessions'
-  | 'subscription_item_change_events_v2_beta'
-  | 'exchange_rates_from_usd'
 export interface Sync {
   synced: number
 }
@@ -159,6 +169,8 @@ export interface SyncBackfill {
   checkoutSessions?: Sync
   subscriptionItemChangeEventsV2Beta?: Sync
   exchangeRatesFromUsd?: Sync
+  /** Sigma-backed results by table name (e.g. subscription_item_change_events_v2_beta). */
+  sigma?: Record<string, Sync>
 }
 
 export interface SyncParams {
@@ -207,6 +219,8 @@ export interface ProcessNextResult {
   hasMore: boolean
   /** The sync run this processing belongs to */
   runStartedAt: Date
+  /** Sigma-only: whether this step started a new Sigma query run */
+  startedQuery?: boolean
 }
 
 /**

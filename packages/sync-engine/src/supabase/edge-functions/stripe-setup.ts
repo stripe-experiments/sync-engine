@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Unschedule pg_cron job
+      // Unschedule pg_cron jobs
       try {
         await stripeSync.postgresClient.query(`
           DO $$
@@ -221,20 +221,32 @@ Deno.serve(async (req) => {
             IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-worker') THEN
               PERFORM cron.unschedule('stripe-sync-worker');
             END IF;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'stripe-sigma-worker') THEN
+              PERFORM cron.unschedule('stripe-sigma-worker');
+            END IF;
           END $$;
         `)
       } catch (err) {
         console.warn('Could not unschedule pg_cron job:', err)
       }
 
-      // Delete vault secret
+      // Delete vault secrets
       try {
         await stripeSync.postgresClient.query(`
           DELETE FROM vault.secrets
-          WHERE name = 'stripe_sync_worker_secret'
+          WHERE name IN ('stripe_sync_worker_secret', 'stripe_sigma_worker_secret')
         `)
       } catch (err) {
         console.warn('Could not delete vault secret:', err)
+      }
+
+      // Drop Sigma self-trigger function if present
+      try {
+        await stripeSync.postgresClient.query(`
+          DROP FUNCTION IF EXISTS stripe.trigger_sigma_worker();
+        `)
+      } catch (err) {
+        console.warn('Could not drop sigma trigger function:', err)
       }
 
       // Terminate connections holding locks on stripe schema
@@ -342,7 +354,8 @@ Deno.serve(async (req) => {
     // Remove sslmode from connection string (not supported by pg in Deno)
     const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
-    await runMigrations({ databaseUrl: dbUrl })
+    const enableSigma = (Deno.env.get('ENABLE_SIGMA') ?? 'false') === 'true'
+    await runMigrations({ databaseUrl: dbUrl, enableSigma })
 
     stripeSync = new StripeSync({
       poolConfig: { connectionString: dbUrl, max: 2 }, // Need 2 for advisory lock + queries

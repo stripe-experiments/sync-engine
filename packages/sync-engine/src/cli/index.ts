@@ -22,9 +22,11 @@ program
   .command('migrate')
   .description('Run database migrations only')
   .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--sigma', 'Create Sigma tables during migration')
   .action(async (options) => {
     await migrateCommand({
       databaseUrl: options.databaseUrl,
+      enableSigma: options.sigma,
     })
   })
 
@@ -51,11 +53,16 @@ program
   .description('Backfill a specific entity type from Stripe (e.g., customer, invoice, product)')
   .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
   .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option(
+    '--sigma',
+    'Enable Sigma tables (required for sigma table names like exchange_rates_from_usd)'
+  )
   .action(async (entityName, options) => {
     await backfillCommand(
       {
         stripeKey: options.stripeKey,
         databaseUrl: options.databaseUrl,
+        enableSigma: options.sigma,
       },
       entityName
     )
@@ -81,6 +88,7 @@ supabase
     '--management-url <url>',
     'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
+  .option('--sigma', 'Enable Sigma sync (deploy sigma worker and cron job)')
   .action(async (options) => {
     await installCommand({
       supabaseAccessToken: options.token,
@@ -89,6 +97,7 @@ supabase
       packageVersion: options.packageVersion,
       workerInterval: options.workerInterval,
       supabaseManagementUrl: options.managementUrl,
+      enableSigma: options.sigma,
     })
   })
 

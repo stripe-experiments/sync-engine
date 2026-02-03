@@ -1,5 +1,10 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
-import { setupFunctionCode, webhookFunctionCode, workerFunctionCode } from './edge-function-code'
+import {
+  setupFunctionCode,
+  webhookFunctionCode,
+  workerFunctionCode,
+  sigmaWorkerFunctionCode,
+} from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
 
 export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
@@ -77,6 +82,20 @@ export class SupabaseSetupClient {
         verify_jwt: verifyJwt,
       })
     }
+  }
+
+  /**
+   * Inject package version into Edge Function code
+   */
+  private injectPackageVersion(code: string, version: string): string {
+    if (version === 'latest') {
+      return code
+    }
+    // Replace unversioned npm imports with versioned ones
+    return code.replace(
+      /from ['"]npm:stripe-experiment-sync['"]/g,
+      `from 'npm:stripe-experiment-sync@${version}'`
+    )
   }
 
   /**
@@ -170,6 +189,64 @@ export class SupabaseSetupClient {
           url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker',
           headers := jsonb_build_object(
             'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
+          )
+        )
+        $$
+      );
+    `
+    await this.runSQL(sql)
+  }
+
+  /**
+   * Setup pg_cron job for Sigma data worker (every 12 hours)
+   * Creates secret, self-trigger function, and cron job
+   */
+  async setupSigmaPgCronJob(): Promise<void> {
+    // Generate a unique secret for sigma-data-worker authentication
+    const sigmaWorkerSecret = crypto.randomUUID()
+    const escapedSigmaWorkerSecret = sigmaWorkerSecret.replace(/'/g, "''")
+
+    const sql = `
+      -- Enable extensions
+      CREATE EXTENSION IF NOT EXISTS pg_cron;
+      CREATE EXTENSION IF NOT EXISTS pg_net;
+
+      -- Store unique sigma worker secret in vault
+      DELETE FROM vault.secrets WHERE name = 'stripe_sigma_worker_secret';
+      SELECT vault.create_secret('${escapedSigmaWorkerSecret}', 'stripe_sigma_worker_secret');
+
+      -- Create self-trigger function for sigma worker continuation
+      -- This allows the worker to trigger itself when there's more work
+      CREATE OR REPLACE FUNCTION stripe.trigger_sigma_worker()
+      RETURNS void
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      BEGIN
+        PERFORM net.http_post(
+          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/sigma-data-worker',
+          headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sigma_worker_secret')
+          )
+        );
+      END;
+      $$;
+
+      -- Delete existing sigma job if it exists
+      SELECT cron.unschedule('stripe-sigma-worker') WHERE EXISTS (
+        SELECT 1 FROM cron.job WHERE jobname = 'stripe-sigma-worker'
+      );
+
+      -- Create cron job for Sigma sync
+      -- Runs at 00:00 and 12:00 UTC
+      SELECT cron.schedule(
+        'stripe-sigma-worker',
+        '0 */12 * * *',
+        $$
+        SELECT net.http_post(
+          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/sigma-data-worker',
+          headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sigma_worker_secret')
           )
         )
         $$
@@ -386,24 +463,11 @@ export class SupabaseSetupClient {
     }
   }
 
-  /**
-   * Inject package version into Edge Function code
-   */
-  private injectPackageVersion(code: string, version: string): string {
-    if (version === 'latest') {
-      return code
-    }
-    // Replace unversioned npm imports with versioned ones
-    return code.replace(
-      /from ['"]npm:stripe-experiment-sync['"]/g,
-      `from 'npm:stripe-experiment-sync@${version}'`
-    )
-  }
-
   async install(
     stripeKey: string,
     packageVersion?: string,
-    workerIntervalSeconds?: number
+    workerIntervalSeconds?: number,
+    enableSigma?: boolean
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -426,7 +490,6 @@ export class SupabaseSetupClient {
       )
 
       // Deploy Edge Functions with specified package version
-      // Replace the package import with the specific version
       const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
       const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
       const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
@@ -435,11 +498,21 @@ export class SupabaseSetupClient {
       await this.deployFunction('stripe-webhook', versionedWebhook, false)
       await this.deployFunction('stripe-worker', versionedWorker, false)
 
+      // Deploy sigma worker only if enabled
+      if (enableSigma) {
+        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
+        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
+      }
+
       // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]
       // Add MANAGEMENT_API_URL if custom URL provided (for localhost/staging testing)
       if (this.supabaseManagementUrl) {
         secrets.push({ name: 'MANAGEMENT_API_URL', value: this.supabaseManagementUrl })
+      }
+      // Set ENABLE_SIGMA for edge functions to read
+      if (enableSigma) {
+        secrets.push({ name: 'ENABLE_SIGMA', value: 'true' })
       }
       await this.setSecrets(secrets)
 
@@ -453,6 +526,11 @@ export class SupabaseSetupClient {
 
       // Setup pg_cron - this is required for automatic syncing
       await this.setupPgCronJob(workerIntervalSeconds)
+
+      // Setup Sigma pg_cron only if enabled - dedicated 12-hourly worker for Sigma data
+      if (enableSigma) {
+        await this.setupSigmaPgCronJob()
+      }
 
       // Set final version comment
       await this.updateInstallationComment(
@@ -477,6 +555,7 @@ export async function install(params: {
   workerIntervalSeconds?: number
   baseProjectUrl?: string
   supabaseManagementUrl?: string
+  enableSigma?: boolean
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -484,6 +563,7 @@ export async function install(params: {
     stripeKey,
     packageVersion,
     workerIntervalSeconds,
+    enableSigma,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -493,7 +573,7 @@ export async function install(params: {
     supabaseManagementUrl: params.supabaseManagementUrl,
   })
 
-  await client.install(stripeKey, packageVersion, workerIntervalSeconds)
+  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma)
 }
 
 export async function uninstall(params: {

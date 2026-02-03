@@ -65,6 +65,11 @@ export interface StripSyncInfo {
 export class StripeSync {
   stripe: Stripe
   postgresClient: PostgresClient
+  private readonly resourceRegistry: Record<string, ResourceConfig>
+
+  private get sigmaSchemaName(): string {
+    return this.config.sigmaSchemaName ?? 'sigma'
+  }
 
   constructor(private config: StripeSyncConfig) {
     // Create base Stripe client
@@ -114,6 +119,164 @@ export class StripeSync {
       schema: 'stripe',
       poolConfig,
     })
+
+    this.resourceRegistry = this.buildResourceRegistry()
+  }
+
+  // Resource registry - maps SyncObject → list/upsert operations for processNext()
+  // Complements eventHandlers which maps event types → handlers for webhooks
+  // Both registries share the same underlying upsert methods
+  // Order field determines backfill sequence - parents before children for FK dependencies
+  private buildResourceRegistry(): Record<string, ResourceConfig> {
+    const core: Record<string, ResourceConfig> = {
+      product: {
+        order: 1, // No dependencies
+        listFn: (p) => this.stripe.products.list(p),
+        upsertFn: (items, id) => this.upsertProducts(items as Stripe.Product[], id),
+        supportsCreatedFilter: true,
+      },
+      price: {
+        order: 2, // Depends on product
+        listFn: (p) => this.stripe.prices.list(p),
+        upsertFn: (items, id, bf) => this.upsertPrices(items as Stripe.Price[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      plan: {
+        order: 3, // Depends on product
+        listFn: (p) => this.stripe.plans.list(p),
+        upsertFn: (items, id, bf) => this.upsertPlans(items as Stripe.Plan[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      customer: {
+        order: 4, // No dependencies
+        listFn: (p) => this.stripe.customers.list(p),
+        upsertFn: (items, id) => this.upsertCustomers(items as Stripe.Customer[], id),
+        supportsCreatedFilter: true,
+      },
+      subscription: {
+        order: 5, // Depends on customer, price
+        listFn: (p) => this.stripe.subscriptions.list(p),
+        upsertFn: (items, id, bf) =>
+          this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      subscription_schedules: {
+        order: 6, // Depends on customer
+        listFn: (p) => this.stripe.subscriptionSchedules.list(p),
+        upsertFn: (items, id, bf) =>
+          this.upsertSubscriptionSchedules(items as Stripe.SubscriptionSchedule[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      invoice: {
+        order: 7, // Depends on customer, subscription
+        listFn: (p) => this.stripe.invoices.list(p),
+        upsertFn: (items, id, bf) => this.upsertInvoices(items as Stripe.Invoice[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      charge: {
+        order: 8, // Depends on customer, invoice
+        listFn: (p) => this.stripe.charges.list(p),
+        upsertFn: (items, id, bf) => this.upsertCharges(items as Stripe.Charge[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      setup_intent: {
+        order: 9, // Depends on customer
+        listFn: (p) => this.stripe.setupIntents.list(p),
+        upsertFn: (items, id, bf) => this.upsertSetupIntents(items as Stripe.SetupIntent[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      payment_method: {
+        order: 10, // Depends on customer (special: iterates customers)
+        listFn: (p) => this.stripe.paymentMethods.list(p),
+        upsertFn: (items, id, bf) =>
+          this.upsertPaymentMethods(items as Stripe.PaymentMethod[], id, bf),
+        supportsCreatedFilter: false, // Requires customer param, can't filter by created
+      },
+      payment_intent: {
+        order: 11, // Depends on customer
+        listFn: (p) => this.stripe.paymentIntents.list(p),
+        upsertFn: (items, id, bf) =>
+          this.upsertPaymentIntents(items as Stripe.PaymentIntent[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      tax_id: {
+        order: 12, // Depends on customer
+        listFn: (p) => this.stripe.taxIds.list(p),
+        upsertFn: (items, id, bf) => this.upsertTaxIds(items as Stripe.TaxId[], id, bf),
+        supportsCreatedFilter: false, // taxIds don't support created filter
+      },
+      credit_note: {
+        order: 13, // Depends on invoice
+        listFn: (p) => this.stripe.creditNotes.list(p),
+        upsertFn: (items, id, bf) => this.upsertCreditNotes(items as Stripe.CreditNote[], id, bf),
+        supportsCreatedFilter: true, // credit_notes support created filter
+      },
+      dispute: {
+        order: 14, // Depends on charge
+        listFn: (p) => this.stripe.disputes.list(p),
+        upsertFn: (items, id, bf) => this.upsertDisputes(items as Stripe.Dispute[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      early_fraud_warning: {
+        order: 15, // Depends on charge
+        listFn: (p) => this.stripe.radar.earlyFraudWarnings.list(p),
+        upsertFn: (items, id) =>
+          this.upsertEarlyFraudWarning(items as Stripe.Radar.EarlyFraudWarning[], id),
+        supportsCreatedFilter: true,
+      },
+      refund: {
+        order: 16, // Depends on charge
+        listFn: (p) => this.stripe.refunds.list(p),
+        upsertFn: (items, id, bf) => this.upsertRefunds(items as Stripe.Refund[], id, bf),
+        supportsCreatedFilter: true,
+      },
+      checkout_sessions: {
+        order: 17, // Depends on customer (optional)
+        listFn: (p) => this.stripe.checkout.sessions.list(p),
+        upsertFn: (items, id) =>
+          this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
+        supportsCreatedFilter: true,
+      },
+    }
+
+    const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
+    const sigmaOverrideRaw = this.config.sigmaPageSizeOverride
+    const sigmaOverride =
+      typeof sigmaOverrideRaw === 'number' &&
+      Number.isFinite(sigmaOverrideRaw) &&
+      sigmaOverrideRaw > 0
+        ? Math.floor(sigmaOverrideRaw)
+        : undefined
+
+    // TODO: Dedupe sigma tables that overlap with core Stripe objects (e.g. subscription_schedules).
+    // Currently we just let core take precedence, but ideally sigma configs should exclude
+    // tables that are already handled by the core Stripe API integration.
+    const sigmaEntries: Record<string, ResourceConfig> = Object.fromEntries(
+      Object.entries(SIGMA_INGESTION_CONFIGS).map(([key, sigmaConfig], idx) => {
+        const pageSize = sigmaOverride
+          ? Math.min(sigmaConfig.pageSize, sigmaOverride)
+          : sigmaConfig.pageSize
+        return [
+          key,
+          {
+            order: maxOrder + 1 + idx,
+            supportsCreatedFilter: false,
+            sigma: { ...sigmaConfig, pageSize },
+          },
+        ]
+      })
+    )
+
+    // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
+    return { ...sigmaEntries, ...core }
+  }
+
+  private isSigmaResource(object: string): boolean {
+    return Boolean(this.resourceRegistry[object]?.sigma)
+  }
+
+  private sigmaResultKey(tableName: string): string {
+    return tableName.replace(/_([a-z0-9])/g, (_, ch: string) => ch.toUpperCase())
   }
 
   /**
@@ -410,130 +573,6 @@ export class StripeSync {
       this.handleEntitlementSummaryEvent.bind(this),
   }
 
-  // Resource registry - maps SyncObject → list/upsert operations for processNext()
-  // Complements eventHandlers which maps event types → handlers for webhooks
-  // Both registries share the same underlying upsert methods
-  // Order field determines backfill sequence - parents before children for FK dependencies
-  private readonly resourceRegistry: Record<string, ResourceConfig> = {
-    product: {
-      order: 1, // No dependencies
-      listFn: (p) => this.stripe.products.list(p),
-      upsertFn: (items, id) => this.upsertProducts(items as Stripe.Product[], id),
-      supportsCreatedFilter: true,
-    },
-    price: {
-      order: 2, // Depends on product
-      listFn: (p) => this.stripe.prices.list(p),
-      upsertFn: (items, id, bf) => this.upsertPrices(items as Stripe.Price[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    plan: {
-      order: 3, // Depends on product
-      listFn: (p) => this.stripe.plans.list(p),
-      upsertFn: (items, id, bf) => this.upsertPlans(items as Stripe.Plan[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    customer: {
-      order: 4, // No dependencies
-      listFn: (p) => this.stripe.customers.list(p),
-      upsertFn: (items, id) => this.upsertCustomers(items as Stripe.Customer[], id),
-      supportsCreatedFilter: true,
-    },
-    subscription: {
-      order: 5, // Depends on customer, price
-      listFn: (p) => this.stripe.subscriptions.list(p),
-      upsertFn: (items, id, bf) => this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    subscription_schedules: {
-      order: 6, // Depends on customer
-      listFn: (p) => this.stripe.subscriptionSchedules.list(p),
-      upsertFn: (items, id, bf) =>
-        this.upsertSubscriptionSchedules(items as Stripe.SubscriptionSchedule[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    invoice: {
-      order: 7, // Depends on customer, subscription
-      listFn: (p) => this.stripe.invoices.list(p),
-      upsertFn: (items, id, bf) => this.upsertInvoices(items as Stripe.Invoice[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    charge: {
-      order: 8, // Depends on customer, invoice
-      listFn: (p) => this.stripe.charges.list(p),
-      upsertFn: (items, id, bf) => this.upsertCharges(items as Stripe.Charge[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    setup_intent: {
-      order: 9, // Depends on customer
-      listFn: (p) => this.stripe.setupIntents.list(p),
-      upsertFn: (items, id, bf) => this.upsertSetupIntents(items as Stripe.SetupIntent[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    payment_method: {
-      order: 10, // Depends on customer (special: iterates customers)
-      listFn: (p) => this.stripe.paymentMethods.list(p),
-      upsertFn: (items, id, bf) =>
-        this.upsertPaymentMethods(items as Stripe.PaymentMethod[], id, bf),
-      supportsCreatedFilter: false, // Requires customer param, can't filter by created
-    },
-    payment_intent: {
-      order: 11, // Depends on customer
-      listFn: (p) => this.stripe.paymentIntents.list(p),
-      upsertFn: (items, id, bf) =>
-        this.upsertPaymentIntents(items as Stripe.PaymentIntent[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    tax_id: {
-      order: 12, // Depends on customer
-      listFn: (p) => this.stripe.taxIds.list(p),
-      upsertFn: (items, id, bf) => this.upsertTaxIds(items as Stripe.TaxId[], id, bf),
-      supportsCreatedFilter: false, // taxIds don't support created filter
-    },
-    credit_note: {
-      order: 13, // Depends on invoice
-      listFn: (p) => this.stripe.creditNotes.list(p),
-      upsertFn: (items, id, bf) => this.upsertCreditNotes(items as Stripe.CreditNote[], id, bf),
-      supportsCreatedFilter: true, // credit_notes support created filter
-    },
-    dispute: {
-      order: 14, // Depends on charge
-      listFn: (p) => this.stripe.disputes.list(p),
-      upsertFn: (items, id, bf) => this.upsertDisputes(items as Stripe.Dispute[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    early_fraud_warning: {
-      order: 15, // Depends on charge
-      listFn: (p) => this.stripe.radar.earlyFraudWarnings.list(p),
-      upsertFn: (items, id) =>
-        this.upsertEarlyFraudWarning(items as Stripe.Radar.EarlyFraudWarning[], id),
-      supportsCreatedFilter: true,
-    },
-    refund: {
-      order: 16, // Depends on charge
-      listFn: (p) => this.stripe.refunds.list(p),
-      upsertFn: (items, id, bf) => this.upsertRefunds(items as Stripe.Refund[], id, bf),
-      supportsCreatedFilter: true,
-    },
-    checkout_sessions: {
-      order: 17, // Depends on customer (optional)
-      listFn: (p) => this.stripe.checkout.sessions.list(p),
-      upsertFn: (items, id) => this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
-      supportsCreatedFilter: true,
-    },
-    // Sigma-backed resources
-    subscription_item_change_events_v2_beta: {
-      order: 18,
-      supportsCreatedFilter: false,
-      sigma: SIGMA_INGESTION_CONFIGS.subscription_item_change_events_v2_beta,
-    },
-    exchange_rates_from_usd: {
-      order: 19,
-      supportsCreatedFilter: false,
-      sigma: SIGMA_INGESTION_CONFIGS.exchange_rates_from_usd,
-    },
-  }
-
   async processEvent(event: Stripe.Event) {
     // Get account ID at start of event processing
     // Try to extract from event data object if present (Connect scenarios)
@@ -585,12 +624,30 @@ export class StripeSync {
 
     // Only advertise Sigma-backed objects when explicitly enabled (opt-in).
     if (!this.config.enableSigma) {
-      return all.filter(
-        (o) => o !== 'subscription_item_change_events_v2_beta' && o !== 'exchange_rates_from_usd'
-      ) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
+      return all.filter((o) => !this.isSigmaResource(o)) as Exclude<
+        SyncObject,
+        'all' | 'customer_with_entitlements'
+      >[]
     }
 
     return all
+  }
+
+  /**
+   * Get the list of Sigma-backed object types that can be synced.
+   * Only returns sigma objects when enableSigma is true.
+   *
+   * @returns Array of sigma object names (e.g. 'subscription_item_change_events_v2_beta')
+   */
+  public getSupportedSigmaObjects(): string[] {
+    if (!this.config.enableSigma) {
+      return []
+    }
+
+    return Object.entries(this.resourceRegistry)
+      .filter(([, config]) => Boolean(config.sigma))
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([key]) => key)
   }
 
   // Event handler methods
@@ -1086,7 +1143,13 @@ export class StripeSync {
       }
       // If status is 'running', we continue processing (fetch next page)
 
-      // Get cursor for incremental sync
+      // Look up config from registry (needed to decide cursor semantics).
+      const registryConfig = this.resourceRegistry[object]
+      if (!registryConfig) {
+        throw new Error(`Unsupported object type for processNext: ${object}`)
+      }
+
+      // Get cursor for incremental sync.
       // If user provided explicit created filter, use it
       // Otherwise, use the cursor from the last completed run.
       //
@@ -1099,6 +1162,11 @@ export class StripeSync {
           runStartedAt
         )
         cursor = lastCursor ?? null
+      }
+
+      // Sigma paging uses the current run cursor to advance page-by-page.
+      if (registryConfig.sigma && objRun?.cursor) {
+        cursor = objRun.cursor
       }
 
       // Fetch one page and upsert
@@ -1186,6 +1254,10 @@ export class StripeSync {
     const config = this.resourceRegistry[object]
     if (!config) {
       throw new Error(`Unsupported object type for processNext: ${object}`)
+    }
+
+    if (config.sigma && !this.config.enableSigma) {
+      throw new Error(`Sigma sync is disabled. Enable sigma to sync ${object}.`)
     }
 
     try {
@@ -1292,13 +1364,14 @@ export class StripeSync {
     accountId: string,
     sigmaConfig: SigmaIngestionConfig
   ): Promise<string | null> {
+    const sigmaSchema = this.sigmaSchemaName
     const cursorCols = sigmaConfig.cursor.columns
     const selectCols = cursorCols.map((c) => `"${c.column}"`).join(', ')
     const orderBy = cursorCols.map((c) => `"${c.column}" DESC`).join(', ')
 
     const result = await this.postgresClient.query(
       `SELECT ${selectCols}
-       FROM "stripe"."${sigmaConfig.destinationTable}"
+       FROM "${sigmaSchema}"."${sigmaConfig.destinationTable}"
        WHERE "_account_id" = $1
        ORDER BY ${orderBy}
        LIMIT 1`,
@@ -1385,7 +1458,8 @@ export class StripeSync {
       resourceName,
       accountId,
       undefined,
-      sigmaConfig.upsert
+      sigmaConfig.upsert,
+      this.sigmaSchemaName
     )
 
     await this.postgresClient.incrementObjectProgress(
@@ -1506,6 +1580,166 @@ export class StripeSync {
     }
   }
 
+  private applySyncBackfillResult(
+    results: SyncBackfill,
+    object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
+    result: Sync
+  ): void {
+    if (this.isSigmaResource(object)) {
+      results.sigma = results.sigma ?? {}
+      results.sigma[object] = result
+      const camelKey = this.sigmaResultKey(object)
+      ;(results as Record<string, Sync>)[camelKey] = result
+      return
+    }
+
+    // TODO: obj === 'payment_methods' reqiores special handling
+
+    switch (object) {
+      case 'product':
+        results.products = result
+        break
+      case 'price':
+        results.prices = result
+        break
+      case 'plan':
+        results.plans = result
+        break
+      case 'customer':
+        results.customers = result
+        break
+      case 'subscription':
+        results.subscriptions = result
+        break
+      case 'subscription_schedules':
+        results.subscriptionSchedules = result
+        break
+      case 'invoice':
+        results.invoices = result
+        break
+      case 'charge':
+        results.charges = result
+        break
+      case 'setup_intent':
+        results.setupIntents = result
+        break
+      case 'payment_intent':
+        results.paymentIntents = result
+        break
+      case 'tax_id':
+        results.taxIds = result
+        break
+      case 'credit_note':
+        results.creditNotes = result
+        break
+      case 'dispute':
+        results.disputes = result
+        break
+      case 'early_fraud_warning':
+        results.earlyFraudWarnings = result
+        break
+      case 'refund':
+        results.refunds = result
+        break
+      case 'checkout_sessions':
+        results.checkoutSessions = result
+        break
+    }
+  }
+
+  async processUntilDoneParallel(
+    params?: SyncParams & {
+      maxParallel?: number
+      triggeredBy?: string
+      continueOnError?: boolean
+      skipInaccessibleSigmaTables?: boolean
+    }
+  ): Promise<{
+    results: SyncBackfill
+    totals: Record<string, number>
+    totalSynced: number
+    skipped: string[]
+    errors: Array<{ object: string; message: string }>
+  }> {
+    const {
+      object,
+      maxParallel,
+      triggeredBy = 'processUntilDoneParallel',
+      continueOnError = true,
+      skipInaccessibleSigmaTables = false,
+    } = params ?? {}
+
+    const { runKey, objects } = await this.joinOrCreateSyncRun(triggeredBy, object)
+    const runConfig = await this.postgresClient.getSyncRun(runKey.accountId, runKey.runStartedAt)
+    const maxConcurrent = runConfig?.maxConcurrent ?? 10
+    const workerCount = Math.max(
+      1,
+      Math.min(objects.length, maxParallel ?? maxConcurrent, maxConcurrent)
+    )
+
+    const totals: Record<string, number> = {}
+    for (const obj of objects) {
+      totals[obj] = 0
+    }
+
+    const skipped: string[] = []
+    const errors: Array<{ object: string; message: string }> = []
+    const queue = [...objects]
+    const shouldSkipInaccessibleTable = (message: string) =>
+      message.includes('tables which do not exist or are inaccessible')
+
+    const worker = async () => {
+      while (true) {
+        const obj = queue.shift()
+        if (!obj) break
+
+        try {
+          let hasMore = true
+          while (hasMore) {
+            const result = await this.processNext(obj, {
+              runStartedAt: runKey.runStartedAt,
+              triggeredBy,
+              created: params?.created,
+              backfillRelatedEntities: params?.backfillRelatedEntities,
+            })
+            totals[obj] += result.processed
+            hasMore = result.hasMore
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (skipInaccessibleSigmaTables && shouldSkipInaccessibleTable(message)) {
+            skipped.push(obj)
+            this.config.logger?.warn(`Skipping Sigma table ${obj}: not accessible for this account`)
+            continue
+          }
+          errors.push({ object: obj, message })
+          this.config.logger?.error(`Sync error for ${obj}: ${message}`)
+          if (!continueOnError) {
+            throw error
+          }
+        }
+      }
+    }
+
+    try {
+      const workers = Array.from({ length: workerCount }, () => worker())
+      await Promise.all(workers)
+
+      const results: SyncBackfill = {}
+      for (const obj of objects) {
+        this.applySyncBackfillResult(results, obj, { synced: totals[obj] ?? 0 })
+      }
+
+      const totalSynced = Object.values(totals).reduce((sum, count) => sum + count, 0)
+      await this.postgresClient.closeSyncRun(runKey.accountId, runKey.runStartedAt)
+
+      return { results, totals, totalSynced, skipped, errors }
+    } catch (error) {
+      await this.postgresClient.closeSyncRun(runKey.accountId, runKey.runStartedAt)
+      throw error
+    }
+  }
+
   async processUntilDone(params?: SyncParams): Promise<SyncBackfill> {
     const { object } = params ?? { object: 'all' }
 
@@ -1538,71 +1772,8 @@ export class StripeSync {
       // Sync each object type
       for (const obj of objectsToSync) {
         this.config.logger?.info(`Syncing ${obj}`)
-
-        // payment_method requires special handling (iterates customers)
-        if (obj === 'payment_method') {
-          results.paymentMethods = await this.syncPaymentMethodsWithRun(runStartedAt, params)
-        } else {
-          const result = await this.processObjectUntilDone(obj, runStartedAt, params)
-
-          // Map object name to result field
-          switch (obj) {
-            case 'product':
-              results.products = result
-              break
-            case 'price':
-              results.prices = result
-              break
-            case 'plan':
-              results.plans = result
-              break
-            case 'customer':
-              results.customers = result
-              break
-            case 'subscription':
-              results.subscriptions = result
-              break
-            case 'subscription_schedules':
-              results.subscriptionSchedules = result
-              break
-            case 'invoice':
-              results.invoices = result
-              break
-            case 'charge':
-              results.charges = result
-              break
-            case 'setup_intent':
-              results.setupIntents = result
-              break
-            case 'payment_intent':
-              results.paymentIntents = result
-              break
-            case 'tax_id':
-              results.taxIds = result
-              break
-            case 'credit_note':
-              results.creditNotes = result
-              break
-            case 'dispute':
-              results.disputes = result
-              break
-            case 'early_fraud_warning':
-              results.earlyFraudWarnings = result
-              break
-            case 'refund':
-              results.refunds = result
-              break
-            case 'checkout_sessions':
-              results.checkoutSessions = result
-              break
-            case 'subscription_item_change_events_v2_beta':
-              results.subscriptionItemChangeEventsV2Beta = result
-              break
-            case 'exchange_rates_from_usd':
-              results.exchangeRatesFromUsd = result
-              break
-          }
-        }
+        const result = await this.processObjectUntilDone(obj, runStartedAt, params)
+        this.applySyncBackfillResult(results, obj, result)
       }
 
       // Close the sync run after all objects are done (status derived from object states)
