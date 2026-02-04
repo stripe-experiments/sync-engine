@@ -80,8 +80,14 @@ jobs:
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&search_path=stripe'
 
-  integration-test:
-    name: CLI Integration Test
+      - name: Integration Tests
+        run: |
+          cd packages/sync-engine && npm run test:integration
+        env:
+          TEST_POSTGRES_DB_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
+
+  e2e-test:
+    name: CLI e2e tests
     runs-on: ubuntu-24.04
 
     steps:
@@ -102,7 +108,7 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-      - name: Set up .env file for CLI
+      - name: Set up .env file
         run: |
           cd packages/sync-engine
           touch .env
@@ -112,61 +118,23 @@ jobs:
           echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
           echo NGROK_AUTH_TOKEN='${{ secrets.NGROK_AUTH_TOKEN }}' >> .env
 
-      - name: Run CLI Webhook Integration Test
+      - name: Run E2E Tests
         run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-webhooks.sh
-          ./scripts/test-integration-webhooks.sh
-
-      - name: Run CLI Backfill Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-backfill.sh
-          ./scripts/test-integration-backfill.sh
-
-      - name: Run Sync Run Lifecycle Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-sync-run-lifecycle.sh
-          ./scripts/test-integration-sync-run-lifecycle.sh
-
-      - name: Run Sigma Sync Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-sigma.sh
-          ./scripts/test-integration-sigma.sh
-
-      - name: Run CLI Error Recovery Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-recoverable-backfill.sh
-          ./scripts/test-integration-recoverable-backfill.sh
-
-      - name: Run CLI Account Management Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-account-management.sh
-          ./scripts/test-integration-account-management.sh
-
-      - name: Run Webhook Reuse Verification Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-webhook-reuse.sh
-          ./scripts/test-integration-webhook-reuse.sh
-
-      - name: Run Managed WebSocket for Webhooks Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-wss.sh
-          ./scripts/test-integration-wss.sh
-
-      - name: Run Deploy Integration Test
-        run: |
-          cd packages/sync-engine
-          chmod +x ./scripts/test-integration-deploy.sh
-          ./scripts/test-integration-deploy.sh
+          cd packages/sync-engine && npm run test:e2e
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          STRIPE_API_KEY_2: ${{ secrets.STRIPE_API_KEY_2 }}
+          STRIPE_API_KEY_3: ${{ secrets.STRIPE_API_KEY_3 }}
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      # TODO: Figure out what to do with this test.Right now it is failing with the Supabase project inactivity failure
+      # - name: Run Deploy Integration Test
+      #   run: |
+      #     cd packages/sync-engine
+      #     chmod +x ./scripts/test-integration-deploy.sh
+      #     ./scripts/test-integration-deploy.sh
+      #   env:
+      #     SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      #     SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      #     STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+      #     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

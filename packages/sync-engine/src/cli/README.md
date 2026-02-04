@@ -215,11 +215,8 @@ The deployment:
 
 ### Webhook Limit Reached
 
-If you hit Stripe's 16 webhook endpoint limit, use the cleanup script:
-
-```bash
-npx tsx node_modules/stripe-experiment-sync/dist/scripts/cleanup-webhooks.js
-```
+If you hit Stripe's 16 webhook endpoint limit, delete unused webhooks from the Stripe Dashboard:
+https://dashboard.stripe.com/webhooks
 
 ### Database Connection Issues
 
@@ -232,17 +229,6 @@ psql $DATABASE_URL -c "SELECT 1"
 ### Ngrok Authentication
 
 Get your ngrok auth token from: https://dashboard.ngrok.com/get-started/your-authtoken
-
-## Development Scripts
-
-The package includes several test scripts for development:
-
-- `scripts/test-integration-webhooks.sh` - Test webhook processing
-- `scripts/test-integration-webhook-reuse.sh` - Test webhook reuse functionality
-- `scripts/test-integration-backfill.sh` - Test backfill operations
-- `scripts/test-integration-recoverable-backfill.sh` - Test error recovery
-- `scripts/cleanup-deploy.sh` - Clean up test deployments
-- `scripts/cleanup-webhooks.ts` - Remove test webhooks from Stripe
 
 ## License
 
