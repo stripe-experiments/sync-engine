@@ -1,4 +1,7 @@
 #!/bin/bash
+# NOT RUNNING IN CI
+# TODO: Figure out what to do with this test. Right now it is failing with the Supabase project inactivity failure
+
 set -euo pipefail
 
 # Integration test for the deploy command
