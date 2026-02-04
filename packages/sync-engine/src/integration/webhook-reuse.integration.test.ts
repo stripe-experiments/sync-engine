@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import pg from 'pg'
 import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
-import { checkEnvVars } from './helpers/stripe-client.js'
+import { checkEnvVars, getStripeClient } from './helpers/stripe-client.js'
 import { StripeSync, runMigrations } from '../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-webhook-reuse-test'
@@ -101,6 +101,8 @@ describe('Webhook Reuse Integration', () => {
   })
 
   it('should handle orphaned webhook cleanup', async () => {
+    const stripe = getStripeClient()
+
     // Create a webhook
     const webhook = await sync.findOrCreateManagedWebhook(
       'https://test3.example.com/stripe-webhooks',
@@ -123,6 +125,16 @@ describe('Webhook Reuse Integration', () => {
     createdWebhookIds.push(newWebhook.id)
 
     expect(newWebhook.id).not.toBe(orphanedId)
+
+    // Verify orphaned webhook was actually deleted from Stripe
+    try {
+      await stripe.webhookEndpoints.retrieve(orphanedId)
+      // If we get here, the webhook still exists - fail the test
+      expect.fail('Orphaned webhook should have been deleted from Stripe')
+    } catch (err: unknown) {
+      const stripeError = err as { code?: string; type?: string }
+      expect(stripeError.code).toBe('resource_missing')
+    }
   })
 
   it('should handle concurrent execution without duplicates', async () => {
