@@ -12,6 +12,6 @@ export default defineConfig({
     deps: {
       inline: [/.*/],
     },
-    include: ['src/integration/*.e2e.test.ts'],
+    include: ['src/e2e-tests/*.e2e.test.ts'],
   },
 })
