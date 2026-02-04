@@ -2,7 +2,6 @@
  * Sync Run Lifecycle Integration Test
  * Verifies sync_runs view and _sync_runs table stay in sync
  * Tests that object runs are created upfront to prevent premature close
- * Translated from scripts/test-integration-sync-run-lifecycle.sh
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'

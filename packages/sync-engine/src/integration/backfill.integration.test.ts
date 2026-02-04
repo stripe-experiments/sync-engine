@@ -1,7 +1,6 @@
 /**
  * Backfill Integration Test
  * Tests backfill command with real Stripe data and incremental sync
- * Translated from scripts/test-integration-backfill.sh
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'

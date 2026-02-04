@@ -1,7 +1,6 @@
 /**
  * Webhook Reuse Integration Test
  * Tests that findOrCreateManagedWebhook correctly reuses existing webhooks
- * Translated from scripts/verify-webhook-reuse.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import pg from 'pg'

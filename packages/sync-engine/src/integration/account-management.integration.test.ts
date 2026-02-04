@@ -1,7 +1,6 @@
 /**
  * Account Management Integration Test
  * Tests getCurrentAccount(), getAllSyncedAccounts(), and dangerouslyDeleteSyncedAccountData()
- * Translated from scripts/test-integration-account-management.sh
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'

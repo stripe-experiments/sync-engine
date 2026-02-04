@@ -1,7 +1,6 @@
 /**
  * WebSocket Integration Test
  * Tests WebSocket connection, event processing, and database writes
- * Translated from scripts/test-integration-wss.sh
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'

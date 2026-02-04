@@ -1,6 +1,5 @@
 /**
  * Docker PostgreSQL setup for integration tests
- * Translated from scripts/common.sh
  */
 import { execSync } from 'child_process'
 import pg from 'pg'

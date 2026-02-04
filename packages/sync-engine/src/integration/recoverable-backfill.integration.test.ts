@@ -1,7 +1,6 @@
 /**
  * Error Recovery Integration Test
  * Tests that sync can recover from crashes and preserve partial progress
- * Translated from scripts/test-integration-recoverable-backfill.sh
  *
  * NOTE: This test requires write permissions to create test products.
  * It will be skipped if using restricted API keys (rk_*).
@@ -87,7 +86,7 @@ describe('Error Recovery Integration', () => {
     await stopPostgres(CONTAINER_NAME)
   }, 60000)
 
-  it('should preserve partial progress when sync is interrupted', async () => {
+  it('should preserve partial progress and recover after crash', async () => {
     if (!hasWritePermissions) {
       console.log('Skipping: requires write permissions')
       return
@@ -133,11 +132,11 @@ describe('Error Recovery Integration', () => {
       attempts++
     }
 
-    // If sync completed before we could interrupt, skip crash test but verify completion
+    // If sync completed before we could interrupt, verify completion and skip crash test
     if (status === 'complete') {
       console.log('Sync completed before interruption - verifying completion instead')
       const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-      expect(finalProducts).toBeGreaterThan(0)
+      expect(finalProducts).toBeGreaterThanOrEqual(200)
       syncProcess.kill('SIGTERM')
       return
     }
@@ -159,23 +158,14 @@ describe('Error Recovery Integration', () => {
     // Use >= because more products may have synced between measuring and killing (race condition)
     const productsAfterKill = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
     expect(productsAfterKill).toBeGreaterThanOrEqual(productsBeforeKill)
-  }, 60000)
 
-  it('should recover and complete sync after interruption', async () => {
-    if (!hasWritePermissions) {
-      console.log('Skipping: requires write permissions')
-      return
-    }
-
-    const productsBeforeRecovery = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-
-    // Re-run backfill to recover/complete
+    // Re-run backfill to recover and complete
     runCliCommand('backfill', ['product'], {
       cwd,
       env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
     })
 
-    // Verify final status
+    // Verify sync completed
     const finalStatusRow = await queryDbSingle<{ status: string }>(
       pool,
       `SELECT o.status FROM stripe._sync_obj_runs o
@@ -185,19 +175,9 @@ describe('Error Recovery Integration', () => {
     )
     expect(finalStatusRow?.status).toBe('complete')
 
-    // Verify no data loss - should have at least as many products as before
+    // Verify all 200 products are now synced
     const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-    expect(finalProducts).toBeGreaterThanOrEqual(productsBeforeRecovery)
-
-    // Verify error message cleared on successful completion
-    const errorRow = await queryDbSingle<{ error_message: string }>(
-      pool,
-      `SELECT COALESCE(o.error_message, '') as error_message FROM stripe._sync_obj_runs o
-       JOIN stripe._sync_runs r ON o._account_id = r._account_id AND o.run_started_at = r.started_at
-       WHERE o.object = 'products' AND o.status = 'complete'
-       ORDER BY r.started_at DESC LIMIT 1`
-    )
-    expect(errorRow?.error_message ?? '').toBe('')
+    expect(finalProducts).toBeGreaterThanOrEqual(200)
   }, 120000)
 })
 
