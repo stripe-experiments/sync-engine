@@ -1,17 +1,17 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
 
-// Separate config for CLI integration tests
-// These tests require STRIPE_API_KEY and run via `test:integration:cli`
+// Separate config for E2E tests
+// These tests require STRIPE_API_KEY and run via `test:e2e`
 export default defineConfig({
   test: {
     environment: 'node',
     fileParallelism: false,
-    testTimeout: 120000, // 2 minutes for integration tests
+    testTimeout: 120000, // 2 minutes for E2E tests
     hookTimeout: 60000, // 1 minute for setup/teardown
     deps: {
       inline: [/.*/],
     },
-    include: ['src/integration/*.integration.test.ts'],
+    include: ['src/integration/*.e2e.test.ts'],
   },
 })

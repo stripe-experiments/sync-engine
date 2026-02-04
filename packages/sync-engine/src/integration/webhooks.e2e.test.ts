@@ -1,5 +1,5 @@
 /**
- * Webhook Integration Test
+ * Webhook E2E Test
  * Tests webhook creation, event processing, and database writes
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -21,7 +21,7 @@ const CONTAINER_NAME = 'stripe-sync-test-webhooks'
 const DB_NAME = 'app_db'
 const PORT = 5433
 
-describe('Webhook Integration', () => {
+describe('Webhook E2E', () => {
   let pool: pg.Pool
   let cli: CliProcess
   const tracker = new ResourceTracker()

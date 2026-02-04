@@ -1,5 +1,5 @@
 /**
- * Sigma Integration Test
+ * Sigma E2E Test
  * Tests Sigma table sync functionality with --sigma flag
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -20,7 +20,7 @@ const CONTAINER_NAME = 'stripe-sync-sigma-test'
 const DB_NAME = 'app_db'
 const PORT = 5440
 
-describe('Sigma Integration', () => {
+describe('Sigma E2E', () => {
   let pool: pg.Pool
   const tracker = new ResourceTracker()
   const cwd = process.cwd()

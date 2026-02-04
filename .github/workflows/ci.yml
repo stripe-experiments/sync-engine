@@ -86,8 +86,8 @@ jobs:
         env:
           TEST_POSTGRES_DB_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
 
-  integration-test:
-    name: CLI Integration Test
+  e2e-test:
+    name: CLI e2e tests
     runs-on: ubuntu-24.04
 
     steps:
@@ -108,7 +108,7 @@ jobs:
       - name: Build all packages
         run: pnpm build
 
-      - name: Set up .env file for CLI
+      - name: Set up .env file
         run: |
           cd packages/sync-engine
           touch .env
@@ -118,9 +118,9 @@ jobs:
           echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
           echo NGROK_AUTH_TOKEN='${{ secrets.NGROK_AUTH_TOKEN }}' >> .env
 
-      - name: Run CLI Integration Tests
+      - name: Run E2E Tests
         run: |
-          cd packages/sync-engine && npm run test:integration:cli
+          cd packages/sync-engine && npm run test:e2e
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
           STRIPE_API_KEY_2: ${{ secrets.STRIPE_API_KEY_2 }}

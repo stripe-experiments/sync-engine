@@ -1,5 +1,5 @@
 /**
- * Webhook Reuse Integration Test
+ * Webhook Reuse E2E Test
  * Tests that findOrCreateManagedWebhook correctly reuses existing webhooks
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -12,7 +12,7 @@ const CONTAINER_NAME = 'stripe-sync-webhook-reuse-test'
 const DB_NAME = 'app_db'
 const PORT = 5439
 
-describe('Webhook Reuse Integration', () => {
+describe('Webhook Reuse E2E', () => {
   let pool: pg.Pool
   let sync: StripeSync
   const createdWebhookIds: string[] = []

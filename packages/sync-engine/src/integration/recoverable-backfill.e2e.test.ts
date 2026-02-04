@@ -1,5 +1,5 @@
 /**
- * Error Recovery Integration Test
+ * Error Recovery E2E Test
  * Tests that sync can recover from crashes and preserve partial progress
  *
  * NOTE: This test requires write permissions to create test products.
@@ -23,7 +23,7 @@ const CONTAINER_NAME = 'stripe-sync-test-recovery'
 const DB_NAME = 'app_db'
 const PORT = 5437
 
-describe('Error Recovery Integration', () => {
+describe('Error Recovery E2E', () => {
   let pool: pg.Pool
   const tracker = new ResourceTracker()
   let stripe: ReturnType<typeof getStripeClient>

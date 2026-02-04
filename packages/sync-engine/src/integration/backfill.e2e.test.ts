@@ -1,5 +1,5 @@
 /**
- * Backfill Integration Test
+ * Backfill E2E Test
  * Tests backfill command with real Stripe data and incremental sync
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -20,7 +20,7 @@ const CONTAINER_NAME = 'stripe-sync-test-backfill'
 const DB_NAME = 'app_db'
 const PORT = 5434
 
-describe('Backfill Integration', () => {
+describe('Backfill E2E', () => {
   let pool: pg.Pool
   const tracker = new ResourceTracker()
   const cwd = process.cwd()

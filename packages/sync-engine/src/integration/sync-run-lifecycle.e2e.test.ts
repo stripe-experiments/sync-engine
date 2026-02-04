@@ -1,5 +1,5 @@
 /**
- * Sync Run Lifecycle Integration Test
+ * Sync Run Lifecycle E2E Test
  * Verifies sync_runs view and _sync_runs table stay in sync
  * Tests that object runs are created upfront to prevent premature close
  */
@@ -15,7 +15,7 @@ const CONTAINER_NAME = 'stripe-sync-lifecycle-test'
 const DB_NAME = 'app_db'
 const PORT = 5435
 
-describe('Sync Run Lifecycle', () => {
+describe('Sync Run Lifecycle E2E', () => {
   let pool: pg.Pool
   let sync: StripeSync
   const cwd = process.cwd()

@@ -1,6 +1,7 @@
 /**
- * WebSocket Integration Test
+ * WebSocket E2E Test
  * Tests WebSocket connection, event processing, and database writes
+ * This test does NOT require ngrok or Stripe CLI - uses Stripe's WebSocket API directly
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
@@ -14,7 +15,7 @@ const CONTAINER_NAME = 'stripe-sync-wss-test'
 const DB_NAME = 'app_db'
 const PORT = 5438
 
-describe('WebSocket Integration', () => {
+describe('WebSocket E2E', () => {
   let pool: pg.Pool
   let cli: CliProcess
   const tracker = new ResourceTracker()

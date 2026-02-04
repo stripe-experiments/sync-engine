@@ -1,5 +1,5 @@
 /**
- * Account Management Integration Test
+ * Account Management E2E Test
  * Tests getCurrentAccount(), getAllSyncedAccounts(), and dangerouslyDeleteSyncedAccountData()
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -20,7 +20,7 @@ const CONTAINER_NAME = 'stripe-sync-test-account-mgmt'
 const DB_NAME = 'app_db'
 const PORT = 5436
 
-describe('Account Management Integration', () => {
+describe('Account Management E2E', () => {
   let pool: pg.Pool
   let sync: StripeSync
   const cwd = process.cwd()
