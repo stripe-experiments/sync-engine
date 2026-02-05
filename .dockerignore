@@ -4,5 +4,9 @@ dist
 node_modules
 .tours
 .vscode
-docker
 docs
+
+# Exclude docker subdirectories except supabase
+docker/*
+!docker/supabase
+docker/supabase/volumes

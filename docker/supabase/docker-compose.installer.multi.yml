@@ -1,0 +1,40 @@
+# Multi-instance Docker Compose override to add Stripe Sync installer service
+# This file removes hardcoded container_name to allow multiple instances
+#
+# Usage (from docker/supabase directory):
+#   docker compose -p <project> -f docker-compose.multi.yml -f docker-compose.installer.multi.yml --env-file <env> up -d
+#
+# This will:
+#   1. Start all Supabase services
+#   2. Wait for them to be healthy
+#   3. Run database migrations via the stripe-sync-installer service
+#
+# Prerequisites:
+#   - STRIPE_SECRET_KEY must be set in the env file
+
+services:
+  # Installer service that runs database migrations after Supabase starts
+  stripe-sync-installer:
+    build:
+      context: ../..  # Project root (sync-engine/)
+      dockerfile: docker/supabase/Dockerfile.installer
+    depends_on:
+      db:
+        condition: service_healthy
+      kong:
+        condition: service_started
+      functions:
+        condition: service_started
+      analytics:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+    # This service runs once and exits
+    restart: "no"
+
+  # Add STRIPE_SECRET_KEY to functions service
+  functions:
+    environment:
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}

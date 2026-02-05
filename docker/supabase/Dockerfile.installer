@@ -1,0 +1,133 @@
+# Dockerfile for the Stripe Sync installer service
+# This container waits for Supabase to be healthy and then runs database migrations + pg_cron setup
+
+FROM node:24-alpine
+
+# Install required tools
+RUN apk add --no-cache curl bash postgresql-client
+
+# Enable corepack for pnpm
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+WORKDIR /app
+
+# Copy the entire project for building
+COPY . ./
+
+# Install dependencies and build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm run -r build
+
+# Create the install script
+RUN cat > /app/install.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+echo ""
+echo "🔄 Waiting for Supabase to be healthy..."
+echo ""
+
+# Wait for database to be ready using pg_isready
+echo "  Checking database..."
+MAX_RETRIES=60
+RETRY_COUNT=0
+until pg_isready -h db -p 5432 -U postgres -q 2>/dev/null; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "  ✗ Database not ready after ${MAX_RETRIES} attempts"
+    exit 1
+  fi
+  echo "  Database not ready (attempt $RETRY_COUNT/$MAX_RETRIES), waiting..."
+  sleep 3
+done
+echo "  ✓ Database is ready"
+
+# Wait for Kong (API gateway) to be ready
+echo "  Checking Kong API gateway..."
+RETRY_COUNT=0
+until curl -s -o /dev/null -w "%{http_code}" http://kong:8000/rest/v1/ 2>/dev/null | grep -qE "^[2-4][0-9][0-9]$"; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "  ✗ Kong not ready after ${MAX_RETRIES} attempts"
+    exit 1
+  fi
+  echo "  Kong not ready (attempt $RETRY_COUNT/$MAX_RETRIES), waiting..."
+  sleep 5
+done
+echo "  ✓ Kong is ready"
+
+sleep 3
+
+# Construct database URL (using internal Docker network)
+DB_NAME="${POSTGRES_DB:-postgres}"
+DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${DB_NAME}"
+
+echo ""
+echo "🚀 Running Stripe Sync database migrations..."
+echo ""
+
+# Run migrations using the existing CLI command
+cd /app/packages/sync-engine
+node dist/cli/index.js migrate --database-url "${DATABASE_URL}"
+
+echo ""
+echo "🔧 Setting up pg_cron worker job..."
+echo ""
+
+# Generate a unique worker secret
+WORKER_SECRET=$(cat /proc/sys/kernel/random/uuid)
+
+# Set up pg_cron using psql (same SQL as in commands.ts installLocal)
+PGPASSWORD="${POSTGRES_PASSWORD}" psql -h db -U postgres -d "${DB_NAME}" -v ON_ERROR_STOP=1 << EOSQL
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
+CREATE EXTENSION IF NOT EXISTS pgmq;
+
+-- Create pgmq queue for sync work (idempotent)
+SELECT pgmq.create('stripe_sync_work')
+WHERE NOT EXISTS (
+  SELECT 1 FROM pgmq.list_queues() WHERE queue_name = 'stripe_sync_work'
+);
+
+-- Store unique worker secret in vault for pg_cron to use
+DELETE FROM vault.secrets WHERE name = 'stripe_sync_worker_secret';
+SELECT vault.create_secret('${WORKER_SECRET}', 'stripe_sync_worker_secret');
+
+-- Delete existing jobs if they exist
+SELECT cron.unschedule('stripe-sync-worker') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-worker'
+);
+SELECT cron.unschedule('stripe-sync-scheduler') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'stripe-sync-scheduler'
+);
+
+-- Create job to invoke worker every minute (uses internal Docker network)
+SELECT cron.schedule(
+  'stripe-sync-worker',
+  '* * * * *',
+  \$\$
+  SELECT net.http_post(
+    url := 'http://kong:8000/functions/v1/stripe-worker',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
+    )
+  )
+  \$\$
+);
+EOSQL
+
+echo "  ✓ pg_cron worker job configured (runs every minute)"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ✅ Stripe Sync installation complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+SCRIPT
+
+RUN chmod +x /app/install.sh
+
+ENTRYPOINT ["/bin/bash", "/app/install.sh"]

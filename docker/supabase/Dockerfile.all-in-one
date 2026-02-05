@@ -1,0 +1,161 @@
+# All-in-one Dockerfile that starts Supabase and runs Stripe Sync install
+#
+# This uses Docker-in-Docker to start the Supabase stack
+# and then runs the stripe-experiment-sync supabase install command
+#
+# Build:
+#   docker build -f docker/supabase/Dockerfile.all-in-one -t stripe-sync-supabase .
+#
+# Run:
+#   docker run --privileged -v /var/run/docker.sock:/var/run/docker.sock \
+#     -e STRIPE_SECRET_KEY=sk_test_xxx \
+#     -p 8000:8000 -p 54322:54322 \
+#     stripe-sync-supabase
+
+FROM docker:27-dind
+
+# Install Node.js, pnpm, and other dependencies
+RUN apk add --no-cache \
+    nodejs \
+    npm \
+    bash \
+    curl \
+    git \
+    postgresql-client
+
+# Install pnpm globally
+RUN npm install -g pnpm@10
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+WORKDIR /app
+
+# Copy project files
+COPY . ./
+
+# Install dependencies and build
+RUN pnpm install --frozen-lockfile && pnpm run -r build
+
+# Copy Supabase docker setup
+COPY docker/supabase /supabase
+
+# Create entrypoint script
+RUN cat > /entrypoint.sh << 'ENTRYPOINT'
+#!/bin/bash
+set -e
+
+echo "🚀 Starting Stripe Sync + Supabase All-in-One"
+echo ""
+
+# Validate required environment variables
+if [ -z "$STRIPE_SECRET_KEY" ]; then
+  echo "Error: STRIPE_SECRET_KEY environment variable is required"
+  exit 1
+fi
+
+# Start Docker daemon in background
+echo "🐳 Starting Docker daemon..."
+dockerd-entrypoint.sh &
+DOCKER_PID=$!
+
+# Wait for Docker to be ready
+echo "   Waiting for Docker daemon..."
+until docker info >/dev/null 2>&1; do
+  sleep 1
+done
+echo "   ✓ Docker daemon is ready"
+
+cd /supabase
+
+# Update .env with Stripe key
+if [ -f ".env" ]; then
+  if grep -q "^STRIPE_SECRET_KEY=" .env; then
+    sed -i "s|^STRIPE_SECRET_KEY=.*|STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}|" .env
+  else
+    echo "" >> .env
+    echo "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}" >> .env
+  fi
+else
+  cp .env.example .env
+  echo "" >> .env
+  echo "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}" >> .env
+fi
+
+# Start Supabase services
+echo ""
+echo "🏗️  Starting Supabase services..."
+docker compose up -d
+
+# Wait for services to be healthy
+echo ""
+echo "⏳ Waiting for Supabase to be healthy..."
+
+# Wait for database
+echo "   Checking database..."
+until docker compose exec -T db pg_isready -U postgres 2>/dev/null; do
+  echo "   Database not ready, waiting..."
+  sleep 5
+done
+echo "   ✓ Database is ready"
+
+# Wait for Kong
+echo "   Checking API gateway..."
+until curl -sf http://localhost:8000/rest/v1/ -o /dev/null 2>&1; do
+  echo "   API gateway not ready, waiting..."
+  sleep 5
+done
+echo "   ✓ API gateway is ready"
+
+# Run the install command
+echo ""
+echo "📦 Running Stripe Sync install..."
+cd /app
+
+# Get database password from .env
+DB_PASSWORD=$(grep "^POSTGRES_PASSWORD=" /supabase/.env | cut -d'=' -f2-)
+
+# Run the install with local mode
+node packages/sync-engine/dist/cli/index.js supabase install \
+  --local \
+  --docker-path /supabase \
+  --stripe-key "$STRIPE_SECRET_KEY" << EOF
+y
+EOF
+
+# Run migrations
+echo ""
+echo "📊 Running database migrations..."
+node packages/sync-engine/dist/cli/index.js migrate \
+  --database-url "postgresql://postgres:${DB_PASSWORD}@localhost:54322/postgres"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ✅ Stripe Sync + Supabase is running!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  Supabase Studio: http://localhost:8000"
+echo "  Database:        localhost:54322"
+echo ""
+echo "  Edge Functions:"
+echo "    - http://localhost:8000/functions/v1/stripe-setup"
+echo "    - http://localhost:8000/functions/v1/stripe-webhook"
+echo "    - http://localhost:8000/functions/v1/stripe-worker"
+echo ""
+echo "  To receive webhooks, use Stripe CLI:"
+echo "    stripe listen --forward-to http://localhost:8000/functions/v1/stripe-webhook"
+echo ""
+
+# Keep container running and show logs
+echo "📋 Showing Supabase logs (Ctrl+C to exit)..."
+cd /supabase
+docker compose logs -f
+
+ENTRYPOINT
+
+RUN chmod +x /entrypoint.sh
+
+# Expose Supabase ports
+EXPOSE 8000 54322 4000
+
+ENTRYPOINT ["/entrypoint.sh"]
