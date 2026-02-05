@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import { ContainerManagerUI } from './ui/app.js';
 import { DockerManager } from './docker/manager.js';
 import { getDbStats } from './db/customerCount.js';
+import { startServer } from './api/server.js';
 
 const program = new Command();
 
@@ -251,6 +252,64 @@ program
     console.log(chalk.gray(`  Port: ${container.port}`));
     console.log(chalk.gray(`  Stripe Key: ${container.stripeApiKey.slice(0, 12)}...`));
     console.log();
+  });
+
+// REST API server command
+program
+  .command('serve')
+  .alias('api')
+  .description('Start the REST API server')
+  .option('-p, --port <port>', 'Port to listen on', '3456')
+  .action((options) => {
+    const port = parseInt(options.port, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.log(chalk.red('Invalid port number. Must be between 1 and 65535.'));
+      process.exit(1);
+    }
+    startServer(port);
+  });
+
+// API endpoints help command
+program
+  .command('endpoints')
+  .alias('curl')
+  .description('Show all REST API endpoints with curl examples')
+  .option('-p, --port <port>', 'API port for examples', '3456')
+  .action((options) => {
+    const port = options.port;
+    const base = `http://localhost:${port}`;
+
+    console.log(chalk.bold('\nREST API Endpoints:\n'));
+
+    console.log(chalk.cyan('Health Check:'));
+    console.log(chalk.gray(`  curl ${base}/health\n`));
+
+    console.log(chalk.cyan('List all containers:'));
+    console.log(chalk.gray(`  curl ${base}/api/containers`));
+    console.log(chalk.gray(`  curl ${base}/api/containers?stats=true\n`));
+
+    console.log(chalk.cyan('Get a container:'));
+    console.log(chalk.gray(`  curl ${base}/api/containers/:id\n`));
+
+    console.log(chalk.cyan('Get container stats:'));
+    console.log(chalk.gray(`  curl ${base}/api/containers/:id/stats\n`));
+
+    console.log(chalk.cyan('Create a container:'));
+    console.log(chalk.gray(`  curl -X POST ${base}/api/containers \\`));
+    console.log(chalk.gray(`    -H "Content-Type: application/json" \\`));
+    console.log(chalk.gray(`    -d '{"stripeApiKey": "sk_test_..."}'\n`));
+
+    console.log(chalk.cyan('Start a container:'));
+    console.log(chalk.gray(`  curl -X POST ${base}/api/containers/:id/start\n`));
+
+    console.log(chalk.cyan('Stop a container:'));
+    console.log(chalk.gray(`  curl -X POST ${base}/api/containers/:id/stop\n`));
+
+    console.log(chalk.cyan('Delete a container:'));
+    console.log(chalk.gray(`  curl -X DELETE ${base}/api/containers/:id\n`));
+
+    console.log(chalk.yellow('Note: Replace :id with the container ID or name.'));
+    console.log(chalk.yellow(`Default API port is 3456. Use --port to change examples.\n`));
   });
 
 program.parse();

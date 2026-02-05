@@ -2,6 +2,7 @@ import blessed from 'blessed';
 import contrib from 'blessed-contrib';
 import { DockerManager } from '../docker/manager.js';
 import { getCustomerCount, getDbStats } from '../db/customerCount.js';
+import { startServer } from '../api/server.js';
 import type { ContainerInfo } from '../types.js';
 
 export class ContainerManagerUI {
@@ -482,6 +483,9 @@ export class ContainerManagerUI {
   async start(): Promise<void> {
     this.log.log('Initializing Stripe Sync Container Manager...');
     this.screen.render();
+
+    // Start REST API server in background
+    startServer(3456);
 
     await this.dockerManager.initialize();
     await this.refresh();
