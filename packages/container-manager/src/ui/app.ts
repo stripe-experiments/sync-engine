@@ -484,8 +484,8 @@ export class ContainerManagerUI {
     this.log.log('Initializing Stripe Sync Container Manager...');
     this.screen.render();
 
-    // Start REST API server in background
-    startServer(3456);
+    // Start REST API server in background (silent mode to not interfere with CLI UI)
+    startServer(3456, { silent: true });
 
     await this.dockerManager.initialize();
     await this.refresh();

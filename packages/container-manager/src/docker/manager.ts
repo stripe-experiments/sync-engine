@@ -66,6 +66,26 @@ export class DockerManager {
     return `stripe-sync-${randomId}`;
   }
 
+  /**
+   * Generate a deterministic username based on the Stripe API key
+   * This ensures the same key always gets the same username
+   */
+  generateDeterministicUsername(stripeApiKey: string): string {
+    const hash = crypto.createHash('sha256').update(`username:${stripeApiKey}`).digest('hex');
+    // Use first 12 characters prefixed with 'user_' for a readable username
+    return `user_${hash.substring(0, 12)}`;
+  }
+
+  /**
+   * Generate a deterministic password based on the Stripe API key
+   * This ensures the same key always gets the same password
+   */
+  generateDeterministicPassword(stripeApiKey: string): string {
+    const hash = crypto.createHash('sha256').update(`password:${stripeApiKey}`).digest('hex');
+    // Use first 32 characters for a secure password
+    return hash.substring(0, 32);
+  }
+
   private async isPortAvailable(port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const server = net.createServer();
@@ -197,7 +217,8 @@ export class DockerManager {
 
     // Generate unique secrets for this instance
     const jwtSecret = crypto.randomBytes(32).toString('base64');
-    const postgresPassword = crypto.randomBytes(16).toString('hex');
+    // Generate deterministic password based on Stripe API key (so same key always gets same password)
+    const postgresPassword = this.generateDeterministicPassword(config.stripeApiKey);
     const secretKeyBase = crypto.randomBytes(32).toString('base64');
     const vaultEncKey = crypto.randomBytes(16).toString('hex');
     const pgMetaCryptoKey = crypto.randomBytes(16).toString('hex');
@@ -439,5 +460,36 @@ export class DockerManager {
       }
     }
     return null;
+  }
+
+  /**
+   * Get the full database URL with credentials for a given Stripe API key
+   * Format: postgresql://postgres:password@host:port/database
+   * Uses 'postgres' as the username (default superuser) with deterministic password
+   */
+  getDatabaseUrl(stripeApiKey: string, host: string = 'localhost'): string | null {
+    const metadata = this.getContainerByStripeKey(stripeApiKey);
+    if (!metadata) {
+      return null;
+    }
+
+    const username = 'postgres';
+    const password = this.generateDeterministicPassword(stripeApiKey);
+    const port = metadata.dbPort || 54322;
+    const database = 'postgres';
+
+    return `postgresql://${username}:${password}@${host}:${port}/${database}`;
+  }
+
+  /**
+   * Delete a container by Stripe API key
+   */
+  async deleteContainerByStripeKey(stripeApiKey: string): Promise<void> {
+    const metadata = this.getContainerByStripeKey(stripeApiKey);
+    if (!metadata) {
+      throw new Error('No container found for this Stripe API key');
+    }
+
+    await this.deleteContainer(metadata.id);
   }
 }

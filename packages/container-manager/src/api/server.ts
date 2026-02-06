@@ -15,8 +15,13 @@ const ensureInitialized = async () => {
   }
 }
 
-export async function createServer() {
-  const fastify = Fastify({ logger: true })
+export async function createServer(options: { silent?: boolean } = {}) {
+  const fastify = Fastify({ logger: !options.silent })
+
+  // Pretty print JSON responses
+  fastify.setReplySerializer((payload) => {
+    return JSON.stringify(payload, null, 2)
+  })
 
   await fastify.register(cors)
 
@@ -239,26 +244,133 @@ export async function createServer() {
     }
   })
 
+  // Helper to extract Stripe API key from Authorization header
+  const extractStripeApiKey = (request: { headers: { authorization?: string } }): string | null => {
+    const authHeader = request.headers.authorization
+    if (!authHeader) {
+      return null
+    }
+    // Support both "Bearer sk_xxx" and just "sk_xxx"
+    if (authHeader.startsWith('Bearer ')) {
+      return authHeader.substring(7)
+    }
+    return authHeader
+  }
+
+  // Provision a database - creates a container for the Stripe API key
+  // Stripe API key is passed in the Authorization header
+  // Returns a db_url with username and password pre-filled
+  fastify.post('/api/provision_database', async (request, reply) => {
+    await ensureInitialized()
+
+    try {
+      const stripeApiKey = extractStripeApiKey(request)
+
+      if (!stripeApiKey) {
+        reply.code(401)
+        return { error: 'Authorization header with Stripe API key is required' }
+      }
+
+      if (!stripeApiKey.startsWith('sk_') && !stripeApiKey.startsWith('rk_')) {
+        reply.code(400)
+        return { error: 'Invalid Stripe API key. Must start with sk_ or rk_' }
+      }
+
+      // Check if container already exists for this key
+      if (dockerManager.hasContainerForStripeKey(stripeApiKey)) {
+        // Return existing db_url
+        const dbUrl = dockerManager.getDatabaseUrl(stripeApiKey)
+        return {
+          db_url: dbUrl,
+          message: 'Database already provisioned for this Stripe API key',
+        }
+      }
+
+      const container = await dockerManager.spawnContainer({
+        stripeApiKey,
+      })
+
+      if (container.status === 'error') {
+        reply.code(500)
+        return { error: container.error || 'Failed to provision database' }
+      }
+
+      const dbUrl = dockerManager.getDatabaseUrl(stripeApiKey)
+
+      reply.code(201)
+      return {
+        db_url: dbUrl,
+        message: 'Database provisioned successfully',
+      }
+    } catch (error) {
+      reply.code(500)
+      return { error: error instanceof Error ? error.message : 'Failed to provision database' }
+    }
+  })
+
+  // Unprovision a database - deletes the container for the Stripe API key
+  // Stripe API key is passed in the Authorization header
+  fastify.post('/api/unprovision_database', async (request, reply) => {
+    await ensureInitialized()
+
+    try {
+      const stripeApiKey = extractStripeApiKey(request)
+
+      if (!stripeApiKey) {
+        reply.code(401)
+        return { error: 'Authorization header with Stripe API key is required' }
+      }
+
+      if (!stripeApiKey.startsWith('sk_') && !stripeApiKey.startsWith('rk_')) {
+        reply.code(400)
+        return { error: 'Invalid Stripe API key. Must start with sk_ or rk_' }
+      }
+
+      if (!dockerManager.hasContainerForStripeKey(stripeApiKey)) {
+        reply.code(404)
+        return { error: 'No database provisioned for this Stripe API key' }
+      }
+
+      await dockerManager.deleteContainerByStripeKey(stripeApiKey)
+
+      return { message: 'Database unprovisioned successfully' }
+    } catch (error) {
+      reply.code(500)
+      return { error: error instanceof Error ? error.message : 'Failed to unprovision database' }
+    }
+  })
+
   return fastify
 }
 
 // Start server function
-export async function startServer(port: number = 3456): Promise<void> {
-  const server = await createServer()
+export async function startServer(
+  port: number = 3456,
+  options: { silent?: boolean } = {}
+): Promise<void> {
+  const server = await createServer({ silent: options.silent })
 
   try {
     await server.listen({ port, host: '0.0.0.0' })
-    console.log(`\nAPI server running at http://localhost:${port}`)
-    console.log('\nAvailable endpoints:')
-    console.log('  GET    /health                     - Health check')
-    console.log('  GET    /api/containers             - List all containers')
-    console.log('  GET    /api/containers?stats=true  - List containers with stats')
-    console.log('  POST   /api/containers             - Create a new container')
-    console.log('  GET    /api/containers/:id         - Get a specific container')
-    console.log('  GET    /api/containers/:id/stats   - Get container stats')
-    console.log('  POST   /api/containers/:id/start   - Start a container')
-    console.log('  POST   /api/containers/:id/stop    - Stop a container')
-    console.log('  DELETE /api/containers/:id         - Delete a container')
+    if (!options.silent) {
+      console.log(`\nAPI server running at http://localhost:${port}`)
+      console.log('\nAvailable endpoints:')
+      console.log('  GET    /health                     - Health check')
+      console.log(
+        '  POST   /api/provision_database     - Provision database (Stripe key in Authorization header)'
+      )
+      console.log(
+        '  POST   /api/unprovision_database   - Unprovision database (Stripe key in Authorization header)'
+      )
+      console.log('  GET    /api/containers             - List all containers')
+      console.log('  GET    /api/containers?stats=true  - List containers with stats')
+      console.log('  POST   /api/containers             - Create a new container')
+      console.log('  GET    /api/containers/:id         - Get a specific container')
+      console.log('  GET    /api/containers/:id/stats   - Get container stats')
+      console.log('  POST   /api/containers/:id/start   - Start a container')
+      console.log('  POST   /api/containers/:id/stop    - Stop a container')
+      console.log('  DELETE /api/containers/:id         - Delete a container')
+    }
   } catch (err) {
     server.log.error(err)
     process.exit(1)
