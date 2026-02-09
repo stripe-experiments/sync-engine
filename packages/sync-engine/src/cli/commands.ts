@@ -15,6 +15,7 @@ import {
 import { createTunnel, type NgrokTunnel } from './ngrok'
 import { install, uninstall } from '../supabase'
 import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
+import { diffSchemaCommand } from './diff'
 
 export interface DeployOptions {
   supabaseAccessToken?: string
@@ -758,3 +759,6 @@ export async function uninstallCommand(options: DeployOptions): Promise<void> {
     process.exit(1)
   }
 }
+
+// Re-export the diffSchemaCommand
+export { diffSchemaCommand }

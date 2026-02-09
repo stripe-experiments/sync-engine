@@ -9,6 +9,14 @@ import type { ConnectionOptions } from 'node:tls'
 import type { Logger } from '../types'
 import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
 import type { SigmaIngestionConfig } from '../sigma/sigmaIngestion'
+import {
+  createOpenAPIParser,
+  createTypeMapper,
+  createTableGenerator,
+  type OpenAPIParser,
+  type TypeMapper,
+  type TableGenerator,
+} from '../openapi'
 
 // Get __dirname equivalent for ESM
 const __filename = fileURLToPath(import.meta.url)
@@ -25,6 +33,11 @@ type MigrationConfig = {
   ssl?: ConnectionOptions
   logger?: Logger
   enableSigma?: boolean
+
+  // NEW: OpenAPI-based schema generation
+  openApiSpecPath?: string        // Path to spec file
+  stripeObjects?: string[]        // Objects to create tables for
+  schemaName?: string            // Default: 'stripe'
 }
 
 function truncateIdentifier(name: string, maxBytes: number): string {
@@ -320,6 +333,101 @@ async function migrateSigmaSchema(
   }
 }
 
+async function getTableColumns(client: Client, schema: string, tableName: string): Promise<string[]> {
+  const result = await client.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = $2
+     ORDER BY ordinal_position`,
+    [schema, tableName]
+  )
+  return result.rows.map(row => row.column_name)
+}
+
+async function migrateOpenAPISchema(
+  client: Client,
+  config: MigrationConfig,
+  schemaName = 'stripe'
+): Promise<void> {
+  if (!config.openApiSpecPath || !config.stripeObjects || config.stripeObjects.length === 0) {
+    config.logger?.info('No OpenAPI configuration provided, skipping OpenAPI-based migrations')
+    return
+  }
+
+  config.logger?.info(`Running OpenAPI-based migrations for schema "${schemaName}"`)
+
+  // Validate spec file exists
+  if (!fs.existsSync(config.openApiSpecPath)) {
+    throw new Error(`OpenAPI spec file not found: ${config.openApiSpecPath}`)
+  }
+
+  // Initialize OpenAPI components
+  const parser = createOpenAPIParser()
+  const typeMapper = createTypeMapper()
+  const tableGenerator = createTableGenerator(parser, typeMapper)
+
+  try {
+    // Load the OpenAPI spec
+    await parser.loadSpec(config.openApiSpecPath)
+    const apiVersion = parser.getApiVersion()
+    config.logger?.info(`Loaded OpenAPI spec version: ${apiVersion}`)
+
+    // Ensure schema exists
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`)
+
+    // Validate that all specified objects exist in the spec
+    const availableObjects = parser.listObjectTypes()
+    const availableObjectSet = new Set(availableObjects)
+
+    for (const objectName of config.stripeObjects) {
+      if (!availableObjectSet.has(objectName)) {
+        throw new Error(
+          `Object '${objectName}' not found in OpenAPI spec. Available objects: ${availableObjects.join(', ')}`
+        )
+      }
+    }
+
+    // Process each configured Stripe object
+    for (const objectName of config.stripeObjects) {
+      const tableName = tableGenerator.getTableName(objectName)
+      const tableExists = await doesTableExist(client, schemaName, tableName)
+
+      if (tableExists) {
+        // Check for schema evolution (new columns)
+        const existingColumns = await getTableColumns(client, schemaName, tableName)
+        const alterStatements = tableGenerator.generateSchemaEvolution(
+          objectName,
+          existingColumns,
+          schemaName
+        )
+
+        if (alterStatements.length > 0) {
+          config.logger?.info(
+            `Evolving schema for ${schemaName}.${tableName}: adding ${alterStatements.length} new columns`
+          )
+          for (const statement of alterStatements) {
+            await client.query(statement)
+            config.logger?.info(`Executed: ${statement}`)
+          }
+        } else {
+          config.logger?.info(`Table ${schemaName}.${tableName} is up to date`)
+        }
+      } else {
+        // Create new table
+        config.logger?.info(`Creating table ${schemaName}.${tableName} from OpenAPI spec`)
+        const createTableSQL = tableGenerator.generateCreateTable(objectName, schemaName)
+        await client.query(createTableSQL)
+        config.logger?.info(`Created table ${schemaName}.${tableName}`)
+      }
+    }
+
+    config.logger?.info('OpenAPI-based migrations completed successfully')
+  } catch (error) {
+    config.logger?.error(error, 'Error in OpenAPI-based migrations')
+    throw error
+  }
+}
+
 export async function runMigrations(config: MigrationConfig): Promise<void> {
   // Init DB
   const client = new Client({
@@ -360,6 +468,9 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
     if (config.enableSigma) {
       await migrateSigmaSchema(client, config)
     }
+
+    // Run OpenAPI-based migrations after core migrations
+    await migrateOpenAPISchema(client, config, config.schemaName)
   } catch (err) {
     config.logger?.error(err, 'Error running migrations')
     throw err

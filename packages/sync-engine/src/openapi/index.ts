@@ -31,7 +31,10 @@ export type {
   IndexingOption,
 } from './types'
 
+export type { TableGenerator, SchemaEvolution } from './tableGenerator'
+
 // Implementation exports
 export { StripeOpenAPIParser, createOpenAPIParser } from './parser'
 export { ReferenceResolver, resolveReferences } from './resolver'
 export { StripeTypeMapper, createTypeMapper } from './typeMapper'
+export { StripeTableGenerator, createTableGenerator } from './tableGenerator'

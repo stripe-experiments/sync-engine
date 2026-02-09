@@ -93,14 +93,14 @@ describe('OpenAPI Parser + Type Mapper Integration', () => {
     const customerSchema = parser.getObjectSchema('customer')
     expect(customerSchema).toBeDefined()
     expect(customerSchema!.name).toBe('customer')
-    expect(customerSchema!.properties).toHaveLength(18)
+    expect(customerSchema!.properties).toHaveLength(21)
 
     // Map to table definition
     const tableDefinition = mapper.mapObjectSchema(customerSchema!)
 
     expect(tableDefinition.name).toBe('customers')
     expect(tableDefinition.description).toBe('Represents a customer of your business')
-    expect(tableDefinition.columns).toHaveLength(18)
+    expect(tableDefinition.columns).toHaveLength(21)
 
     // Verify key column mappings
     const columnByName = (name: string) => tableDefinition.columns.find(col => col.name === name)!

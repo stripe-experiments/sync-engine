@@ -34,6 +34,9 @@ export class ReferenceResolver {
       if (!this.followCircular) {
         // Return a placeholder for circular references
         return { type: 'object', description: `Circular reference: ${refPath}` }
+      } else {
+        // When followCircular is true, still throw on depth exceeded
+        throw new Error(`Maximum reference resolution depth (${this.maxDepth}) exceeded for: ${refPath}`)
       }
     }
 
@@ -64,7 +67,7 @@ export class ReferenceResolver {
     }
 
     if (obj.$ref) {
-      return this.resolve(obj.$ref, currentDepth)
+      return this.resolve(obj.$ref, currentDepth + 1)
     }
 
     const resolved: any = {}
@@ -138,5 +141,11 @@ export function resolveReferences(spec: any, obj: any, options?: ResolverOptions
   }
 
   const resolver = new ReferenceResolver(spec, options)
+
+  // Handle direct $ref at top level
+  if (obj.$ref) {
+    return resolver.resolve(obj.$ref)
+  }
+
   return resolver.resolveNestedRefs(obj)
 }
