@@ -44,22 +44,6 @@ function getUniqueIds<T>(entries: T[], key: string): string[] {
   return Array.from(set)
 }
 
-export interface StripeSyncOptions {
-  databaseUrl: string
-  stripeApiKey: string
-  baseUrl: () => string
-  webhookPath?: string
-  stripeApiVersion?: string
-  autoExpandLists?: boolean
-  backfillRelatedEntities?: boolean
-  keepWebhooksOnShutdown?: boolean
-}
-
-export interface StripSyncInfo {
-  baseUrl: string
-  webhookUrl: string
-}
-
 export class StripeSync {
   stripe: Stripe
   postgresClient: PostgresClient
