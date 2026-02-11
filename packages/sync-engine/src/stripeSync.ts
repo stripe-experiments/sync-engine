@@ -7,8 +7,6 @@ import {
   Sync,
   SyncBackfill,
   SyncParams,
-  SyncEntitlementsParams,
-  SyncFeaturesParams,
   ProcessNextResult,
   ProcessNextParams,
   SyncObject,
@@ -726,7 +724,7 @@ export class StripeSync {
   private async handleTaxIdDeletedEvent(event: Stripe.Event, _accountId: string): Promise<void> {
     const taxId = event.data.object as Stripe.TaxId
 
-    await this.deleteTaxId(taxId.id)
+    await this.postgresClient.deleteTaxId(taxId.id)
   }
 
   private async handleInvoiceEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -750,7 +748,7 @@ export class StripeSync {
     } catch (err) {
       if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
         const product = event.data.object as Stripe.Product
-        await this.deleteProduct(product.id)
+        await this.postgresClient.deleteProduct(product.id)
       } else {
         throw err
       }
@@ -763,7 +761,7 @@ export class StripeSync {
   ): Promise<void> {
     const product = event.data.object
 
-    await this.deleteProduct(product.id)
+    await this.postgresClient.deleteProduct(product.id)
   }
 
   private async handlePriceEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -777,7 +775,7 @@ export class StripeSync {
     } catch (err) {
       if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
         const price = event.data.object as Stripe.Price
-        await this.deletePrice(price.id)
+        await this.postgresClient.deletePrice(price.id)
       } else {
         throw err
       }
@@ -790,7 +788,7 @@ export class StripeSync {
   ): Promise<void> {
     const price = event.data.object
 
-    await this.deletePrice(price.id)
+    await this.postgresClient.deletePrice(price.id)
   }
 
   private async handlePlanEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -804,7 +802,7 @@ export class StripeSync {
     } catch (err) {
       if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
         const plan = event.data.object as Stripe.Plan
-        await this.deletePlan(plan.id)
+        await this.postgresClient.deletePlan(plan.id)
       } else {
         throw err
       }
@@ -817,7 +815,7 @@ export class StripeSync {
   ): Promise<void> {
     const plan = event.data.object
 
-    await this.deletePlan(plan.id)
+    await this.postgresClient.deletePlan(plan.id)
   }
 
   private async handleSetupIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -960,7 +958,7 @@ export class StripeSync {
       refetched = true
     }
 
-    await this.deleteRemovedActiveEntitlements(
+    await this.postgresClient.deleteRemovedActiveEntitlements(
       activeEntitlementSummary.customer,
       entitlements.data.map((entitlement) => entitlement.id)
     )
@@ -1482,12 +1480,6 @@ export class StripeSync {
   }
 
   /**
-   * Process all pages for all (or specified) object types until complete.
-   *
-   * @param params - Optional parameters for filtering and specifying object types
-   * @returns SyncBackfill with counts for each synced resource type
-   */
-  /**
    * Process all pages for a single object type until complete.
    * Loops processNext() internally until hasMore is false.
    *
@@ -1787,839 +1779,6 @@ export class StripeSync {
     }
   }
 
-  /**
-   * Sync payment methods with an existing run (special case - iterates customers)
-   */
-  private async syncPaymentMethodsWithRun(
-    runStartedAt: Date,
-    syncParams?: SyncParams
-  ): Promise<Sync> {
-    const accountId = await this.getAccountId()
-    const resourceName = 'payment_methods'
-
-    // Create object run
-    await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
-    await this.postgresClient.tryStartObjectSync(accountId, runStartedAt, resourceName)
-
-    try {
-      // Query customers from database
-      const prepared = sql(
-        `select id from "stripe"."customers" WHERE COALESCE(deleted, false) <> true;`
-      )([])
-
-      const customerIds = await this.postgresClient
-        .query(prepared.text, prepared.values)
-        .then(({ rows }) => rows.map((it) => it.id))
-
-      this.config.logger?.info(`Getting payment methods for ${customerIds.length} customers`)
-
-      let synced = 0
-
-      // Process customers in parallel chunks (configurable concurrency)
-      const chunkSize = this.config.maxConcurrentCustomers ?? 10
-      for (const customerIdChunk of chunkArray(customerIds, chunkSize)) {
-        await Promise.all(
-          customerIdChunk.map(async (customerId) => {
-            const CHECKPOINT_SIZE = 100
-            let currentBatch: Stripe.PaymentMethod[] = []
-
-            // Manual pagination - each fetch() gets automatic retry protection
-            let hasMore = true
-            let startingAfter: string | undefined = undefined
-
-            while (hasMore) {
-              const response: Stripe.ApiList<Stripe.PaymentMethod> =
-                await this.stripe.paymentMethods.list({
-                  limit: 100,
-                  customer: customerId,
-                  ...(startingAfter ? { starting_after: startingAfter } : {}),
-                })
-
-              for (const item of response.data) {
-                currentBatch.push(item)
-                if (currentBatch.length >= CHECKPOINT_SIZE) {
-                  await this.upsertPaymentMethods(
-                    currentBatch,
-                    accountId,
-                    syncParams?.backfillRelatedEntities
-                  )
-                  synced += currentBatch.length
-                  await this.postgresClient.incrementObjectProgress(
-                    accountId,
-                    runStartedAt,
-                    resourceName,
-                    currentBatch.length
-                  )
-                  currentBatch = []
-                }
-              }
-
-              hasMore = response.has_more
-              if (response.data.length > 0) {
-                startingAfter = response.data[response.data.length - 1].id
-              }
-            }
-
-            // Process remaining items
-            if (currentBatch.length > 0) {
-              await this.upsertPaymentMethods(
-                currentBatch,
-                accountId,
-                syncParams?.backfillRelatedEntities
-              )
-              synced += currentBatch.length
-              await this.postgresClient.incrementObjectProgress(
-                accountId,
-                runStartedAt,
-                resourceName,
-                currentBatch.length
-              )
-            }
-          })
-        )
-      }
-
-      // Complete object run
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
-
-      return { synced }
-    } catch (error) {
-      await this.postgresClient.failObjectSync(
-        accountId,
-        runStartedAt,
-        resourceName,
-        error instanceof Error ? error.message : 'Unknown error'
-      )
-      throw error
-    }
-  }
-
-  async syncProducts(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing products')
-
-    return this.withSyncRun('products', 'syncProducts', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.ProductListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.products.list({ ...params, ...pagination }),
-        (products) => this.upsertProducts(products, accountId),
-        accountId,
-        'products',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncPrices(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing prices')
-
-    return this.withSyncRun('prices', 'syncPrices', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.PriceListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.prices.list({ ...params, ...pagination }),
-        (prices) => this.upsertPrices(prices, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'prices',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncPlans(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing plans')
-
-    return this.withSyncRun('plans', 'syncPlans', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.PlanListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.plans.list({ ...params, ...pagination }),
-        (plans) => this.upsertPlans(plans, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'plans',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncCustomers(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing customers')
-
-    return this.withSyncRun('customers', 'syncCustomers', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.CustomerListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.customers.list({ ...params, ...pagination }),
-        // @ts-expect-error
-        (items) => this.upsertCustomers(items, accountId),
-        accountId,
-        'customers',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncSubscriptions(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing subscriptions')
-
-    return this.withSyncRun('subscriptions', 'syncSubscriptions', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.SubscriptionListParams = { status: 'all', limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.subscriptions.list({ ...params, ...pagination }),
-        (items) => this.upsertSubscriptions(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'subscriptions',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncSubscriptionSchedules(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing subscription schedules')
-
-    return this.withSyncRun(
-      'subscription_schedules',
-      'syncSubscriptionSchedules',
-      async (cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-        const params: Stripe.SubscriptionScheduleListParams = { limit: 100 }
-
-        if (syncParams?.created) {
-          params.created = syncParams.created
-        } else if (cursor) {
-          params.created = { gte: cursor }
-          this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-        }
-
-        return this.fetchAndUpsert(
-          (pagination) => this.stripe.subscriptionSchedules.list({ ...params, ...pagination }),
-          (items) =>
-            this.upsertSubscriptionSchedules(items, accountId, syncParams?.backfillRelatedEntities),
-          accountId,
-          'subscription_schedules',
-          runStartedAt
-        )
-      }
-    )
-  }
-
-  async syncInvoices(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing invoices')
-
-    return this.withSyncRun('invoices', 'syncInvoices', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.InvoiceListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.invoices.list({ ...params, ...pagination }),
-        (items) => this.upsertInvoices(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'invoices',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncCharges(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing charges')
-
-    return this.withSyncRun('charges', 'syncCharges', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.ChargeListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.charges.list({ ...params, ...pagination }),
-        (items) => this.upsertCharges(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'charges',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncSetupIntents(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing setup_intents')
-
-    return this.withSyncRun('setup_intents', 'syncSetupIntents', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.SetupIntentListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.setupIntents.list({ ...params, ...pagination }),
-        (items) => this.upsertSetupIntents(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'setup_intents',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncPaymentIntents(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing payment_intents')
-
-    return this.withSyncRun(
-      'payment_intents',
-      'syncPaymentIntents',
-      async (cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-        const params: Stripe.PaymentIntentListParams = { limit: 100 }
-
-        if (syncParams?.created) {
-          params.created = syncParams.created
-        } else if (cursor) {
-          params.created = { gte: cursor }
-          this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-        }
-
-        return this.fetchAndUpsert(
-          (pagination) => this.stripe.paymentIntents.list({ ...params, ...pagination }),
-          (items) =>
-            this.upsertPaymentIntents(items, accountId, syncParams?.backfillRelatedEntities),
-          accountId,
-          'payment_intents',
-          runStartedAt
-        )
-      }
-    )
-  }
-
-  async syncTaxIds(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing tax_ids')
-
-    return this.withSyncRun('tax_ids', 'syncTaxIds', async (_cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.TaxIdListParams = { limit: 100 }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.taxIds.list({ ...params, ...pagination }),
-        (items) => this.upsertTaxIds(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'tax_ids',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncPaymentMethods(syncParams?: SyncParams): Promise<Sync> {
-    // We can't filter by date here, it is also not possible to get payment methods without specifying a customer (you need Stripe Sigma for that -.-)
-    // Thus, we need to loop through all customers
-    this.config.logger?.info('Syncing payment method')
-
-    return this.withSyncRun(
-      'payment_methods',
-      'syncPaymentMethods',
-      async (_cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-
-        // deleted is a generated column that may be NULL for non-deleted customers
-        // Use COALESCE to treat NULL as false, or use IS NOT TRUE to include NULL and false
-        const prepared = sql(
-          `select id from "stripe"."customers" WHERE COALESCE(deleted, false) <> true;`
-        )([])
-
-        const customerIds = await this.postgresClient
-          .query(prepared.text, prepared.values)
-          .then(({ rows }) => rows.map((it) => it.id))
-
-        this.config.logger?.info(`Getting payment methods for ${customerIds.length} customers`)
-
-        let synced = 0
-
-        // Process customers in parallel chunks (configurable concurrency)
-        const chunkSize = this.config.maxConcurrentCustomers ?? 3
-        for (const customerIdChunk of chunkArray(customerIds, chunkSize)) {
-          await Promise.all(
-            customerIdChunk.map(async (customerId) => {
-              const CHECKPOINT_SIZE = 100
-              let currentBatch: Stripe.PaymentMethod[] = []
-
-              // Manual pagination - each fetch() gets automatic retry protection
-              let hasMore = true
-              let startingAfter: string | undefined = undefined
-
-              while (hasMore) {
-                const response: Stripe.ApiList<Stripe.PaymentMethod> =
-                  await this.stripe.paymentMethods.list({
-                    limit: 100,
-                    customer: customerId,
-                    ...(startingAfter ? { starting_after: startingAfter } : {}),
-                  })
-
-                for (const item of response.data) {
-                  currentBatch.push(item)
-                  if (currentBatch.length >= CHECKPOINT_SIZE) {
-                    await this.upsertPaymentMethods(
-                      currentBatch,
-                      accountId,
-                      syncParams?.backfillRelatedEntities
-                    )
-                    synced += currentBatch.length
-                    await this.postgresClient.incrementObjectProgress(
-                      accountId,
-                      runStartedAt,
-                      'payment_methods',
-                      currentBatch.length
-                    )
-                    currentBatch = []
-                  }
-                }
-
-                hasMore = response.has_more
-                if (response.data.length > 0) {
-                  startingAfter = response.data[response.data.length - 1].id
-                }
-              }
-
-              // Process remaining items
-              if (currentBatch.length > 0) {
-                await this.upsertPaymentMethods(
-                  currentBatch,
-                  accountId,
-                  syncParams?.backfillRelatedEntities
-                )
-                synced += currentBatch.length
-                await this.postgresClient.incrementObjectProgress(
-                  accountId,
-                  runStartedAt,
-                  'payment_methods',
-                  currentBatch.length
-                )
-              }
-            })
-          )
-        }
-
-        // Mark object sync as complete (run completion handled by withSyncRun)
-        await this.postgresClient.completeObjectSync(accountId, runStartedAt, 'payment_methods')
-
-        return { synced }
-      }
-    )
-  }
-
-  async syncDisputes(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing disputes')
-
-    return this.withSyncRun('disputes', 'syncDisputes', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.DisputeListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.disputes.list({ ...params, ...pagination }),
-        (items) => this.upsertDisputes(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'disputes',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncEarlyFraudWarnings(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing early fraud warnings')
-
-    return this.withSyncRun(
-      'early_fraud_warnings',
-      'syncEarlyFraudWarnings',
-      async (cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-        const params: Stripe.Radar.EarlyFraudWarningListParams = { limit: 100 }
-
-        if (syncParams?.created) {
-          params.created = syncParams.created
-        } else if (cursor) {
-          params.created = { gte: cursor }
-          this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-        }
-
-        return this.fetchAndUpsert(
-          (pagination) => this.stripe.radar.earlyFraudWarnings.list({ ...params, ...pagination }),
-          (items) =>
-            this.upsertEarlyFraudWarning(items, accountId, syncParams?.backfillRelatedEntities),
-          accountId,
-          'early_fraud_warnings',
-          runStartedAt
-        )
-      }
-    )
-  }
-
-  async syncRefunds(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing refunds')
-
-    return this.withSyncRun('refunds', 'syncRefunds', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.RefundListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.refunds.list({ ...params, ...pagination }),
-        (items) => this.upsertRefunds(items, accountId, syncParams?.backfillRelatedEntities),
-        accountId,
-        'refunds',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncCreditNotes(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing credit notes')
-
-    return this.withSyncRun('credit_notes', 'syncCreditNotes', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.CreditNoteListParams = { limit: 100 }
-
-      if (syncParams?.created) {
-        params.created = syncParams.created
-      } else if (cursor) {
-        params.created = { gte: cursor }
-        this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-      }
-
-      return this.fetchAndUpsert(
-        (pagination) => this.stripe.creditNotes.list({ ...params, ...pagination }),
-        (creditNotes) => this.upsertCreditNotes(creditNotes, accountId),
-        accountId,
-        'credit_notes',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncFeatures(syncParams?: SyncFeaturesParams): Promise<Sync> {
-    this.config.logger?.info('Syncing features')
-
-    return this.withSyncRun('features', 'syncFeatures', async (cursor, runStartedAt) => {
-      const accountId = await this.getAccountId()
-      const params: Stripe.Entitlements.FeatureListParams = {
-        limit: 100,
-        ...syncParams?.pagination,
-      }
-      return this.fetchAndUpsert(
-        () => this.stripe.entitlements.features.list(params),
-        (features) => this.upsertFeatures(features, accountId),
-        accountId,
-        'features',
-        runStartedAt
-      )
-    })
-  }
-
-  async syncEntitlements(customerId: string, syncParams?: SyncEntitlementsParams): Promise<Sync> {
-    this.config.logger?.info('Syncing entitlements')
-
-    return this.withSyncRun(
-      'active_entitlements',
-      'syncEntitlements',
-      async (cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-        const params: Stripe.Entitlements.ActiveEntitlementListParams = {
-          customer: customerId,
-          limit: 100,
-          ...syncParams?.pagination,
-        }
-        return this.fetchAndUpsert(
-          () => this.stripe.entitlements.activeEntitlements.list(params),
-          (entitlements) => this.upsertActiveEntitlements(customerId, entitlements, accountId),
-          accountId,
-          'active_entitlements',
-          runStartedAt
-        )
-      }
-    )
-  }
-
-  async syncCheckoutSessions(syncParams?: SyncParams): Promise<Sync> {
-    this.config.logger?.info('Syncing checkout sessions')
-
-    return this.withSyncRun(
-      'checkout_sessions',
-      'syncCheckoutSessions',
-      async (cursor, runStartedAt) => {
-        const accountId = await this.getAccountId()
-        const params: Stripe.Checkout.SessionListParams = { limit: 100 }
-
-        if (syncParams?.created) {
-          params.created = syncParams.created
-        } else if (cursor) {
-          params.created = { gte: cursor }
-          this.config.logger?.info(`Incremental sync from cursor: ${cursor}`)
-        }
-
-        return this.fetchAndUpsert(
-          (pagination) => this.stripe.checkout.sessions.list({ ...params, ...pagination }),
-          (items) =>
-            this.upsertCheckoutSessions(items, accountId, syncParams?.backfillRelatedEntities),
-          accountId,
-          'checkout_sessions',
-          runStartedAt
-        )
-      }
-    )
-  }
-
-  /**
-   * Helper to wrap a sync operation in the observable sync system.
-   * Creates/gets a sync run, sets up the object run, gets cursor, and handles completion.
-   *
-   * @param resourceName - The resource being synced (e.g., 'products', 'customers')
-   * @param triggeredBy - What triggered this sync (for observability)
-   * @param fn - The sync function to execute, receives cursor and runStartedAt
-   * @returns The result of the sync function
-   */
-  private async withSyncRun<T>(
-    resourceName: string,
-    triggeredBy: string,
-    fn: (cursor: number | null, runStartedAt: Date) => Promise<T>
-  ): Promise<T> {
-    const accountId = await this.getAccountId()
-
-    // Get cursor from LAST COMPLETED sync (for incremental sync)
-    const lastCursor = await this.postgresClient.getLastCompletedCursor(accountId, resourceName)
-    const cursor = lastCursor ? parseInt(lastCursor) : null
-
-    // Get or create sync run
-    const runKey = await this.postgresClient.getOrCreateSyncRun(accountId, triggeredBy)
-    if (!runKey) {
-      // Race condition - get active run
-      const activeRun = await this.postgresClient.getActiveSyncRun(accountId)
-      if (!activeRun) {
-        throw new Error('Failed to get or create sync run')
-      }
-      throw new Error('Another sync is already running for this account')
-    }
-
-    const { runStartedAt } = runKey
-
-    // Create and start object run
-    await this.postgresClient.createObjectRuns(accountId, runStartedAt, [resourceName])
-    await this.postgresClient.tryStartObjectSync(accountId, runStartedAt, resourceName)
-
-    try {
-      const result = await fn(cursor, runStartedAt)
-
-      // Complete the sync run
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
-
-      return result
-    } catch (error) {
-      // Fail the sync run
-      await this.postgresClient.failObjectSync(
-        accountId,
-        runStartedAt,
-        resourceName,
-        error instanceof Error ? error.message : 'Unknown error'
-      )
-      throw error
-    }
-  }
-
-  private async fetchAndUpsert<T extends { id?: string }>(
-    fetch: (params?: { starting_after?: string }) => Promise<Stripe.ApiList<T>>,
-    upsert: (items: T[], accountId: string) => Promise<T[]>,
-    accountId: string,
-    resourceName: string,
-    runStartedAt: Date
-  ): Promise<Sync> {
-    const CHECKPOINT_SIZE = 100 // Match Stripe page size
-    let totalSynced = 0
-    let currentBatch: T[] = []
-
-    try {
-      this.config.logger?.info('Fetching items to sync from Stripe')
-
-      try {
-        let hasMore = true
-        let startingAfter: string | undefined = undefined
-
-        // Manual pagination loop - each fetch() call gets automatic retry protection
-        while (hasMore) {
-          const response = await fetch(
-            startingAfter ? { starting_after: startingAfter } : undefined
-          )
-
-          for (const item of response.data) {
-            currentBatch.push(item)
-
-            // Checkpoint every 100 items (1 Stripe page)
-            if (currentBatch.length >= CHECKPOINT_SIZE) {
-              this.config.logger?.info(`Upserting batch of ${currentBatch.length} items`)
-              await upsert(currentBatch, accountId)
-              totalSynced += currentBatch.length
-
-              // Update progress and cursor with max created from this batch
-              await this.postgresClient.incrementObjectProgress(
-                accountId,
-                runStartedAt,
-                resourceName,
-                currentBatch.length
-              )
-              const maxCreated = Math.max(
-                ...currentBatch.map((i) => (i as { created?: number }).created || 0)
-              )
-              if (maxCreated > 0) {
-                await this.postgresClient.updateObjectCursor(
-                  accountId,
-                  runStartedAt,
-                  resourceName,
-                  String(maxCreated)
-                )
-                this.config.logger?.info(`Checkpoint: cursor updated to ${maxCreated}`)
-              }
-
-              currentBatch = []
-            }
-          }
-
-          hasMore = response.has_more
-          if (response.data.length > 0) {
-            startingAfter = response.data[response.data.length - 1].id
-          }
-        }
-
-        // Process remaining items
-        if (currentBatch.length > 0) {
-          this.config.logger?.info(`Upserting final batch of ${currentBatch.length} items`)
-          await upsert(currentBatch, accountId)
-          totalSynced += currentBatch.length
-
-          await this.postgresClient.incrementObjectProgress(
-            accountId,
-            runStartedAt,
-            resourceName,
-            currentBatch.length
-          )
-          const maxCreated = Math.max(
-            ...currentBatch.map((i) => (i as { created?: number }).created || 0)
-          )
-          if (maxCreated > 0) {
-            await this.postgresClient.updateObjectCursor(
-              accountId,
-              runStartedAt,
-              resourceName,
-              String(maxCreated)
-            )
-          }
-        }
-      } catch (error) {
-        // Save partial progress before re-throwing
-        if (currentBatch.length > 0) {
-          this.config.logger?.info(
-            `Error occurred, saving partial progress: ${currentBatch.length} items`
-          )
-          await upsert(currentBatch, accountId)
-          totalSynced += currentBatch.length
-
-          await this.postgresClient.incrementObjectProgress(
-            accountId,
-            runStartedAt,
-            resourceName,
-            currentBatch.length
-          )
-          const maxCreated = Math.max(
-            ...currentBatch.map((i) => (i as { created?: number }).created || 0)
-          )
-          if (maxCreated > 0) {
-            await this.postgresClient.updateObjectCursor(
-              accountId,
-              runStartedAt,
-              resourceName,
-              String(maxCreated)
-            )
-          }
-        }
-        throw error
-      }
-
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
-
-      this.config.logger?.info(`Sync complete: ${totalSynced} items synced`)
-      return { synced: totalSynced }
-    } catch (error) {
-      await this.postgresClient.failObjectSync(
-        accountId,
-        runStartedAt,
-        resourceName,
-        error instanceof Error ? error.message : 'Unknown error'
-      )
-      throw error
-    }
-  }
-
   private async upsertCharges(
     charges: Stripe.Charge[],
     accountId: string,
@@ -2648,6 +1807,7 @@ export class StripeSync {
   private async backfillCharges(chargeIds: string[], accountId: string) {
     const missingChargeIds = await this.postgresClient.findMissingEntries('charges', chargeIds)
 
+    this.postgresClient.deleteRemovedActiveEntitlements(accountId, missingChargeIds)
     await this.fetchMissingEntities(missingChargeIds, (id) =>
       this.stripe.charges.retrieve(id)
     ).then((charges) => this.upsertCharges(charges, accountId))
@@ -2862,14 +2022,14 @@ export class StripeSync {
     )
   }
 
-  backfillInvoices = async (invoiceIds: string[], accountId: string) => {
+  async backfillInvoices(invoiceIds: string[], accountId: string) {
     const missingIds = await this.postgresClient.findMissingEntries('invoices', invoiceIds)
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.invoices.retrieve(id)).then(
       (entries) => this.upsertInvoices(entries, accountId)
     )
   }
 
-  backfillPrices = async (priceIds: string[], accountId: string) => {
+  async backfillPrices(priceIds: string[], accountId: string) {
     const missingIds = await this.postgresClient.findMissingEntries('prices', priceIds)
     await this.fetchMissingEntities(missingIds, (id) => this.stripe.prices.retrieve(id)).then(
       (entries) => this.upsertPrices(entries, accountId)
@@ -2894,9 +2054,7 @@ export class StripeSync {
     )
   }
 
-  async deletePlan(id: string): Promise<boolean> {
-    return this.postgresClient.delete('plans', id)
-  }
+
 
   async upsertPrices(
     prices: Stripe.Price[],
@@ -2916,10 +2074,6 @@ export class StripeSync {
     )
   }
 
-  async deletePrice(id: string): Promise<boolean> {
-    return this.postgresClient.delete('prices', id)
-  }
-
   async upsertProducts(
     products: Stripe.Product[],
     accountId: string,
@@ -2931,10 +2085,6 @@ export class StripeSync {
       accountId,
       syncTimestamp
     )
-  }
-
-  async deleteProduct(id: string): Promise<boolean> {
-    return this.postgresClient.delete('products', id)
   }
 
   async backfillProducts(productIds: string[], accountId: string) {
@@ -3018,10 +2168,6 @@ export class StripeSync {
       accountId,
       syncTimestamp
     )
-  }
-
-  async deleteTaxId(id: string): Promise<boolean> {
-    return this.postgresClient.delete('tax_ids', id)
   }
 
   async upsertSubscriptionItems(
@@ -3219,18 +2365,6 @@ export class StripeSync {
     await Promise.all(markSubscriptionItemsDeleted)
 
     return rows
-  }
-
-  async deleteRemovedActiveEntitlements(
-    customerId: string,
-    currentActiveEntitlementIds: string[]
-  ): Promise<{ rowCount: number }> {
-    const prepared = sql(`
-      delete from "stripe"."active_entitlements"
-      where customer = :customerId and id <> ALL(:currentActiveEntitlementIds::text[]);
-      `)({ customerId, currentActiveEntitlementIds })
-    const { rowCount } = await this.postgresClient.query(prepared.text, prepared.values)
-    return { rowCount: rowCount || 0 }
   }
 
   async upsertFeatures(
@@ -3511,7 +2645,7 @@ export class StripeSync {
     ).then((subscriptions) => this.upsertSubscriptions(subscriptions, accountId))
   }
 
-  backfillSubscriptionSchedules = async (subscriptionIds: string[], accountId: string) => {
+  async backfillSubscriptionSchedules(subscriptionIds: string[], accountId: string) {
     const missingSubscriptionIds = await this.postgresClient.findMissingEntries(
       'subscription_schedules',
       subscriptionIds
@@ -3593,12 +2727,4 @@ export class StripeSync {
   async close(): Promise<void> {
     await this.postgresClient.pool.end()
   }
-}
-
-function chunkArray<T>(array: T[], chunkSize: number): T[][] {
-  const result: T[][] = []
-  for (let i = 0; i < array.length; i += chunkSize) {
-    result.push(array.slice(i, i + chunkSize))
-  }
-  return result
 }
