@@ -18,6 +18,11 @@ import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
+import {
+  buildResourceRegistry,
+  getResourceConfigFromId,
+  getResourceName,
+} from './resourceRegistry'
 
 /**
  * Identifies a specific sync run.
@@ -103,7 +108,12 @@ export class StripeSync {
       logger: this.config.logger,
     })
 
-    this.resourceRegistry = this.buildResourceRegistry()
+    this.resourceRegistry = buildResourceRegistry({
+      stripe: this.stripe,
+      upsertAny: this.upsertAny.bind(this),
+      upsertSubscriptions: this.upsertSubscriptions.bind(this),
+      sigma: this.sigma,
+    })
     this.defaultAccountIdPromise = this.resolveDefaultAccountId()
     this.webhook = new StripeSyncWebhook({
       stripe: this.stripe,
@@ -115,150 +125,6 @@ export class StripeSync {
     })
   }
 
-  // Resource registry - maps SyncObject → list/upsert operations for processNext()
-  // Complements eventHandlers which maps event types → handlers for webhooks
-  // Both registries share the same underlying upsert methods
-  // Order field determines backfill sequence - parents before children for FK dependencies
-  buildResourceRegistry(): Record<string, ResourceConfig> {
-    const core: Record<string, ResourceConfig> = {
-      product: {
-        order: 1, // No dependencies
-        listFn: (p) => this.stripe.products.list(p),
-        retrieveFn: (id) => this.stripe.products.retrieve(id),
-        upsertFn: (items, id) => this.upsertAny(items as Stripe.Product[], id),
-        supportsCreatedFilter: true,
-      },
-      price: {
-        order: 2, // Depends on product
-        listFn: (p) => this.stripe.prices.list(p),
-        retrieveFn: (id) => this.stripe.prices.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Price[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      plan: {
-        order: 3, // Depends on product
-        listFn: (p) => this.stripe.plans.list(p),
-        retrieveFn: (id) => this.stripe.plans.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Plan[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      customer: {
-        order: 4, // No dependencies
-        listFn: (p) => this.stripe.customers.list(p),
-        retrieveFn: (id) => this.stripe.customers.retrieve(id),
-        upsertFn: (items, id) => this.upsertAny(items as Stripe.Customer[], id),
-        supportsCreatedFilter: true,
-      },
-      subscription: {
-        order: 5, // Depends on customer, price
-        listFn: (p) => this.stripe.subscriptions.list(p),
-        retrieveFn: (id) => this.stripe.subscriptions.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertSubscriptions(items as Stripe.Subscription[], id, bf),
-        listExpands: [
-          { items: (id) => this.stripe.subscriptionItems.list({ subscription: id, limit: 100 }) },
-        ],
-        supportsCreatedFilter: true,
-      },
-      subscription_schedules: {
-        order: 6, // Depends on customer
-        listFn: (p) => this.stripe.subscriptionSchedules.list(p),
-        retrieveFn: (id) => this.stripe.subscriptionSchedules.retrieve(id),
-        upsertFn: (items, id, bf) =>this.upsertAny(items as Stripe.SubscriptionSchedule[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      invoice: {
-        order: 7, // Depends on customer, subscription
-        listFn: (p) => this.stripe.invoices.list(p),
-        retrieveFn: (id) => this.stripe.invoices.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Invoice[], id, bf),
-        listExpands: [{ lines: (id) => this.stripe.invoices.listLineItems(id, { limit: 100 }) }],
-        supportsCreatedFilter: true,
-      },
-      charge: {
-        order: 8, // Depends on customer, invoice
-        listFn: (p) => this.stripe.charges.list(p),
-        retrieveFn: (id) => this.stripe.charges.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Charge[], id, bf),
-        listExpands: [{ refunds: (id) => this.stripe.refunds.list({ charge: id, limit: 100 }) }],
-        supportsCreatedFilter: true,
-      },
-      setup_intent: {
-        order: 9, // Depends on customer
-        listFn: (p) => this.stripe.setupIntents.list(p),
-        retrieveFn: (id) => this.stripe.setupIntents.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.SetupIntent[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      payment_method: {
-        order: 10, // Depends on customer (special: iterates customers)
-        listFn: (p) => this.stripe.paymentMethods.list(p),
-        retrieveFn: (id) => this.stripe.paymentMethods.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.PaymentMethod[], id, bf),
-        supportsCreatedFilter: false, // Requires customer param, can't filter by created
-      },
-      payment_intent: {
-        order: 11, // Depends on customer
-        listFn: (p) => this.stripe.paymentIntents.list(p),
-        retrieveFn: (id) => this.stripe.paymentIntents.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.PaymentIntent[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      tax_id: {
-        order: 12, // Depends on customer
-        listFn: (p) => this.stripe.taxIds.list(p),
-        retrieveFn: (id) => this.stripe.taxIds.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.TaxId[], id, bf),
-        supportsCreatedFilter: false, // taxIds don't support created filter
-      },
-      credit_note: {
-        order: 13, // Depends on invoice
-        listFn: (p) => this.stripe.creditNotes.list(p),
-        retrieveFn: (id) => this.stripe.creditNotes.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.CreditNote[], id, bf),
-        listExpands: [
-          { listLineItems: (id) => this.stripe.creditNotes.listLineItems(id, { limit: 100 }) },
-        ],
-        supportsCreatedFilter: true, // credit_notes support created filter
-      },
-      dispute: {
-        order: 14, // Depends on charge
-        listFn: (p) => this.stripe.disputes.list(p),
-        retrieveFn: (id) => this.stripe.disputes.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Dispute[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      early_fraud_warning: {
-        order: 15, // Depends on charge
-        listFn: (p) => this.stripe.radar.earlyFraudWarnings.list(p),
-        retrieveFn: (id) => this.stripe.radar.earlyFraudWarnings.retrieve(id),
-        upsertFn: (items, id) => this.upsertAny(items as Stripe.Radar.EarlyFraudWarning[], id),
-        supportsCreatedFilter: true,
-      },
-      refund: {
-        order: 16, // Depends on charge
-        listFn: (p) => this.stripe.refunds.list(p),
-        retrieveFn: (id) => this.stripe.refunds.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Refund[], id, bf),
-        supportsCreatedFilter: true,
-      },
-      checkout_sessions: {
-        order: 17, // Depends on customer (optional)
-        listFn: (p) => this.stripe.checkout.sessions.list(p),
-        retrieveFn: (id) => this.stripe.checkout.sessions.retrieve(id),
-        upsertFn: (items, id, bf) => this.upsertAny(items as Stripe.Checkout.Session[], id, bf),
-        supportsCreatedFilter: true,
-        listExpands: [
-          { lines: (id) => this.stripe.checkout.sessions.listLineItems(id, { limit: 100 }) },
-        ],
-      },
-    }
-
-    const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
-    const sigmaEntries = this.sigma.buildSigmaRegistryEntries(maxOrder)
-
-    // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
-    return { ...sigmaEntries, ...core }
-  }
   /**
    * Get the Stripe account ID. Delegates to getCurrentAccount() for the actual lookup.
    */
@@ -339,74 +205,14 @@ export class StripeSync {
     return all
   }
 
-  /**
-   * Get the list of Sigma-backed object types that can be synced.
-   * Only returns sigma objects when enableSigma is true.
-   *
-   * @returns Array of sigma object names (e.g. 'subscription_item_change_events_v2_beta')
-   */
-  public getSupportedSigmaObjects(): string[] {
-    return this.sigma.getSupportedSigmaObjects(this.resourceRegistry)
-  }
-
   async syncSingleEntity(stripeId: string) {
     const accountId = await this.getAccountId()
-    if (stripeId.startsWith('cus_')) {
-      return this.stripe.customers.retrieve(stripeId).then((it) => {
-        if (!it || it.deleted) return
-        return this.upsertAny([it], accountId)
-      })
-    } else if (stripeId.startsWith('in_')) {
-      return this.stripe.invoices.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('price_')) {
-      return this.stripe.prices.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('prod_')) {
-      return this.stripe.products.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('sub_')) {
-      return this.stripe.subscriptions
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('seti_')) {
-      return this.stripe.setupIntents
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('pm_')) {
-      return this.stripe.paymentMethods
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('dp_') || stripeId.startsWith('du_')) {
-      return this.stripe.disputes.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('ch_')) {
-      return this.stripe.charges
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId, true))
-    } else if (stripeId.startsWith('pi_')) {
-      return this.stripe.paymentIntents
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('txi_')) {
-      return this.stripe.taxIds.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('cn_')) {
-      return this.stripe.creditNotes
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('issfr_')) {
-      return this.stripe.radar.earlyFraudWarnings
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('prv_')) {
-      return this.stripe.reviews.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('re_')) {
-      return this.stripe.refunds.retrieve(stripeId).then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('feat_')) {
-      return this.stripe.entitlements.features
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
-    } else if (stripeId.startsWith('cs_')) {
-      return this.stripe.checkout.sessions
-        .retrieve(stripeId)
-        .then((it) => this.upsertAny([it], accountId))
+    const resourceConfig = getResourceConfigFromId(stripeId, this.resourceRegistry)
+    if (!resourceConfig || !resourceConfig.retrieveFn) {
+      throw new Error(`Unsupported object type for syncSingleEntity: ${stripeId}`)
     }
+    const item = await resourceConfig.retrieveFn(stripeId)
+    await resourceConfig.upsertFn([item], accountId, false)
   }
 
   /**
@@ -439,7 +245,7 @@ export class StripeSync {
       const accountId = await this.getAccountId()
 
       // Map object type to resource name (database table)
-      const resourceName = this.getResourceName(object)
+      const resourceName = getResourceName(object)
 
       // Get or create sync run
       let runStartedAt: Date
@@ -538,32 +344,6 @@ export class StripeSync {
     }
 
     return new Error(withHint(String(error)))
-  }
-
-  /**
-   * Get the database resource name for a SyncObject type
-   */
-  getResourceName(object: SyncObject): string {
-    const mapping: Record<string, string> = {
-      customer: 'customers',
-      invoice: 'invoices',
-      price: 'prices',
-      product: 'products',
-      subscription: 'subscriptions',
-      subscription_schedules: 'subscription_schedules',
-      setup_intent: 'setup_intents',
-      payment_method: 'payment_methods',
-      dispute: 'disputes',
-      charge: 'charges',
-      payment_intent: 'payment_intents',
-      plan: 'plans',
-      tax_id: 'tax_ids',
-      credit_note: 'credit_notes',
-      early_fraud_warning: 'early_fraud_warnings',
-      refund: 'refunds',
-      checkout_sessions: 'checkout_sessions',
-    }
-    return mapping[object] || object
   }
 
   /**
@@ -770,7 +550,7 @@ export class StripeSync {
       await this.postgresClient.createObjectRuns(
         activeRun.accountId,
         activeRun.runStartedAt,
-        objects.map((obj) => this.getResourceName(obj))
+        objects.map((obj) => getResourceName(obj))
       )
       return {
         runKey: { accountId: activeRun.accountId, runStartedAt: activeRun.runStartedAt },
@@ -784,7 +564,7 @@ export class StripeSync {
     await this.postgresClient.createObjectRuns(
       runAccountId,
       runStartedAt,
-      objects.map((obj) => this.getResourceName(obj))
+      objects.map((obj) => getResourceName(obj))
     )
     return {
       runKey: { accountId: runAccountId, runStartedAt },
@@ -914,6 +694,7 @@ export class StripeSync {
           ? this.getSupportedSyncObjects()
           : [object as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
 
+      console.log('objectsToSync', objectsToSync)
       // Sync each object type
       for (const obj of objectsToSync) {
         this.config.logger?.info(`Syncing ${obj}`)
@@ -965,6 +746,7 @@ export class StripeSync {
   ): Promise<unknown[]> {
     if (items.length === 0) return []
     const stripeObjectName = items[0].object
+
     const syncObjectName = this.normalizeSyncObjectName(stripeObjectName)
     const dependencies = BACKFILL_DEPENDENCY_MAP[syncObjectName] ?? []
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
