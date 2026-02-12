@@ -149,28 +149,6 @@ export type SyncObject =
   | 'refund'
   | 'checkout_sessions'
 
-// export const StripeResourceMapping: Record<SyncObject, string> = {
-//   all: 'all',
-//   customer: 'Stripe.Customer',
-//   customer_with_entitlements: 'Stripe.Customer',
-//   invoice: 'Stripe.Invoice',
-//   price: 'Stripe.Price',
-//   product: 'Stripe.Product',
-//   subscription: 'Stripe.Subscription',
-//   subscription_schedules: 'Stripe.SubscriptionSchedule',
-//   setup_intent: 'Stripe.SetupIntent',
-//   payment_method: 'Stripe.PaymentMethod',
-//   dispute: 'Stripe.Dispute',
-//   charge: 'Stripe.Charge',
-//   payment_intent: 'Stripe.PaymentIntent',
-//   plan: 'Stripe.Plan',
-//   tax_id: 'Stripe.TaxId',
-//   credit_note: 'Stripe.CreditNote',
-//   early_fraud_warning: 'Stripe.Radar.EarlyFraudWarning',
-//   refund: 'Stripe.Refund',
-//   checkout_sessions: 'Stripe.Checkout.Session',
-// } as const
-
 export const BACKFILL_DEPENDENCY_MAP: Record<string, string[]> = {
   customer: [],
   product: [],
