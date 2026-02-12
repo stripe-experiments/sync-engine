@@ -36,7 +36,7 @@ const sync = new StripeSync({
 })
 
 // Create a managed webhook - automatically syncs all Stripe events
-const webhook = await sync.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
+const webhook = await sync.webhook.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
 
 // Cleanup when done
 await sync.close()

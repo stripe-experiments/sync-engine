@@ -333,7 +333,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
     const keepWebhooksOnShutdown = process.env.KEEP_WEBHOOKS_ON_SHUTDOWN === 'true'
     if (webhookId && stripeSync && !keepWebhooksOnShutdown) {
       try {
-        await stripeSync.deleteManagedWebhook(webhookId)
+        await stripeSync.webhook.deleteManagedWebhook(webhookId)
         console.log(chalk.green('✓ Webhook cleanup complete'))
       } catch {
         console.log(chalk.yellow('⚠ Could not delete webhook'))
@@ -440,7 +440,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
             const payload = JSON.parse(event.event_payload)
             console.log(chalk.cyan(`← ${payload.type}`) + chalk.gray(` (${payload.id})`))
             if (stripeSync) {
-              await stripeSync.processEvent(payload)
+              await stripeSync.webhook.processEvent(payload)
               return {
                 status: 200,
                 event_type: payload.type,
@@ -478,7 +478,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       // Create managed webhook endpoint
       const webhookPath = process.env.WEBHOOK_PATH || '/stripe-webhooks'
       console.log(chalk.blue('\nCreating Stripe webhook endpoint...'))
-      const webhook = await stripeSync.findOrCreateManagedWebhook(`${tunnel.url}${webhookPath}`)
+      const webhook = await stripesync.webhook.findOrCreateManagedWebhook(`${tunnel.url}${webhookPath}`)
       webhookId = webhook.id
       const eventCount = webhook.enabled_events?.length || 0
       console.log(chalk.green(`✓ Webhook created: ${webhook.id}`))
@@ -504,7 +504,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
         }
 
         try {
-          await stripeSync!.processWebhook(rawBody, sig)
+          await stripeSync!.webhook.processWebhook(rawBody, sig)
           return res.status(200).send({ received: true })
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'
