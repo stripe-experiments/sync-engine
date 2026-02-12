@@ -23,7 +23,6 @@ import {
   sigmaCursorFromEntry,
   type SigmaIngestionConfig,
 } from './sigma/sigmaIngestion'
-import { upsertCustomers } from './database/upserts'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
 
 /**
@@ -144,8 +143,7 @@ export class StripeSync {
         order: 4, // No dependencies
         listFn: (p) => this.stripe.customers.list(p),
         retrieveFn: (id) => this.stripe.customers.retrieve(id),
-        upsertFn: (items, id) =>
-          upsertCustomers(this.postgresClient, items as Stripe.Customer[], id),
+        upsertFn: (items, id) => this.upsertAny(items as Stripe.Customer[], id),
         supportsCreatedFilter: true,
       },
       subscription: {
