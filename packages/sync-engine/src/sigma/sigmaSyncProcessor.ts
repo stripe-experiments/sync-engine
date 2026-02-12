@@ -22,7 +22,7 @@ export type SigmaSyncProcessorConfig = {
  * - Building the sigma portion of the resource registry
  * - Fetching a single Sigma page (query + CSV parse + upsert)
  * - Resolving fallback cursors from destination tables
- * - Utility helpers (isSigmaResource, sigmaResultKey, getSupportedSigmaObjects)
+ * - Utility helpers (isSigmaResource, getSupportedSigmaObjects)
  */
 export class SigmaSyncProcessor {
   private readonly postgresClient: PostgresClient
@@ -75,13 +75,6 @@ export class SigmaSyncProcessor {
    */
   isSigmaResource(resourceRegistry: Record<string, ResourceConfig>, object: string): boolean {
     return Boolean(resourceRegistry[object]?.sigma)
-  }
-
-  /**
-   * Convert a snake_case sigma table name to camelCase for SyncBackfill result keys.
-   */
-  sigmaResultKey(tableName: string): string {
-    return tableName.replace(/_([a-z0-9])/g, (_, ch: string) => ch.toUpperCase())
   }
 
   /**

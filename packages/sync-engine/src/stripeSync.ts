@@ -792,73 +792,6 @@ export class StripeSync {
     }
   }
 
-  applySyncBackfillResult(
-    results: SyncBackfill,
-    object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
-    result: Sync
-  ): void {
-    if (this.sigma.isSigmaResource(this.resourceRegistry, object)) {
-      results.sigma = results.sigma ?? {}
-      results.sigma[object] = result
-      const camelKey = this.sigma.sigmaResultKey(object)
-      ;(results as Record<string, Sync>)[camelKey] = result
-      return
-    }
-
-    // TODO: obj === 'payment_methods' requires special handling
-
-    switch (object) {
-      case 'product':
-        results.products = result
-        break
-      case 'price':
-        results.prices = result
-        break
-      case 'plan':
-        results.plans = result
-        break
-      case 'customer':
-        results.customers = result
-        break
-      case 'subscription':
-        results.subscriptions = result
-        break
-      case 'subscription_schedules':
-        results.subscriptionSchedules = result
-        break
-      case 'invoice':
-        results.invoices = result
-        break
-      case 'charge':
-        results.charges = result
-        break
-      case 'setup_intent':
-        results.setupIntents = result
-        break
-      case 'payment_intent':
-        results.paymentIntents = result
-        break
-      case 'tax_id':
-        results.taxIds = result
-        break
-      case 'credit_note':
-        results.creditNotes = result
-        break
-      case 'dispute':
-        results.disputes = result
-        break
-      case 'early_fraud_warning':
-        results.earlyFraudWarnings = result
-        break
-      case 'refund':
-        results.refunds = result
-        break
-      case 'checkout_sessions':
-        results.checkoutSessions = result
-        break
-    }
-  }
-
   async processUntilDoneParallel(
     params?: SyncParams & {
       maxParallel?: number
@@ -939,7 +872,7 @@ export class StripeSync {
 
       const results: SyncBackfill = {}
       for (const obj of objects) {
-        this.applySyncBackfillResult(results, obj, { synced: totals[obj] ?? 0 })
+        results[obj] = { synced: totals[obj] ?? 0 }
       }
 
       const totalSynced = Object.values(totals).reduce((sum, count) => sum + count, 0)
@@ -985,7 +918,7 @@ export class StripeSync {
       for (const obj of objectsToSync) {
         this.config.logger?.info(`Syncing ${obj}`)
         const result = await this.processObjectUntilDone(obj, runStartedAt, params)
-        this.applySyncBackfillResult(results, obj, result)
+        results[obj] = result
       }
 
       // Close the sync run after all objects are done (status derived from object states)
@@ -1057,20 +990,16 @@ export class StripeSync {
     }
 
     const tableName = this.getTableName(stripeObjectName)
-    console.log('tableName', tableName)
     const rows = this.postgresClient.upsertManyWithTimestampProtection(
       items,
       tableName,
       accountId,
       syncTimestamp
     )
-    console.log('upsertAny items', items)
     return rows
   }
 
   async backfillAny(ids: string[], objectName: SyncObject, accountId: string) {
-    console.log('backfillAny ids', ids)
-    console.log('objectName', objectName)
     const tableName = this.getTableName(objectName)
     const config = this.resourceRegistry[objectName]
     if (!config?.retrieveFn) {
@@ -1080,7 +1009,6 @@ export class StripeSync {
     const missingIds = await this.postgresClient.findMissingEntries(tableName, ids)
 
     const items = await this.fetchMissingEntities(missingIds, (id) => config.retrieveFn!(id))
-    console.log('backfillAny items', items)
     return this.upsertAny(items, accountId)
   }
 
