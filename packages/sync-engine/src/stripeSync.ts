@@ -259,15 +259,6 @@ export class StripeSync {
     // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
     return { ...sigmaEntries, ...core }
   }
-
-  isSigmaResource(object: string): boolean {
-    return this.sigma.isSigmaResource(this.resourceRegistry, object)
-  }
-
-  sigmaResultKey(tableName: string): string {
-    return this.sigma.sigmaResultKey(tableName)
-  }
-
   /**
    * Get the Stripe account ID. Delegates to getCurrentAccount() for the actual lookup.
    */
@@ -328,100 +319,6 @@ export class StripeSync {
   }
 
   /**
-   * Get all accounts that have been synced to the database
-   */
-  async getAllSyncedAccounts(): Promise<Stripe.Account[]> {
-    try {
-      const accountsData = await this.postgresClient.getAllAccounts()
-      return accountsData as Stripe.Account[]
-    } catch (error) {
-      this.config.logger?.error(error, 'Failed to retrieve accounts from database')
-      throw new Error('Failed to retrieve synced accounts from database')
-    }
-  }
-
-  /**
-   * DANGEROUS: Delete an account and all associated data from the database
-   * This operation cannot be undone!
-   *
-   * @param accountId - The Stripe account ID to delete
-   * @param options - Options for deletion behavior
-   * @param options.dryRun - If true, only count records without deleting (default: false)
-   * @param options.useTransaction - If true, use transaction for atomic deletion (default: true)
-   * @returns Deletion summary with counts and warnings
-   */
-  async dangerouslyDeleteSyncedAccountData(
-    accountId: string,
-    options?: {
-      dryRun?: boolean
-      useTransaction?: boolean
-    }
-  ): Promise<{
-    deletedAccountId: string
-    deletedRecordCounts: { [tableName: string]: number }
-    warnings: string[]
-  }> {
-    const dryRun = options?.dryRun ?? false
-    const useTransaction = options?.useTransaction ?? true
-
-    this.config.logger?.info(
-      `${dryRun ? 'Preview' : 'Deleting'} account ${accountId} (transaction: ${useTransaction})`
-    )
-
-    try {
-      // Get record counts
-      const counts = await this.postgresClient.getAccountRecordCounts(accountId)
-
-      // Generate warnings
-      const warnings: string[] = []
-      let totalRecords = 0
-
-      for (const [table, count] of Object.entries(counts)) {
-        if (count > 0) {
-          totalRecords += count
-          warnings.push(`Will delete ${count} ${table} record${count !== 1 ? 's' : ''}`)
-        }
-      }
-
-      if (totalRecords > 100000) {
-        warnings.push(
-          `Large dataset detected (${totalRecords} total records). Consider using useTransaction: false for better performance.`
-        )
-      }
-
-      // Dry-run mode: just return counts
-      if (dryRun) {
-        this.config.logger?.info(`Dry-run complete: ${totalRecords} total records would be deleted`)
-        return {
-          deletedAccountId: accountId,
-          deletedRecordCounts: counts,
-          warnings,
-        }
-      }
-
-      // Actual deletion
-      const deletionCounts = await this.postgresClient.deleteAccountWithCascade(
-        accountId,
-        useTransaction
-      )
-
-      this.config.logger?.info(
-        `Successfully deleted account ${accountId} with ${totalRecords} total records`
-      )
-
-      return {
-        deletedAccountId: accountId,
-        deletedRecordCounts: deletionCounts,
-        warnings,
-      }
-    } catch (error) {
-      this.config.logger?.error(error, `Failed to delete account ${accountId}`)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(`Failed to delete account ${accountId}: ${errorMessage}`)
-    }
-  }
-
-  /**
    * Returns an array of all object types that can be synced via processNext/processUntilDone.
    * Ordered for backfill: parents before children (products before prices, customers before subscriptions).
    * Order is determined by the `order` field in resourceRegistry.
@@ -433,7 +330,7 @@ export class StripeSync {
 
     // Only advertise Sigma-backed objects when explicitly enabled (opt-in).
     if (!this.config.enableSigma) {
-      return all.filter((o) => !this.isSigmaResource(o)) as Exclude<
+      return all.filter((o) => !this.sigma.isSigmaResource(this.resourceRegistry, o)) as Exclude<
         SyncObject,
         'all' | 'customer_with_entitlements'
       >[]
@@ -900,15 +797,15 @@ export class StripeSync {
     object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
     result: Sync
   ): void {
-    if (this.isSigmaResource(object)) {
+    if (this.sigma.isSigmaResource(this.resourceRegistry, object)) {
       results.sigma = results.sigma ?? {}
       results.sigma[object] = result
-      const camelKey = this.sigmaResultKey(object)
+      const camelKey = this.sigma.sigmaResultKey(object)
       ;(results as Record<string, Sync>)[camelKey] = result
       return
     }
 
-    // TODO: obj === 'payment_methods' reqiores special handling
+    // TODO: obj === 'payment_methods' requires special handling
 
     switch (object) {
       case 'product':
