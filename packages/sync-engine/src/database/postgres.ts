@@ -738,8 +738,6 @@ export class PostgresClient {
     return (result.rowCount ?? 0) > 0
   }
 
-
-
   /**
    * Get object run details.
    */
