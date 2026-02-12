@@ -1,25 +1,8 @@
 import Stripe from 'stripe'
 import pkg from '../package.json' with { type: 'json' }
 import { managedWebhookSchema } from './schemas/managed_webhook'
-import { upsertCustomers } from './database/upserts'
 import { type RevalidateEntity, type StripeSyncConfig } from './types'
 import { PostgresClient } from './database/postgres'
-
-type UpsertWithBackfill<T> = (
-  entities: T[],
-  accountId: string,
-  backfillRelatedEntities?: boolean,
-  syncTimestamp?: string
-) => Promise<unknown>
-
-type UpsertNoBackfill<T> = (
-  entities: T[],
-  accountId: string,
-  syncTimestamp?: string
-) => Promise<unknown>
-
-
-
 
 export type StripeSyncWebhookDeps = {
   stripe: Stripe
@@ -208,12 +191,7 @@ export class StripeSyncWebhook {
       (charge) => charge.status === 'failed' || charge.status === 'succeeded'
     )
 
-    await this.deps.upsertAny(
-      [charge],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([charge], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handleCustomerDeletedEvent(
@@ -226,12 +204,7 @@ export class StripeSyncWebhook {
       deleted: true,
     }
 
-    await upsertCustomers(
-      this.deps.postgresClient,
-      [customer],
-      accountId,
-      this.getSyncTimestamp(event, false)
-    )
+    await this.deps.upsertAny([customer], accountId, false, this.getSyncTimestamp(event, false))
   }
 
   async handleCustomerEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -241,10 +214,10 @@ export class StripeSyncWebhook {
       (customer) => customer.deleted === true
     )
 
-    await upsertCustomers(
-      this.deps.postgresClient,
+    await this.deps.upsertAny(
       [customer],
       accountId,
+      false,
       this.getSyncTimestamp(event, refetched)
     )
   }

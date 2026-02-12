@@ -347,7 +347,7 @@ describeWithDb('StripeSync Integration Tests', () => {
 
       const result = await sync.processUntilDone({ object: 'customer' })
 
-      expect(result.customers?.synced).toStrictEqual(350)
+      expect(result['customer']?.synced).toStrictEqual(350)
 
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(350)
@@ -358,7 +358,7 @@ describeWithDb('StripeSync Integration Tests', () => {
 
     it('should sync new records for incremental consistency', async () => {
       const initialResult = await sync.processUntilDone({ object: 'customer' })
-      expect(initialResult.customers?.synced ?? 0).toStrictEqual(0)
+      expect(initialResult['customer']?.synced ?? 0).toStrictEqual(0)
 
       const testStartTimestamp = Math.floor(Date.now() / 1000) - 1000
 
@@ -366,7 +366,7 @@ describeWithDb('StripeSync Integration Tests', () => {
 
       const result = await sync.processUntilDone({ object: 'customer' })
 
-      expect(result.customers?.synced).toStrictEqual(100)
+      expect(result['customer']?.synced).toStrictEqual(100)
 
       const countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(100)
@@ -399,7 +399,7 @@ describeWithDb('StripeSync Integration Tests', () => {
       })
 
       const result = await sync.processUntilDone({ object: 'customer' })
-      expect(result.customers?.synced).toStrictEqual(200)
+      expect(result['customer']?.synced).toStrictEqual(200)
 
       let countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(200)

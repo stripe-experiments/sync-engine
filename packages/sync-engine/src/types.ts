@@ -195,29 +195,10 @@ export interface Sync {
   synced: number
 }
 
-export interface SyncBackfill {
-  products?: Sync
-  prices?: Sync
-  plans?: Sync
-  customers?: Sync
-  subscriptions?: Sync
-  subscriptionSchedules?: Sync
-  invoices?: Sync
-  setupIntents?: Sync
-  paymentIntents?: Sync
-  paymentMethods?: Sync
-  disputes?: Sync
-  charges?: Sync
-  taxIds?: Sync
-  creditNotes?: Sync
-  earlyFraudWarnings?: Sync
-  refunds?: Sync
-  checkoutSessions?: Sync
-  subscriptionItemChangeEventsV2Beta?: Sync
-  exchangeRatesFromUsd?: Sync
-  /** Sigma-backed results by table name (e.g. subscription_item_change_events_v2_beta). */
-  sigma?: Record<string, Sync>
-}
+/**
+ * Result of a backfill sync run, keyed by SyncObject name (e.g. 'product', 'customer', 'subscription_schedules').
+ */
+export type SyncBackfill = Record<string, Sync>
 
 export interface SyncParams {
   created?: {
