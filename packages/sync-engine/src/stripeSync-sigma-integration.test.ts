@@ -352,7 +352,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         object: 'subscription_item_change_events_v2_beta',
       })
 
-      expect(result.subscriptionItemChangeEventsV2Beta?.synced).toStrictEqual(
+      expect(result['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
@@ -388,7 +388,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         expect(sqlCalls.length).toBeGreaterThan(1)
         expect(sqlCalls[0]).not.toContain('WHERE')
         expect(sqlCalls[1]).toContain('WHERE')
-        expect(result.subscriptionItemChangeEventsV2Beta?.synced).toStrictEqual(
+        expect(result['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
           SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
         )
       } finally {
@@ -410,14 +410,14 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
       const first = await sync.processUntilDone({
         object: 'subscription_item_change_events_v2_beta',
       })
-      expect(first.subscriptionItemChangeEventsV2Beta?.synced).toStrictEqual(
+      expect(first['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
       const second = await sync.processUntilDone({
         object: 'subscription_item_change_events_v2_beta',
       })
-      expect(second.subscriptionItemChangeEventsV2Beta?.synced).toStrictEqual(
+      expect(second['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length
       )
 
