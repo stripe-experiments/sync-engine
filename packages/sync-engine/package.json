@@ -31,7 +31,7 @@
     "test": "vitest",
     "test:integration": "TEST_POSTGRES_DB_URL=${TEST_POSTGRES_DB_URL:-postgresql://postgres:postgres@localhost:55432/postgres} vitest run src/stripeSync*integration.test.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "dev:backfill": "tsup src/cli/index.ts --format esm --shims --clean && node dist/index.js backfill",
+    "start": "pnpm run build && node dist/cli/index.js backfill",
     "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts"
   },
   "files": [
