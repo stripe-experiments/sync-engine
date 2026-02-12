@@ -57,23 +57,17 @@ export class StripeSync {
   constructor(config: StripeSyncConfig) {
     this.config = config
     // Create base Stripe client
-    const baseStripe = new Stripe(config.stripeSecretKey, {
+    this.stripe = new Stripe(config.stripeSecretKey, {
       // https://github.com/stripe/stripe-node#configuration
       // @ts-ignore
       apiVersion: config.stripeApiVersion,
+      maxNetworkRetries: 5,
       appInfo: {
         name: 'Stripe Sync Engine',
         version: pkg.version,
         url: pkg.homepage,
       },
     })
-
-    // Wrap with automatic retry logic for all API calls
-    // This ensures ALL Stripe operations are protected against:
-    // - Rate limits (429)
-    // - Server errors (500, 502, 503, 504, 424)
-    // - Connection errors (network failures)
-    this.stripe = createRetryableStripeClient(baseStripe, {}, config.logger)
 
     this.config.logger = config.logger ?? console
     this.config.logger?.info(
