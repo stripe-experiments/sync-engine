@@ -47,13 +47,15 @@ function getUniqueIds<T>(entries: T[], key: string): string[] {
 export class StripeSync {
   stripe: Stripe
   postgresClient: PostgresClient
-  private readonly resourceRegistry: Record<string, ResourceConfig>
+  config: StripeSyncConfig
+  readonly resourceRegistry: Record<string, ResourceConfig>
 
-  private get sigmaSchemaName(): string {
+  get sigmaSchemaName(): string {
     return this.config.sigmaSchemaName ?? 'sigma'
   }
 
-  constructor(private config: StripeSyncConfig) {
+  constructor(config: StripeSyncConfig) {
+    this.config = config
     // Create base Stripe client
     const baseStripe = new Stripe(config.stripeSecretKey, {
       // https://github.com/stripe/stripe-node#configuration
@@ -109,7 +111,7 @@ export class StripeSync {
   // Complements eventHandlers which maps event types → handlers for webhooks
   // Both registries share the same underlying upsert methods
   // Order field determines backfill sequence - parents before children for FK dependencies
-  private buildResourceRegistry(): Record<string, ResourceConfig> {
+  buildResourceRegistry(): Record<string, ResourceConfig> {
     const core: Record<string, ResourceConfig> = {
       product: {
         order: 1, // No dependencies
@@ -253,11 +255,11 @@ export class StripeSync {
     return { ...sigmaEntries, ...core }
   }
 
-  private isSigmaResource(object: string): boolean {
+  isSigmaResource(object: string): boolean {
     return Boolean(this.resourceRegistry[object]?.sigma)
   }
 
-  private sigmaResultKey(tableName: string): string {
+  sigmaResultKey(tableName: string): string {
     return tableName.replace(/_([a-z0-9])/g, (_, ch: string) => ch.toUpperCase())
   }
 
@@ -277,7 +279,7 @@ export class StripeSync {
    * @param account - Stripe account object
    * @param apiKeyHash - SHA-256 hash of API key to store for fast lookups
    */
-  private async upsertAccount(account: Stripe.Account, apiKeyHash: string): Promise<void> {
+  async upsertAccount(account: Stripe.Account, apiKeyHash: string): Promise<void> {
     try {
       await this.postgresClient.upsertAccount(
         {
@@ -460,7 +462,7 @@ export class StripeSync {
   // Note: Uses 'any' for event parameter to allow handlers with specific Stripe event types
   // (e.g., CustomerDeletedEvent, ProductDeletedEvent) which TypeScript won't accept
   // as contravariant parameters when using the base Stripe.Event type
-  private readonly eventHandlers: Record<
+  readonly eventHandlers: Record<
     string,
     (event: any, accountId: string) => Promise<void> // eslint-disable-line @typescript-eslint/no-explicit-any
   > = {
@@ -633,7 +635,7 @@ export class StripeSync {
   }
 
   // Event handler methods
-  private async handleChargeEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleChargeEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: charge, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Charge,
       (id) => this.stripe.charges.retrieve(id),
@@ -643,7 +645,7 @@ export class StripeSync {
     await this.upsertCharges([charge], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleCustomerDeletedEvent(
+  async handleCustomerDeletedEvent(
     event: Stripe.CustomerDeletedEvent,
     accountId: string
   ): Promise<void> {
@@ -656,7 +658,7 @@ export class StripeSync {
     await this.upsertCustomers([customer], accountId, this.getSyncTimestamp(event, false))
   }
 
-  private async handleCustomerEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleCustomerEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: customer, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Customer | Stripe.DeletedCustomer,
       (id) => this.stripe.customers.retrieve(id),
@@ -666,7 +668,7 @@ export class StripeSync {
     await this.upsertCustomers([customer], accountId, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleCheckoutSessionEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleCheckoutSessionEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: checkoutSession, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Checkout.Session,
       (id) => this.stripe.checkout.sessions.retrieve(id)
@@ -680,7 +682,7 @@ export class StripeSync {
     )
   }
 
-  private async handleSubscriptionEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleSubscriptionEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: subscription, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Subscription,
       (id) => this.stripe.subscriptions.retrieve(id),
@@ -696,7 +698,7 @@ export class StripeSync {
     )
   }
 
-  private async handleTaxIdEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleTaxIdEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: taxId, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.TaxId,
       (id) => this.stripe.taxIds.retrieve(id)
@@ -705,13 +707,13 @@ export class StripeSync {
     await this.upsertTaxIds([taxId], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleTaxIdDeletedEvent(event: Stripe.Event, _accountId: string): Promise<void> {
+  async handleTaxIdDeletedEvent(event: Stripe.Event, _accountId: string): Promise<void> {
     const taxId = event.data.object as Stripe.TaxId
 
     await this.postgresClient.deleteTaxId(taxId.id)
   }
 
-  private async handleInvoiceEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleInvoiceEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: invoice, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Invoice,
       (id) => this.stripe.invoices.retrieve(id),
@@ -721,7 +723,7 @@ export class StripeSync {
     await this.upsertInvoices([invoice], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleProductEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleProductEvent(event: Stripe.Event, accountId: string): Promise<void> {
     try {
       const { entity: product, refetched } = await this.fetchOrUseWebhookData(
         event.data.object as Stripe.Product,
@@ -739,7 +741,7 @@ export class StripeSync {
     }
   }
 
-  private async handleProductDeletedEvent(
+  async handleProductDeletedEvent(
     event: Stripe.ProductDeletedEvent,
     _accountId: string
   ): Promise<void> {
@@ -748,7 +750,7 @@ export class StripeSync {
     await this.postgresClient.deleteProduct(product.id)
   }
 
-  private async handlePriceEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handlePriceEvent(event: Stripe.Event, accountId: string): Promise<void> {
     try {
       const { entity: price, refetched } = await this.fetchOrUseWebhookData(
         event.data.object as Stripe.Price,
@@ -766,7 +768,7 @@ export class StripeSync {
     }
   }
 
-  private async handlePriceDeletedEvent(
+  async handlePriceDeletedEvent(
     event: Stripe.PriceDeletedEvent,
     _accountId: string
   ): Promise<void> {
@@ -775,7 +777,7 @@ export class StripeSync {
     await this.postgresClient.deletePrice(price.id)
   }
 
-  private async handlePlanEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handlePlanEvent(event: Stripe.Event, accountId: string): Promise<void> {
     try {
       const { entity: plan, refetched } = await this.fetchOrUseWebhookData(
         event.data.object as Stripe.Plan,
@@ -793,16 +795,13 @@ export class StripeSync {
     }
   }
 
-  private async handlePlanDeletedEvent(
-    event: Stripe.PlanDeletedEvent,
-    _accountId: string
-  ): Promise<void> {
+  async handlePlanDeletedEvent(event: Stripe.PlanDeletedEvent, _accountId: string): Promise<void> {
     const plan = event.data.object
 
     await this.postgresClient.deletePlan(plan.id)
   }
 
-  private async handleSetupIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleSetupIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: setupIntent, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.SetupIntent,
       (id) => this.stripe.setupIntents.retrieve(id),
@@ -817,10 +816,7 @@ export class StripeSync {
     )
   }
 
-  private async handleSubscriptionScheduleEvent(
-    event: Stripe.Event,
-    accountId: string
-  ): Promise<void> {
+  async handleSubscriptionScheduleEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: subscriptionSchedule, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.SubscriptionSchedule,
       (id) => this.stripe.subscriptionSchedules.retrieve(id),
@@ -835,7 +831,7 @@ export class StripeSync {
     )
   }
 
-  private async handlePaymentMethodEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handlePaymentMethodEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: paymentMethod, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.PaymentMethod,
       (id) => this.stripe.paymentMethods.retrieve(id)
@@ -849,7 +845,7 @@ export class StripeSync {
     )
   }
 
-  private async handleDisputeEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleDisputeEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: dispute, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Dispute,
       (id) => this.stripe.disputes.retrieve(id),
@@ -859,7 +855,7 @@ export class StripeSync {
     await this.upsertDisputes([dispute], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handlePaymentIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handlePaymentIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: paymentIntent, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.PaymentIntent,
       (id) => this.stripe.paymentIntents.retrieve(id),
@@ -875,7 +871,7 @@ export class StripeSync {
     )
   }
 
-  private async handleCreditNoteEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleCreditNoteEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: creditNote, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.CreditNote,
       (id) => this.stripe.creditNotes.retrieve(id),
@@ -890,10 +886,7 @@ export class StripeSync {
     )
   }
 
-  private async handleEarlyFraudWarningEvent(
-    event: Stripe.Event,
-    accountId: string
-  ): Promise<void> {
+  async handleEarlyFraudWarningEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: earlyFraudWarning, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Radar.EarlyFraudWarning,
       (id) => this.stripe.radar.earlyFraudWarnings.retrieve(id)
@@ -907,7 +900,7 @@ export class StripeSync {
     )
   }
 
-  private async handleRefundEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleRefundEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: refund, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Refund,
       (id) => this.stripe.refunds.retrieve(id)
@@ -916,7 +909,7 @@ export class StripeSync {
     await this.upsertRefunds([refund], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleReviewEvent(event: Stripe.Event, accountId: string): Promise<void> {
+  async handleReviewEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const { entity: review, refetched } = await this.fetchOrUseWebhookData(
       event.data.object as Stripe.Review,
       (id) => this.stripe.reviews.retrieve(id)
@@ -925,10 +918,7 @@ export class StripeSync {
     await this.upsertReviews([review], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
-  private async handleEntitlementSummaryEvent(
-    event: Stripe.Event,
-    accountId: string
-  ): Promise<void> {
+  async handleEntitlementSummaryEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const activeEntitlementSummary = event.data
       .object as Stripe.Entitlements.ActiveEntitlementSummary
     let entitlements = activeEntitlementSummary.entitlements
@@ -955,15 +945,15 @@ export class StripeSync {
     )
   }
 
-  private getSyncTimestamp(event: Stripe.Event, refetched: boolean) {
+  getSyncTimestamp(event: Stripe.Event, refetched: boolean) {
     return refetched ? new Date().toISOString() : new Date(event.created * 1000).toISOString()
   }
 
-  private shouldRefetchEntity(entity: { object: string }) {
+  shouldRefetchEntity(entity: { object: string }) {
     return this.config.revalidateObjectsViaStripeApi?.includes(entity.object as RevalidateEntity)
   }
 
-  private async fetchOrUseWebhookData<T extends { id?: string; object: string }>(
+  async fetchOrUseWebhookData<T extends { id?: string; object: string }>(
     entity: T,
     fetchFn: (id: string) => Promise<T>,
     entityInFinalState?: (entity: T) => boolean
@@ -1168,7 +1158,7 @@ export class StripeSync {
     }
   }
 
-  private appendMigrationHint(error: unknown): Error {
+  appendMigrationHint(error: unknown): Error {
     const hint =
       'Error occurred. Make sure you are up to date with DB migrations which can sometimes help with this. Details:'
     const withHint = (message: string) => (message.includes(hint) ? message : `${hint}\n${message}`)
@@ -1186,7 +1176,7 @@ export class StripeSync {
   /**
    * Get the database resource name for a SyncObject type
    */
-  private getResourceName(object: SyncObject): string {
+  getResourceName(object: SyncObject): string {
     const mapping: Record<string, string> = {
       customer: 'customers',
       invoice: 'invoices',
@@ -1214,7 +1204,7 @@ export class StripeSync {
    * Uses resourceRegistry for DRY list/upsert operations.
    * Uses the observable sync system for tracking progress.
    */
-  private async fetchOnePage(
+  async fetchOnePage(
     object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
     accountId: string,
     resourceName: string,
@@ -1342,7 +1332,7 @@ export class StripeSync {
     }
   }
 
-  private async getSigmaFallbackCursorFromDestination(
+  async getSigmaFallbackCursorFromDestination(
     accountId: string,
     sigmaConfig: SigmaIngestionConfig
   ): Promise<string | null> {
@@ -1389,7 +1379,7 @@ export class StripeSync {
     return sigmaCursorFromEntry(sigmaConfig, entryForCursor)
   }
 
-  private async fetchOneSigmaPage(
+  async fetchOneSigmaPage(
     accountId: string,
     resourceName: string,
     runStartedAt: Date,
@@ -1472,7 +1462,7 @@ export class StripeSync {
    * @param params - Optional sync parameters
    * @returns Sync result with count of synced items
    */
-  private async processObjectUntilDone(
+  async processObjectUntilDone(
     object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
     runStartedAt: Date,
     params?: SyncParams
@@ -1556,7 +1546,7 @@ export class StripeSync {
     }
   }
 
-  private applySyncBackfillResult(
+  applySyncBackfillResult(
     results: SyncBackfill,
     object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
     result: Sync
@@ -1728,7 +1718,7 @@ export class StripeSync {
   /**
    * Internal implementation of processUntilDone with an existing run.
    */
-  private async processUntilDoneWithRun(
+  async processUntilDoneWithRun(
     runStartedAt: Date,
     object: SyncObject | undefined,
     params?: SyncParams
@@ -1763,7 +1753,7 @@ export class StripeSync {
     }
   }
 
-  private async upsertCharges(
+  async upsertCharges(
     charges: Stripe.Charge[],
     accountId: string,
     backfillRelatedEntities?: boolean,
@@ -1788,7 +1778,7 @@ export class StripeSync {
     )
   }
 
-  private async backfillCharges(chargeIds: string[], accountId: string) {
+  async backfillCharges(chargeIds: string[], accountId: string) {
     const missingChargeIds = await this.postgresClient.findMissingEntries('charges', chargeIds)
 
     this.postgresClient.deleteRemovedActiveEntitlements(accountId, missingChargeIds)
@@ -1798,7 +1788,7 @@ export class StripeSync {
     return this.upsertCharges(charges, accountId)
   }
 
-  private async backfillPaymentIntents(paymentIntentIds: string[], accountId: string) {
+  async backfillPaymentIntents(paymentIntentIds: string[], accountId: string) {
     const missingIds = await this.postgresClient.findMissingEntries(
       'payment_intents',
       paymentIntentIds
@@ -1810,7 +1800,7 @@ export class StripeSync {
     await this.upsertPaymentIntents(paymentIntents, accountId)
   }
 
-  private async upsertCreditNotes(
+  async upsertCreditNotes(
     creditNotes: Stripe.CreditNote[],
     accountId: string,
     backfillRelatedEntities?: boolean,
@@ -2653,7 +2643,7 @@ export class StripeSync {
    * Stripe only sends the first 10 entries by default, the option will actively fetch all entries.
    * Uses manual pagination - each fetch() gets automatic retry protection.
    */
-  private async expandEntity<
+  async expandEntity<
     K extends { id?: string },
     P extends keyof T,
     T extends { id?: string } & { [key in P]?: Stripe.ApiList<K> | null },
@@ -2695,7 +2685,7 @@ export class StripeSync {
     }
   }
 
-  private async fetchMissingEntities<T>(
+  async fetchMissingEntities<T>(
     ids: string[],
     fetch: (id: string) => Promise<Stripe.Response<T>>
   ): Promise<T[]> {
