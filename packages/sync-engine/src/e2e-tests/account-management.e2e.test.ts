@@ -86,13 +86,13 @@ describe('Account Management E2E', () => {
 
   describe('getAllSyncedAccounts()', () => {
     it('should retrieve synced accounts from database', async () => {
-      const accounts = await sync.getAllSyncedAccounts()
+      const accounts = await sync.postgresClient.getAllSyncedAccounts()
       expect(accounts.length).toBeGreaterThanOrEqual(1)
       expect(accounts[0].id).toMatch(/^acct_/)
     })
 
     it('should order accounts by last synced', async () => {
-      const accounts = await sync.getAllSyncedAccounts()
+      const accounts = await sync.postgresClient.getAllSyncedAccounts()
       const firstAccount = accounts[0]
       expect(firstAccount.id).toBe(accountId)
     })
@@ -116,7 +116,7 @@ describe('Account Management E2E', () => {
       expect(productsBefore).toBeGreaterThan(0)
 
       // Run dry-run deletion
-      const result = await sync.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: true })
+      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: true })
       // API returns { deletedAccountId, deletedRecordCounts, warnings }
       expect(result.deletedAccountId).toBe(accountId)
       expect(result.deletedRecordCounts).toBeDefined()
@@ -141,7 +141,7 @@ describe('Account Management E2E', () => {
       )
 
       // Perform actual deletion
-      const result = await sync.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: false })
+      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: false })
       expect(result.deletedAccountId).toBe(accountId)
       expect(result.deletedRecordCounts.products).toBe(productsBefore)
       expect(result.deletedRecordCounts.accounts).toBe(accountsBefore)
@@ -161,7 +161,9 @@ describe('Account Management E2E', () => {
     })
 
     it('should handle non-existent account gracefully', async () => {
-      const result = await sync.dangerouslyDeleteSyncedAccountData('acct_nonexistent', {
+      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(
+        'acct_nonexistent',
+        {
         dryRun: false,
       })
       expect(result.deletedRecordCounts.accounts).toBe(0)
