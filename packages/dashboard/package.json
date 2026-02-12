@@ -13,9 +13,12 @@
     "react": "^19",
     "react-dom": "^19",
     "@supabase/supabase-js": "^2",
+    "@xyflow/react": "^12",
+    "dagre": "^0.8.5",
     "stripe-experiment-sync": "workspace:*"
   },
   "devDependencies": {
+    "@types/dagre": "^0.7.52",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

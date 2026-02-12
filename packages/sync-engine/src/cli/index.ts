@@ -8,6 +8,7 @@ import {
   backfillCommand,
   installCommand,
   uninstallCommand,
+  diffSchemaCommand,
 } from './commands'
 
 const program = new Command()
@@ -115,6 +116,33 @@ supabase
       supabaseAccessToken: options.token,
       supabaseProjectRef: options.project,
       supabaseManagementUrl: options.managementUrl,
+    })
+  })
+
+// Schema diff command
+program
+  .command('diff-schema')
+  .description('Compare database schema with OpenAPI specification')
+  .requiredOption('--spec <path>', 'Path to OpenAPI spec file (e.g., /path/to/spec3.json)')
+  .requiredOption('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--objects <list>', 'Comma-separated list of Stripe objects to compare (e.g., customer,charge)', 'customer,charge,payment_intent,subscription,invoice,product,price,payment_method')
+  .option('--schema <name>', 'Database schema name', 'stripe')
+  .option('--format <type>', 'Output format: text or json', 'text')
+  .option('--generate-migration', 'Generate migration script to align database with spec')
+  .option('--output <file>', 'Output file for migration script (default: stdout)')
+  .option('--validate-only', 'Exit with non-zero code if differences found (for CI)')
+  .option('--no-suggest-indexes', 'Disable index recommendations')
+  .action(async (options) => {
+    await diffSchemaCommand({
+      spec: options.spec,
+      databaseUrl: options.databaseUrl || process.env.DATABASE_URL,
+      objects: options.objects,
+      schema: options.schema,
+      format: options.format,
+      generateMigration: options.generateMigration,
+      output: options.output,
+      validateOnly: options.validateOnly,
+      suggestIndexes: options.suggestIndexes,
     })
   })
 
