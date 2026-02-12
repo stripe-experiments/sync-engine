@@ -15,14 +15,8 @@ import {
 } from './types'
 import { type PoolConfig } from 'pg'
 import { hashApiKey } from './utils/hashApiKey'
-import { parseCsvObjects, runSigmaQueryAndDownloadCsv } from './sigma/sigmaApi'
-import { SIGMA_INGESTION_CONFIGS } from './sigma/sigmaIngestionConfigs'
-import {
-  buildSigmaQuery,
-  defaultSigmaRowToEntry,
-  sigmaCursorFromEntry,
-  type SigmaIngestionConfig,
-} from './sigma/sigmaIngestion'
+import { expandEntity } from './utils/expandEntity'
+import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
 
 /**
@@ -49,10 +43,11 @@ export class StripeSync {
   config: StripeSyncConfig
   readonly resourceRegistry: Record<string, ResourceConfig>
   readonly webhook: StripeSyncWebhook
+  readonly sigma: SigmaSyncProcessor
   private readonly defaultAccountIdPromise: Promise<string>
 
   get sigmaSchemaName(): string {
-    return this.config.sigmaSchemaName ?? 'sigma'
+    return this.sigma.sigmaSchemaName
   }
 
   constructor(config: StripeSyncConfig) {
@@ -98,6 +93,14 @@ export class StripeSync {
     this.postgresClient = new PostgresClient({
       schema: 'stripe',
       poolConfig,
+    })
+
+    this.sigma = new SigmaSyncProcessor(this.postgresClient, {
+      stripeSecretKey: config.stripeSecretKey,
+      enableSigma: config.enableSigma,
+      sigmaPageSizeOverride: config.sigmaPageSizeOverride,
+      sigmaSchemaName: config.sigmaSchemaName,
+      logger: this.config.logger,
     })
 
     this.resourceRegistry = this.buildResourceRegistry()
@@ -251,43 +254,18 @@ export class StripeSync {
     }
 
     const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
-    const sigmaOverrideRaw = this.config.sigmaPageSizeOverride
-    const sigmaOverride =
-      typeof sigmaOverrideRaw === 'number' &&
-      Number.isFinite(sigmaOverrideRaw) &&
-      sigmaOverrideRaw > 0
-        ? Math.floor(sigmaOverrideRaw)
-        : undefined
-
-    // TODO: Dedupe sigma tables that overlap with core Stripe objects (e.g. subscription_schedules).
-    // Currently we just let core take precedence, but ideally sigma configs should exclude
-    // tables that are already handled by the core Stripe API integration.
-    const sigmaEntries: Record<string, ResourceConfig> = Object.fromEntries(
-      Object.entries(SIGMA_INGESTION_CONFIGS).map(([key, sigmaConfig], idx) => {
-        const pageSize = sigmaOverride
-          ? Math.min(sigmaConfig.pageSize, sigmaOverride)
-          : sigmaConfig.pageSize
-        return [
-          key,
-          {
-            order: maxOrder + 1 + idx,
-            supportsCreatedFilter: false,
-            sigma: { ...sigmaConfig, pageSize },
-          },
-        ]
-      })
-    )
+    const sigmaEntries = this.sigma.buildSigmaRegistryEntries(maxOrder)
 
     // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
     return { ...sigmaEntries, ...core }
   }
 
   isSigmaResource(object: string): boolean {
-    return Boolean(this.resourceRegistry[object]?.sigma)
+    return this.sigma.isSigmaResource(this.resourceRegistry, object)
   }
 
   sigmaResultKey(tableName: string): string {
-    return tableName.replace(/_([a-z0-9])/g, (_, ch: string) => ch.toUpperCase())
+    return this.sigma.sigmaResultKey(tableName)
   }
 
   /**
@@ -311,27 +289,6 @@ export class StripeSync {
       throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
     }
     return account.id
-  }
-
-  /**
-   * Upsert Stripe account information to the database
-   * @param account - Stripe account object
-   * @param apiKeyHash - SHA-256 hash of API key to store for fast lookups
-   */
-  async upsertAccount(account: Stripe.Account, apiKeyHash: string): Promise<void> {
-    try {
-      await this.postgresClient.upsertAccount(
-        {
-          id: account.id,
-          raw_data: account,
-        },
-        apiKeyHash
-      )
-    } catch (error) {
-      this.config.logger?.error(error, 'Failed to upsert account to database')
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(`Failed to upsert account to database: ${errorMessage}`)
-    }
   }
 
   /**
@@ -362,7 +319,7 @@ export class StripeSync {
         ? await this.stripe.accounts.retrieve(accountIdParam)
         : await this.stripe.accounts.retrieve()
 
-      await this.upsertAccount(account, apiKeyHash)
+      await this.postgresClient.upsertAccount({ id: account.id, raw_data: account }, apiKeyHash)
       return account
     } catch (error) {
       this.config.logger?.error(error, 'Failed to retrieve account from Stripe API')
@@ -464,14 +421,6 @@ export class StripeSync {
     }
   }
 
-  async processWebhook(payload: Buffer | Uint8Array | string, signature: string | undefined) {
-    return this.webhook.processWebhook(payload, signature)
-  }
-
-  async processEvent(event: Stripe.Event) {
-    return this.webhook.processEvent(event)
-  }
-
   /**
    * Returns an array of all object types that can be synced via processNext/processUntilDone.
    * Ordered for backfill: parents before children (products before prices, customers before subscriptions).
@@ -500,14 +449,7 @@ export class StripeSync {
    * @returns Array of sigma object names (e.g. 'subscription_item_change_events_v2_beta')
    */
   public getSupportedSigmaObjects(): string[] {
-    if (!this.config.enableSigma) {
-      return []
-    }
-
-    return Object.entries(this.resourceRegistry)
-      .filter(([, config]) => Boolean(config.sigma))
-      .sort(([, a], [, b]) => a.order - b.order)
-      .map(([key]) => key)
+    return this.sigma.getSupportedSigmaObjects(this.resourceRegistry)
   }
 
   async syncSingleEntity(stripeId: string) {
@@ -762,7 +704,7 @@ export class StripeSync {
 
     try {
       if (config.sigma) {
-        return await this.fetchOneSigmaPage(
+        return await this.sigma.fetchOneSigmaPage(
           accountId,
           resourceName,
           runStartedAt,
@@ -858,128 +800,6 @@ export class StripeSync {
       )
       throw error
     }
-  }
-
-  async getSigmaFallbackCursorFromDestination(
-    accountId: string,
-    sigmaConfig: SigmaIngestionConfig
-  ): Promise<string | null> {
-    const sigmaSchema = this.sigmaSchemaName
-    const cursorCols = sigmaConfig.cursor.columns
-    const selectCols = cursorCols.map((c) => `"${c.column}"`).join(', ')
-    const orderBy = cursorCols.map((c) => `"${c.column}" DESC`).join(', ')
-
-    const result = await this.postgresClient.query(
-      `SELECT ${selectCols}
-       FROM "${sigmaSchema}"."${sigmaConfig.destinationTable}"
-       WHERE "_account_id" = $1
-       ORDER BY ${orderBy}
-       LIMIT 1`,
-      [accountId]
-    )
-
-    if (result.rows.length === 0) return null
-
-    const row = result.rows[0] as Record<string, unknown>
-    const entryForCursor: Record<string, unknown> = {}
-    for (const c of cursorCols) {
-      const v = row[c.column]
-      if (v == null) {
-        throw new Error(
-          `Sigma fallback cursor query returned null for ${sigmaConfig.destinationTable}.${c.column}`
-        )
-      }
-      if (c.type === 'timestamp') {
-        const d = v instanceof Date ? v : new Date(String(v))
-        if (Number.isNaN(d.getTime())) {
-          throw new Error(
-            `Sigma fallback cursor query returned invalid timestamp for ${sigmaConfig.destinationTable}.${c.column}: ${String(
-              v
-            )}`
-          )
-        }
-        entryForCursor[c.column] = d.toISOString()
-      } else {
-        entryForCursor[c.column] = String(v)
-      }
-    }
-
-    return sigmaCursorFromEntry(sigmaConfig, entryForCursor)
-  }
-
-  async fetchOneSigmaPage(
-    accountId: string,
-    resourceName: string,
-    runStartedAt: Date,
-    cursor: string | null,
-    sigmaConfig: SigmaIngestionConfig
-  ): Promise<ProcessNextResult> {
-    if (!this.config.stripeSecretKey) {
-      throw new Error('Sigma sync requested but stripeSecretKey is not configured.')
-    }
-    if (resourceName !== sigmaConfig.destinationTable) {
-      throw new Error(
-        `Sigma sync config mismatch: resourceName=${resourceName} destinationTable=${sigmaConfig.destinationTable}`
-      )
-    }
-
-    const effectiveCursor =
-      cursor ?? (await this.getSigmaFallbackCursorFromDestination(accountId, sigmaConfig))
-    const sigmaSql = buildSigmaQuery(sigmaConfig, effectiveCursor)
-
-    this.config.logger?.info(
-      { object: resourceName, pageSize: sigmaConfig.pageSize, hasCursor: Boolean(effectiveCursor) },
-      'Sigma sync: running query'
-    )
-
-    const { queryRunId, fileId, csv } = await runSigmaQueryAndDownloadCsv({
-      apiKey: this.config.stripeSecretKey,
-      sql: sigmaSql,
-      logger: this.config.logger,
-      partnerId: this.config.partnerId,
-    })
-
-    const rows = parseCsvObjects(csv)
-    if (rows.length === 0) {
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
-      return { processed: 0, hasMore: false, runStartedAt }
-    }
-
-    const entries: Array<Record<string, unknown>> = rows.map((row) =>
-      defaultSigmaRowToEntry(sigmaConfig, row)
-    )
-
-    this.config.logger?.info(
-      { object: resourceName, rows: entries.length, queryRunId, fileId },
-      'Sigma sync: upserting rows'
-    )
-
-    await this.postgresClient.upsertManyWithTimestampProtection(
-      entries,
-      resourceName,
-      accountId,
-      undefined,
-      sigmaConfig.upsert,
-      this.sigmaSchemaName
-    )
-
-    await this.postgresClient.incrementObjectProgress(
-      accountId,
-      runStartedAt,
-      resourceName,
-      entries.length
-    )
-
-    // Cursor: advance to the last row in the page (matches the ORDER BY in buildSigmaQuery()).
-    const newCursor = sigmaCursorFromEntry(sigmaConfig, entries[entries.length - 1]!)
-    await this.postgresClient.updateObjectCursor(accountId, runStartedAt, resourceName, newCursor)
-
-    const hasMore = rows.length === sigmaConfig.pageSize
-    if (!hasMore) {
-      await this.postgresClient.completeObjectSync(accountId, runStartedAt, resourceName)
-    }
-
-    return { processed: entries.length, hasMore, runStartedAt }
   }
 
   /**
@@ -1329,7 +1149,12 @@ export class StripeSync {
     if (config?.listExpands) {
       for (const expandEntry of config.listExpands) {
         for (const [property, expandFn] of Object.entries(expandEntry)) {
-          await this.expandEntity(items, property, (id) => expandFn(id))
+          await expandEntity(
+            items,
+            property,
+            (id) => expandFn(id),
+            this.config.autoExpandLists ?? false
+          )
         }
       }
     }
@@ -1389,7 +1214,6 @@ export class StripeSync {
       syncTimestamp
     )
   }
-
 
   async markDeletedSubscriptionItems(
     subscriptionId: string,
@@ -1468,95 +1292,6 @@ export class StripeSync {
     return this.upsertAny(entitlements, accountId, backfillRelatedEntities, syncTimestamp)
   }
 
-  async findOrCreateManagedWebhook(
-    url: string,
-    params?: Omit<Stripe.WebhookEndpointCreateParams, 'url'>
-  ): Promise<Stripe.WebhookEndpoint> {
-    return this.webhook.findOrCreateManagedWebhook(url, params)
-  }
-
-  async getManagedWebhook(id: string): Promise<Stripe.WebhookEndpoint | null> {
-    return this.webhook.getManagedWebhook(id)
-  }
-
-  /**
-   * Get a managed webhook by URL and account ID.
-   * Used for race condition recovery: when createManagedWebhook hits a unique constraint
-   * violation (another instance created the webhook), we need to fetch the existing webhook
-   * by URL since we only know the URL, not the ID of the webhook that won the race.
-   */
-  async getManagedWebhookByUrl(url: string): Promise<Stripe.WebhookEndpoint | null> {
-    return this.webhook.getManagedWebhookByUrl(url)
-  }
-
-  async listManagedWebhooks(): Promise<Array<Stripe.WebhookEndpoint>> {
-    return this.webhook.listManagedWebhooks()
-  }
-
-  async updateManagedWebhook(
-    id: string,
-    params: Stripe.WebhookEndpointUpdateParams
-  ): Promise<Stripe.WebhookEndpoint> {
-    return this.webhook.updateManagedWebhook(id, params)
-  }
-
-  async deleteManagedWebhook(id: string): Promise<boolean> {
-    return this.webhook.deleteManagedWebhook(id)
-  }
-
-  async upsertManagedWebhooks(
-    webhooks: Array<Stripe.WebhookEndpoint>,
-    accountId: string,
-    syncTimestamp?: string
-  ): Promise<Array<Stripe.WebhookEndpoint>> {
-    return this.webhook.upsertManagedWebhooks(webhooks, accountId, syncTimestamp)
-  }
-
-  /**
-   * Stripe only sends the first 10 entries by default, the option will actively fetch all entries.
-   * Uses manual pagination - each fetch() gets automatic retry protection.
-   */
-  async expandEntity<
-    K extends { id?: string },
-    P extends keyof T,
-    T extends { id?: string } & { [key in P]?: Stripe.ApiList<K> | null },
-  >(
-    entities: T[],
-    property: P,
-    listFn: (id: string, params?: { starting_after?: string }) => Promise<Stripe.ApiList<K>>
-  ) {
-    if (!this.config.autoExpandLists) return
-
-    for (const entity of entities) {
-      if (entity[property]?.has_more) {
-        const allData: K[] = []
-
-        // Manual pagination - each fetch() gets automatic retry protection
-        let hasMore = true
-        let startingAfter: string | undefined = undefined
-
-        while (hasMore) {
-          const response = await listFn(
-            entity.id!,
-            startingAfter ? { starting_after: startingAfter } : undefined
-          )
-
-          allData.push(...response.data)
-
-          hasMore = response.has_more
-          if (response.data.length > 0) {
-            startingAfter = response.data[response.data.length - 1].id
-          }
-        }
-
-        entity[property] = {
-          ...entity[property],
-          data: allData,
-          has_more: false,
-        }
-      }
-    }
-  }
 
   async fetchMissingEntities<T>(
     ids: string[],

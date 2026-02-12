@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { StripeSync } from './stripeSync'
+import { stripeSync } from './stripeSync'
 import { runMigrations } from './database/migrate'
 import type { PoolConfig } from 'pg'
 import type Stripe from 'stripe'
 
 describe('Webhook Race Condition Tests', () => {
-  let stripeSync: StripeSync
+  let stripeSync: stripeSync
   const databaseUrl =
     process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
   const stripeApiKey = process.env.STRIPE_API_KEY
@@ -26,7 +26,7 @@ describe('Webhook Race Condition Tests', () => {
       keepAlive: true,
     }
 
-    stripeSync = new StripeSync({
+    stripeSync = new stripeSync({
       databaseUrl,
       stripeSecretKey: stripeApiKey,
       stripeApiVersion: '2020-08-27',
@@ -39,12 +39,12 @@ describe('Webhook Race Condition Tests', () => {
 
     // Clean up all test webhooks
     try {
-      const webhooks = await stripeSync.listManagedWebhooks()
+      const webhooks = await stripeSync.webhook.listManagedWebhooks()
       const testWebhooks = webhooks.filter((w) => w.url.includes('test-race-'))
 
       for (const webhook of testWebhooks) {
         try {
-          await stripeSync.deleteManagedWebhook(webhook.id)
+          await stripeSync.webhook.deleteManagedWebhook(webhook.id)
         } catch (err) {
           console.warn(`Failed to delete test webhook ${webhook.id}:`, err)
         }
@@ -61,7 +61,7 @@ describe('Webhook Race Condition Tests', () => {
     if (!stripeSync) return
 
     // Clean up any existing webhooks for this test URL
-    const webhooks = await stripeSync.listManagedWebhooks()
+    const webhooks = await stripeSync.webhook.listManagedWebhooks()
     const matchingWebhooks = webhooks.filter((w) => w.url.includes('test-race-'))
 
     for (const webhook of matchingWebhooks) {
@@ -83,7 +83,7 @@ describe('Webhook Race Condition Tests', () => {
         const promises = Array(10)
           .fill(null)
           .map(() =>
-            stripeSync.findOrCreateManagedWebhook(uniqueUrl, {
+            stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
               enabled_events: ['*'],
               description: 'Test webhook for race condition test',
             })
@@ -103,7 +103,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(uniqueIds.size).toBe(1)
 
         // Verify only 1 webhook in database
-        const dbWebhooks = await stripeSync.listManagedWebhooks()
+        const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === uniqueUrl)
         expect(matchingWebhooks.length).toBe(1)
 
@@ -128,7 +128,7 @@ describe('Webhook Race Condition Tests', () => {
         const urlAPromises = Array(5)
           .fill(null)
           .map(() =>
-            stripeSync.findOrCreateManagedWebhook(urlA, {
+            stripeSync.webhook.findOrCreateManagedWebhook(urlA, {
               enabled_events: ['*'],
               description: 'Test webhook A',
             })
@@ -137,7 +137,7 @@ describe('Webhook Race Condition Tests', () => {
         const urlBPromises = Array(5)
           .fill(null)
           .map(() =>
-            stripeSync.findOrCreateManagedWebhook(urlB, {
+            stripeSync.webhook.findOrCreateManagedWebhook(urlB, {
               enabled_events: ['*'],
               description: 'Test webhook B',
             })
@@ -157,7 +157,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(uniqueIds.size).toBe(2)
 
         // Verify database state
-        const dbWebhooks = await stripeSync.listManagedWebhooks()
+        const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === urlA || w.url === urlB)
         expect(matchingWebhooks.length).toBe(2)
 
@@ -175,13 +175,13 @@ describe('Webhook Race Condition Tests', () => {
         const uniqueUrl = `https://test-race-${Date.now()}-sequential.example.com/webhooks`
 
         // First call
-        const webhook1 = await stripeSync.findOrCreateManagedWebhook(uniqueUrl, {
+        const webhook1 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook sequential',
         })
 
         // Second call - should reuse
-        const webhook2 = await stripeSync.findOrCreateManagedWebhook(uniqueUrl, {
+        const webhook2 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook sequential',
         })
@@ -203,14 +203,14 @@ describe('Webhook Race Condition Tests', () => {
         const uniqueUrl = `https://test-race-${Date.now()}-unique-constraint.example.com/webhooks`
 
         // Create first webhook normally
-        const webhook1 = await stripeSync.findOrCreateManagedWebhook(uniqueUrl, {
+        const webhook1 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook 1',
         })
 
         // Manually try to create another webhook with same URL directly
         // This should trigger the unique constraint fallback logic
-        const webhook2Promise = await stripeSync.findOrCreateManagedWebhook(uniqueUrl, {
+        const webhook2Promise = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook 2',
         })
@@ -225,7 +225,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(webhook2.id).toBeTruthy()
 
         // Verify only one webhook exists
-        const dbWebhooks = await stripeSync.listManagedWebhooks()
+        const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === uniqueUrl)
         expect(matchingWebhooks.length).toBe(1)
 

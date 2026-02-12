@@ -37,7 +37,7 @@ describe('Webhook Reuse E2E', () => {
     // Cleanup created webhooks
     for (const id of createdWebhookIds) {
       try {
-        await sync.deleteManagedWebhook(id)
+        await sync.webhook.deleteManagedWebhook(id)
       } catch {
         // Ignore errors during cleanup
       }
@@ -52,7 +52,7 @@ describe('Webhook Reuse E2E', () => {
   }, 30000)
 
   it('should create initial webhook', async () => {
-    const webhook = await sync.findOrCreateManagedWebhook(
+    const webhook = await sync.webhook.findOrCreateManagedWebhook(
       'https://test1.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
@@ -67,12 +67,12 @@ describe('Webhook Reuse E2E', () => {
   })
 
   it('should reuse existing webhook with same base URL', async () => {
-    const webhook1 = await sync.findOrCreateManagedWebhook(
+    const webhook1 = await sync.webhook.findOrCreateManagedWebhook(
       'https://test1.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
 
-    const webhook2 = await sync.findOrCreateManagedWebhook(
+    const webhook2 = await sync.webhook.findOrCreateManagedWebhook(
       'https://test1.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
@@ -86,12 +86,12 @@ describe('Webhook Reuse E2E', () => {
   })
 
   it('should create new webhook for different base URL', async () => {
-    const webhook1 = await sync.findOrCreateManagedWebhook(
+    const webhook1 = await sync.webhook.findOrCreateManagedWebhook(
       'https://test1.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
 
-    const webhook2 = await sync.findOrCreateManagedWebhook(
+    const webhook2 = await sync.webhook.findOrCreateManagedWebhook(
       'https://test2.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
@@ -104,7 +104,7 @@ describe('Webhook Reuse E2E', () => {
     const stripe = getStripeClient()
 
     // Create a webhook
-    const webhook = await sync.findOrCreateManagedWebhook(
+    const webhook = await sync.webhook.findOrCreateManagedWebhook(
       'https://test3.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
@@ -118,7 +118,7 @@ describe('Webhook Reuse E2E', () => {
     ])
 
     // Call again - should clean up orphan and create new one
-    const newWebhook = await sync.findOrCreateManagedWebhook(
+    const newWebhook = await sync.webhook.findOrCreateManagedWebhook(
       'https://test3.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
     )
@@ -143,7 +143,7 @@ describe('Webhook Reuse E2E', () => {
     // Create 5 concurrent requests
     const promises = Array(5)
       .fill(null)
-      .map(() => sync.findOrCreateManagedWebhook(concurrentUrl, { enabled_events: ['*'] }))
+      .map(() => sync.webhook.findOrCreateManagedWebhook(concurrentUrl, { enabled_events: ['*'] }))
 
     const results = await Promise.all(promises)
 
@@ -176,12 +176,12 @@ describe('Webhook Reuse E2E', () => {
 
     const sharedUrl = 'https://test-shared.example.com/stripe-webhooks'
 
-    const webhook1 = await sync.findOrCreateManagedWebhook(sharedUrl, {
+    const webhook1 = await sync.webhook.findOrCreateManagedWebhook(sharedUrl, {
       enabled_events: ['*'],
     })
     createdWebhookIds.push(webhook1.id)
 
-    const webhook2 = await sync2.findOrCreateManagedWebhook(sharedUrl, {
+    const webhook2 = await sync2.webhook.findOrCreateManagedWebhook(sharedUrl, {
       enabled_events: ['*'],
     })
 
@@ -190,7 +190,7 @@ describe('Webhook Reuse E2E', () => {
 
     // Cleanup
     try {
-      await sync2.deleteManagedWebhook(webhook2.id)
+      await sync2.webhook.deleteManagedWebhook(webhook2.id)
     } catch {
       // Ignore
     }
