@@ -67,6 +67,9 @@ export interface OpenAPIParser {
   /** Load a spec from a file path */
   loadSpec(specPath: string): Promise<void>
 
+  /** Load a spec from an already parsed object */
+  loadSpecObject(spec: unknown): void
+
   /** Get schema for a specific Stripe object */
   getObjectSchema(objectName: string): ObjectSchema | null
 
