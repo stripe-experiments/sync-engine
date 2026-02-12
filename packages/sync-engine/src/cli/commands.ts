@@ -478,7 +478,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       // Create managed webhook endpoint
       const webhookPath = process.env.WEBHOOK_PATH || '/stripe-webhooks'
       console.log(chalk.blue('\nCreating Stripe webhook endpoint...'))
-      const webhook = await stripesync.webhook.findOrCreateManagedWebhook(`${tunnel.url}${webhookPath}`)
+      const webhook = await stripeSync.webhook.findOrCreateManagedWebhook(`${tunnel.url}${webhookPath}`)
       webhookId = webhook.id
       const eventCount = webhook.enabled_events?.length || 0
       console.log(chalk.green(`✓ Webhook created: ${webhook.id}`))
