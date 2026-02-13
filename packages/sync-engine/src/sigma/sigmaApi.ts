@@ -54,12 +54,13 @@ export function normalizeSigmaTimestampToIso(value: string): string | null {
   return d.toISOString()
 }
 
-function createStripeClient(apiKey: string): Stripe {
+function createStripeClient(apiKey: string, partnerId?: string): Stripe {
   return new Stripe(apiKey, {
     appInfo: {
       name: 'Stripe Sync Engine',
       version: pkg.version,
       url: pkg.homepage,
+      ...(partnerId ? { partner_id: partnerId } : {}),
     },
   })
 }
@@ -82,8 +83,9 @@ async function fetchStripeText(url: string, apiKey: string, options: RequestInit
 export async function createSigmaQueryRun(params: {
   apiKey: string
   sql: string
+  partnerId?: string
 }): Promise<{ queryRunId: string }> {
-  const stripe = createStripeClient(params.apiKey)
+  const stripe = createStripeClient(params.apiKey, params.partnerId)
   const created = (await stripe.rawRequest('POST', '/v1/sigma/query_runs', {
     sql: params.sql,
   })) as unknown as SigmaQueryRun
@@ -94,8 +96,9 @@ export async function createSigmaQueryRun(params: {
 export async function getSigmaQueryRun(params: {
   apiKey: string
   queryRunId: string
+  partnerId?: string
 }): Promise<{ status: SigmaQueryRunStatus; fileId?: string; error?: unknown }> {
-  const stripe = createStripeClient(params.apiKey)
+  const stripe = createStripeClient(params.apiKey, params.partnerId)
   const current = (await stripe.rawRequest(
     'GET',
     `/v1/sigma/query_runs/${params.queryRunId}`,
@@ -126,12 +129,17 @@ export async function runSigmaQueryAndDownloadCsv(params: {
   logger?: Logger
   pollTimeoutMs?: number
   pollIntervalMs?: number
+  partnerId?: string
 }): Promise<{ queryRunId: string; fileId: string; csv: string }> {
   const pollTimeoutMs = params.pollTimeoutMs ?? 5 * 60 * 1000
   const pollIntervalMs = params.pollIntervalMs ?? 2000
 
   // 1) Create query run
-  const { queryRunId } = await createSigmaQueryRun({ apiKey: params.apiKey, sql: params.sql })
+  const { queryRunId } = await createSigmaQueryRun({
+    apiKey: params.apiKey,
+    sql: params.sql,
+    partnerId: params.partnerId,
+  })
 
   // 2) Poll until succeeded
   const start = Date.now()
@@ -148,7 +156,11 @@ export async function runSigmaQueryAndDownloadCsv(params: {
     }
     await sleep(pollIntervalMs)
 
-    const next = await getSigmaQueryRun({ apiKey: params.apiKey, queryRunId })
+    const next = await getSigmaQueryRun({
+      apiKey: params.apiKey,
+      queryRunId,
+      partnerId: params.partnerId,
+    })
     current = {
       id: queryRunId,
       status: next.status,
