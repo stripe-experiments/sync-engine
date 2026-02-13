@@ -515,7 +515,6 @@ export class StripeSync {
     'invoice.payment_action_required': this.handleInvoiceEvent.bind(this),
     'invoice.payment_failed': this.handleInvoiceEvent.bind(this),
     'invoice.payment_succeeded': this.handleInvoiceEvent.bind(this),
-    'invoice.upcoming': this.handleInvoiceEvent.bind(this),
     'invoice.sent': this.handleInvoiceEvent.bind(this),
     'invoice.voided': this.handleInvoiceEvent.bind(this),
     'invoice.marked_uncollectible': this.handleInvoiceEvent.bind(this),
@@ -584,6 +583,16 @@ export class StripeSync {
 
     // Ensure account exists before processing event (required for foreign key constraints)
     await this.getCurrentAccount()
+
+    // Skip events whose data.object lacks an id — these are preview/draft objects
+    // (e.g. invoice.upcoming) that cannot be persisted due to NOT NULL constraint on id
+    const dataObject = event.data?.object as { id?: string } | undefined
+    if (dataObject && typeof dataObject === 'object' && !dataObject.id) {
+      this.config.logger?.info(
+        `Skipping webhook ${event.id}: ${event.type} — data.object has no id (preview/draft object)`
+      )
+      return
+    }
 
     const handler = this.eventHandlers[event.type]
     if (handler) {
