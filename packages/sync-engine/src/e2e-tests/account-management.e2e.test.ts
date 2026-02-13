@@ -116,7 +116,9 @@ describe('Account Management E2E', () => {
       expect(productsBefore).toBeGreaterThan(0)
 
       // Run dry-run deletion
-      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: true })
+      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, {
+        dryRun: true,
+      })
       // API returns { deletedAccountId, deletedRecordCounts, warnings }
       expect(result.deletedAccountId).toBe(accountId)
       expect(result.deletedRecordCounts).toBeDefined()
@@ -141,7 +143,9 @@ describe('Account Management E2E', () => {
       )
 
       // Perform actual deletion
-      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, { dryRun: false })
+      const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, {
+        dryRun: false,
+      })
       expect(result.deletedAccountId).toBe(accountId)
       expect(result.deletedRecordCounts.products).toBe(productsBefore)
       expect(result.deletedRecordCounts.accounts).toBe(accountsBefore)
@@ -164,8 +168,9 @@ describe('Account Management E2E', () => {
       const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(
         'acct_nonexistent',
         {
-        dryRun: false,
-      })
+          dryRun: false,
+        }
+      )
       expect(result.deletedRecordCounts.accounts).toBe(0)
     })
   })
