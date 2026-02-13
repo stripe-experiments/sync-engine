@@ -81,6 +81,7 @@ export class StripeSync {
         name: 'Stripe Sync Engine',
         version: pkg.version,
         url: pkg.homepage,
+        ...(config.partnerId ? { partner_id: config.partnerId } : {}),
       },
     })
 
@@ -1436,6 +1437,7 @@ export class StripeSync {
       apiKey: this.config.stripeSecretKey,
       sql: sigmaSql,
       logger: this.config.logger,
+      partnerId: this.config.partnerId,
     })
 
     const rows = parseCsvObjects(csv)

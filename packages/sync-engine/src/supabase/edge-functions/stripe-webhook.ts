@@ -19,6 +19,7 @@ Deno.serve(async (req) => {
   const stripeSync = new StripeSync({
     poolConfig: { connectionString: dbUrl, max: 1 },
     stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
+    partnerId: 'pp_supabase',
   })
 
   try {
