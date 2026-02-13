@@ -18,11 +18,7 @@ import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
-import {
-  buildResourceRegistry,
-  getResourceConfigFromId,
-  getResourceName,
-} from './resourceRegistry'
+import { buildResourceRegistry, getResourceConfigFromId, getResourceName } from './resourceRegistry'
 
 /**
  * Identifies a specific sync run.
@@ -918,7 +914,6 @@ export class StripeSync {
     backfillRelatedEntities?: boolean,
     syncTimestamp?: string
   ) {
-
     const entitlements = activeEntitlements.map((entitlement) => ({
       id: entitlement.id,
       object: entitlement.object,
@@ -931,7 +926,6 @@ export class StripeSync {
 
     return this.upsertAny(entitlements, accountId, backfillRelatedEntities, syncTimestamp)
   }
-
 
   async fetchMissingEntities<T>(
     ids: string[],
