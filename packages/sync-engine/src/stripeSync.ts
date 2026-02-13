@@ -15,7 +15,6 @@ import {
 } from './types'
 import { managedWebhookSchema } from './schemas/managed_webhook'
 import { type PoolConfig } from 'pg'
-import { createRetryableStripeClient } from './utils/stripeClientWrapper'
 import { hashApiKey } from './utils/hashApiKey'
 import { parseCsvObjects, runSigmaQueryAndDownloadCsv } from './sigma/sigmaApi'
 import { SIGMA_INGESTION_CONFIGS } from './sigma/sigmaIngestionConfigs'
