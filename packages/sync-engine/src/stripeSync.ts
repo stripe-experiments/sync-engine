@@ -572,6 +572,40 @@ export class StripeSync {
     }
   }
 
+  async fullResyncAll(): Promise<{
+    results: SyncBackfill
+    totals: Record<string, number>
+    totalSynced: number
+    skipped: string[]
+    errors: Array<{ object: string; message: string }>
+  }> {
+    const objects = this.getSupportedSyncObjects()
+    const { runKey } = await this.joinOrCreateSyncRun('fullResyncAll', 'all')
+
+    for (const obj of objects) {
+      // Clear sync cursor from previous runs so this run starts from scratch
+      const resourceName = getResourceName(obj)
+      await this.postgresClient.clearObjectCursorHistory(
+        runKey.accountId,
+        resourceName,
+        runKey.runStartedAt
+      )
+      // Clear pagination page_cursor on the current run
+      await this.postgresClient.clearObjectPageCursor(
+        runKey.accountId,
+        runKey.runStartedAt,
+        resourceName
+      )
+    }
+    const result = await this.processUntilDoneParallel({
+      object: 'all',
+      triggeredBy: 'fullResyncAll',
+      maxParallel: 10,
+      skipInaccessibleSigmaTables: true,
+    })
+    return result
+  }
+
   async processUntilDoneParallel(
     params?: SyncParams & {
       maxParallel?: number

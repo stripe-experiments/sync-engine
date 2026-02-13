@@ -904,6 +904,25 @@ export class PostgresClient {
   }
 
   /**
+   * Clear the sync cursor on all previous completed runs for an object,
+   * so the next run starts from scratch (no created.gte filter).
+   */
+  async clearObjectCursorHistory(
+    accountId: string,
+    object: string,
+    runStartedAt: Date
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET cursor = NULL, updated_at = now()
+       WHERE "_account_id" = $1
+         AND object = $2
+         AND run_started_at < $3`,
+      [accountId, object, runStartedAt]
+    )
+  }
+
+  /**
    * Update the cursor for an object sync.
    * Only updates if the new cursor is higher than the existing one (cursors should never decrease).
    * For numeric cursors (timestamps), uses GREATEST to ensure monotonic increase.

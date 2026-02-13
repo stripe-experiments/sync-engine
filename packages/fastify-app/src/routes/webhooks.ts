@@ -8,7 +8,7 @@ export default async function routes(fastify: FastifyInstance) {
       const signature = request.headers['stripe-signature'] as string
 
       try {
-        await fastify.stripeSync.processWebhook(body.raw, signature)
+        await fastify.stripeSync.webhook.processWebhook(body.raw, signature)
       } catch (error) {
         logger.error(error, 'Webhook processing error')
         return reply

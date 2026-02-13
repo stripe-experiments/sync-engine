@@ -104,7 +104,7 @@ app.post('/stripe-webhooks', async (req, res) => {
   const payload = req.body
 
   try {
-    await sync.processWebhook(payload, signature)
+    await sync.webhook.processWebhook(payload, signature)
     res.status(200).send({ received: true })
   } catch (error) {
     res.status(400).send({ error: error.message })

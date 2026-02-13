@@ -6,6 +6,7 @@ import {
   syncCommand,
   migrateCommand,
   backfillCommand,
+  fullResyncCommand,
   installCommand,
   uninstallCommand,
 } from './commands'
@@ -66,6 +67,21 @@ program
       },
       entityName
     )
+  })
+
+// Full resync command
+program
+  .command('full-resync')
+  .description('Clear all sync cursors and re-sync everything from Stripe from scratch')
+  .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
+  .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--sigma', 'Enable Sigma tables')
+  .action(async (options) => {
+    await fullResyncCommand({
+      stripeKey: options.stripeKey,
+      databaseUrl: options.databaseUrl,
+      enableSigma: options.sigma,
+    })
   })
 
 // Supabase commands
