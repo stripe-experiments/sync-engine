@@ -214,12 +214,7 @@ export class StripeSyncWebhook {
       (customer) => customer.deleted === true
     )
 
-    await this.deps.upsertAny(
-      [customer],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([customer], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handleCheckoutSessionEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -274,12 +269,7 @@ export class StripeSyncWebhook {
       (invoice) => invoice.status === 'void'
     )
 
-    await this.deps.upsertAny(
-      [invoice],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([invoice], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handleProductEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -289,7 +279,12 @@ export class StripeSyncWebhook {
         (id) => this.deps.stripe.products.retrieve(id)
       )
 
-      await this.deps.upsertAny([product], accountId, false, this.getSyncTimestamp(event, refetched))
+      await this.deps.upsertAny(
+        [product],
+        accountId,
+        false,
+        this.getSyncTimestamp(event, refetched)
+      )
     } catch (err) {
       if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
         const product = event.data.object as Stripe.Product
@@ -315,12 +310,7 @@ export class StripeSyncWebhook {
         (id) => this.deps.stripe.prices.retrieve(id)
       )
 
-      await this.deps.upsertAny(
-        [price],
-        accountId,
-        false,
-        this.getSyncTimestamp(event, refetched)
-      )
+      await this.deps.upsertAny([price], accountId, false, this.getSyncTimestamp(event, refetched))
     } catch (err) {
       if (err instanceof Stripe.errors.StripeAPIError && err.code === 'resource_missing') {
         const price = event.data.object as Stripe.Price
@@ -413,12 +403,7 @@ export class StripeSyncWebhook {
       (dispute) => dispute.status === 'won' || dispute.status === 'lost'
     )
 
-    await this.deps.upsertAny(
-      [dispute],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([dispute], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handlePaymentIntentEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -471,12 +456,7 @@ export class StripeSyncWebhook {
       (id) => this.deps.stripe.refunds.retrieve(id)
     )
 
-    await this.deps.upsertAny(
-      [refund],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([refund], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handleReviewEvent(event: Stripe.Event, accountId: string): Promise<void> {
@@ -485,12 +465,7 @@ export class StripeSyncWebhook {
       (id) => this.deps.stripe.reviews.retrieve(id)
     )
 
-    await this.deps.upsertAny(
-      [review],
-      accountId,
-      false,
-      this.getSyncTimestamp(event, refetched)
-    )
+    await this.deps.upsertAny([review], accountId, false, this.getSyncTimestamp(event, refetched))
   }
 
   async handleEntitlementSummaryEvent(event: Stripe.Event, accountId: string): Promise<void> {
