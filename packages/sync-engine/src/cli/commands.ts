@@ -309,7 +309,7 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
  * - Webhook mode: Uses ngrok tunnel + Express server (when NGROK_AUTH_TOKEN is provided)
  */
 export async function syncCommand(options: CliOptions): Promise<void> {
-  let stripeSync: StripeSync | null = null
+  let stripeSync: StripeSync
   let tunnel: NgrokTunnel | null = null
   let server: http.Server | null = null
   let webhookId: string | null = null
@@ -504,7 +504,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
         }
 
         try {
-          await stripeSync!.webhook.processWebhook(rawBody, sig)
+          await stripeSync.webhook.processWebhook(rawBody, sig)
           return res.status(200).send({ received: true })
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -577,6 +577,154 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       console.error(chalk.red(error.message))
     }
     await cleanup()
+    process.exit(1)
+  }
+}
+
+/**
+ * Full resync command - clears all sync cursors and re-syncs everything from Stripe.
+ * Unlike backfill (which is incremental), this performs a complete resync from scratch.
+ */
+export async function fullResyncCommand(options: CliOptions): Promise<void> {
+  let stripeSync: StripeSync | null = null
+
+  try {
+    dotenv.config()
+
+    const enableSigma = options.enableSigma ?? process.env.ENABLE_SIGMA === 'true'
+
+    let stripeApiKey =
+      options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
+    let databaseUrl = options.databaseUrl || process.env.DATABASE_URL || ''
+
+    if (!stripeApiKey || !databaseUrl) {
+      const inquirer = (await import('inquirer')).default
+      const questions = []
+
+      if (!stripeApiKey) {
+        questions.push({
+          type: 'password',
+          name: 'stripeApiKey',
+          message: 'Enter your Stripe API key:',
+          mask: '*',
+          validate: (input: string) => {
+            if (!input || input.trim() === '') {
+              return 'Stripe API key is required'
+            }
+            if (!input.startsWith('sk_') && !input.startsWith('rk_')) {
+              return 'Stripe API key should start with "sk_" or "rk_"'
+            }
+            return true
+          },
+        })
+      }
+
+      if (!databaseUrl) {
+        questions.push({
+          type: 'password',
+          name: 'databaseUrl',
+          message: 'Enter your Postgres DATABASE_URL:',
+          mask: '*',
+          validate: (input: string) => {
+            if (!input || input.trim() === '') {
+              return 'DATABASE_URL is required'
+            }
+            if (!input.startsWith('postgres://') && !input.startsWith('postgresql://')) {
+              return 'DATABASE_URL should start with "postgres://" or "postgresql://"'
+            }
+            return true
+          },
+        })
+      }
+
+      if (questions.length > 0) {
+        console.log(chalk.yellow('\nMissing required configuration. Please provide:'))
+        const answers = await inquirer.prompt(questions)
+        if (answers.stripeApiKey) stripeApiKey = answers.stripeApiKey
+        if (answers.databaseUrl) databaseUrl = answers.databaseUrl
+      }
+    }
+
+    const config = {
+      stripeApiKey,
+      databaseUrl,
+    }
+
+    console.log(chalk.blue('\nPerforming full resync of all Stripe data...'))
+    console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
+    console.log(
+      chalk.yellow('⚠ This will clear all sync cursors and re-sync everything from scratch.\n')
+    )
+
+    // Run migrations first
+    try {
+      await runMigrations({
+        databaseUrl: config.databaseUrl,
+        enableSigma,
+      })
+    } catch (migrationError) {
+      console.error(chalk.red('Failed to run migrations:'))
+      console.error(
+        migrationError instanceof Error ? migrationError.message : String(migrationError)
+      )
+      throw migrationError
+    }
+
+    // Create StripeSync instance
+    const poolConfig: PoolConfig = {
+      max: 10,
+      connectionString: config.databaseUrl,
+      keepAlive: true,
+    }
+
+    stripeSync = new StripeSync({
+      databaseUrl: config.databaseUrl,
+      stripeSecretKey: config.stripeApiKey,
+      enableSigma,
+      stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
+      autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
+      backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
+      poolConfig,
+    })
+
+    // Run full resync
+    const result = await stripeSync.fullResyncAll()
+    const objectCount = Object.keys(result.totals).length
+    console.log(
+      chalk.green(
+        `✓ Full resync complete: ${result.totalSynced} rows synced across ${objectCount} objects`
+      )
+    )
+    if (result.skipped.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Skipped ${result.skipped.length} Sigma tables without access: ${result.skipped.join(', ')}`
+        )
+      )
+    }
+    if (result.errors.length > 0) {
+      console.log(chalk.red(`Full resync finished with ${result.errors.length} errors:`))
+      for (const err of result.errors) {
+        console.log(chalk.red(`  - ${err.object}: ${err.message}`))
+      }
+    }
+
+    // Clean up database pool
+    await stripeSync.close()
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(chalk.red(error.message))
+    }
+
+    // Clean up database pool on error
+    if (stripeSync) {
+      try {
+        await stripeSync.close()
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
     process.exit(1)
   }
 }
