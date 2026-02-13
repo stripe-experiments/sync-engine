@@ -15,9 +15,7 @@ type PostgresConfig = {
  * using the `order` field, since deletion order != creation order.
  */
 const ORDERED_STRIPE_TABLES = [
-  'exchange_rates_from_usd',
   'subscription_items',
-  'subscription_item_change_events_v2_beta',
   'subscriptions',
   'subscription_schedules',
   'checkout_session_line_items',
