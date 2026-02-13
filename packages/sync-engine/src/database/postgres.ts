@@ -354,6 +354,34 @@ export class PostgresClient {
     return counts
   }
 
+  async deletePlan(id: string): Promise<boolean> {
+    return this.delete('plans', id)
+  }
+
+  async deleteProduct(id: string): Promise<boolean> {
+    return this.delete('products', id)
+  }
+
+  async deleteTaxId(id: string): Promise<boolean> {
+    return this.delete('tax_ids', id)
+  }
+
+  async deletePrice(id: string): Promise<boolean> {
+    return this.delete('prices', id)
+  }
+
+  async deleteRemovedActiveEntitlements(
+    customerId: string,
+    currentActiveEntitlementIds: string[]
+  ): Promise<{ rowCount: number }> {
+    const prepared = sql(`
+      delete from "stripe"."active_entitlements"
+      where customer = :customerId and id <> ALL(:currentActiveEntitlementIds::text[]);
+      `)({ customerId, currentActiveEntitlementIds })
+    const { rowCount } = await this.query(prepared.text, prepared.values)
+    return { rowCount: rowCount || 0 }
+  }
+
   async deleteAccountWithCascade(
     accountId: string,
     useTransaction: boolean
