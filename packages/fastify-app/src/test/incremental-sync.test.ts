@@ -601,7 +601,7 @@ describe('processUntilDone', () => {
 
     const result = await stripeSync.processUntilDone({ object: 'product' })
 
-    expect(result.products?.synced).toBe(1)
+    expect(result['product']?.synced).toBe(1)
   })
 })
 

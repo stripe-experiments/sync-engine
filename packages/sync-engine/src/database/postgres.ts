@@ -303,6 +303,19 @@ export class PostgresClient {
   }
 
   /**
+   * Get all accounts that have been synced to the database.
+   * Throws a descriptive error if the query fails.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getAllSyncedAccounts(): Promise<any[]> {
+    try {
+      return await this.getAllAccounts()
+    } catch {
+      throw new Error('Failed to retrieve synced accounts from database')
+    }
+  }
+
+  /**
    * Looks up an account ID by API key hash
    * Uses the GIN index on api_key_hashes for fast lookups
    * @param apiKeyHash - SHA-256 hash of the Stripe API key
@@ -352,6 +365,110 @@ export class PostgresClient {
     }
 
     return counts
+  }
+
+  async deletePlan(id: string): Promise<boolean> {
+    return this.delete('plans', id)
+  }
+
+  async deleteProduct(id: string): Promise<boolean> {
+    return this.delete('products', id)
+  }
+
+  async deleteTaxId(id: string): Promise<boolean> {
+    return this.delete('tax_ids', id)
+  }
+
+  async deletePrice(id: string): Promise<boolean> {
+    return this.delete('prices', id)
+  }
+
+  async deleteRemovedActiveEntitlements(
+    customerId: string,
+    currentActiveEntitlementIds: string[]
+  ): Promise<{ rowCount: number }> {
+    const prepared = sql(`
+      delete from "stripe"."active_entitlements"
+      where customer = :customerId and id <> ALL(:currentActiveEntitlementIds::text[]);
+      `)({ customerId, currentActiveEntitlementIds })
+    const { rowCount } = await this.query(prepared.text, prepared.values)
+    return { rowCount: rowCount || 0 }
+  }
+
+  /**
+   * DANGEROUS: Delete an account and all associated data from the database
+   * This operation cannot be undone!
+   *
+   * @param accountId - The Stripe account ID to delete
+   * @param options - Options for deletion behavior
+   * @param options.dryRun - If true, only count records without deleting (default: false)
+   * @param options.useTransaction - If true, use transaction for atomic deletion (default: true)
+   * @returns Deletion summary with counts and warnings
+   */
+  async dangerouslyDeleteSyncedAccountData(
+    accountId: string,
+    options?: {
+      dryRun?: boolean
+      useTransaction?: boolean
+    }
+  ): Promise<{
+    deletedAccountId: string
+    deletedRecordCounts: { [tableName: string]: number }
+    warnings: string[]
+  }> {
+    const dryRun = options?.dryRun ?? false
+    const useTransaction = options?.useTransaction ?? true
+
+    console.log(
+      `${dryRun ? 'Preview' : 'Deleting'} account ${accountId} (transaction: ${useTransaction})`
+    )
+
+    try {
+      // Get record counts
+      const counts = await this.getAccountRecordCounts(accountId)
+
+      // Generate warnings
+      const warnings: string[] = []
+      let totalRecords = 0
+
+      for (const [table, count] of Object.entries(counts)) {
+        if (count > 0) {
+          totalRecords += count
+          warnings.push(`Will delete ${count} ${table} record${count !== 1 ? 's' : ''}`)
+        }
+      }
+
+      if (totalRecords > 100000) {
+        warnings.push(
+          `Large dataset detected (${totalRecords} total records). Consider using useTransaction: false for better performance.`
+        )
+      }
+
+      // Dry-run mode: just return counts
+      if (dryRun) {
+        console.log(`Dry-run complete: ${totalRecords} total records would be deleted`)
+        return {
+          deletedAccountId: accountId,
+          deletedRecordCounts: counts,
+          warnings,
+        }
+      }
+
+      // Actual deletion
+      const deletionCounts = await this.deleteAccountWithCascade(accountId, useTransaction)
+
+      console.log(`Successfully deleted account ${accountId} with ${totalRecords} total records`)
+
+      return {
+        deletedAccountId: accountId,
+        deletedRecordCounts: deletionCounts,
+        warnings,
+      }
+    } catch (error) {
+      console.error(error, `Failed to delete account ${accountId}`)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      throw new Error(`Failed to delete account ${accountId}: ${errorMessage}`)
+    }
   }
 
   async deleteAccountWithCascade(
@@ -784,6 +901,25 @@ export class PostgresClient {
     object: string
   ): Promise<void> {
     await this.updateObjectPageCursor(accountId, runStartedAt, object, null)
+  }
+
+  /**
+   * Clear the sync cursor on all previous completed runs for an object,
+   * so the next run starts from scratch (no created.gte filter).
+   */
+  async clearObjectCursorHistory(
+    accountId: string,
+    object: string,
+    runStartedAt: Date
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET cursor = NULL, updated_at = now()
+       WHERE "_account_id" = $1
+         AND object = $2
+         AND run_started_at < $3`,
+      [accountId, object, runStartedAt]
+    )
   }
 
   /**

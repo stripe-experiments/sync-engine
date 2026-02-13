@@ -145,33 +145,35 @@ export type SyncObject =
   | 'early_fraud_warning'
   | 'refund'
   | 'checkout_sessions'
+
+export const BACKFILL_DEPENDENCY_MAP: Record<string, string[]> = {
+  customer: [],
+  product: [],
+  price: ['product'],
+  plan: ['product'],
+  subscription: ['customer', 'price'],
+  subscription_schedules: ['customer'],
+  invoice: ['customer', 'subscription'],
+  charge: ['customer', 'invoice'],
+  checkout_sessions: ['customer', 'subscription', 'payment_intent', 'invoice'],
+  setup_intent: ['customer'],
+  payment_method: ['customer'],
+  payment_intent: ['customer', 'invoice'],
+  tax_id: ['customer'],
+  credit_note: ['customer', 'invoice'],
+  dispute: ['charge'],
+  early_fraud_warning: ['payment_intent', 'charge'],
+  refund: ['payment_intent', 'charge'],
+} as const
+
 export interface Sync {
   synced: number
 }
 
-export interface SyncBackfill {
-  products?: Sync
-  prices?: Sync
-  plans?: Sync
-  customers?: Sync
-  subscriptions?: Sync
-  subscriptionSchedules?: Sync
-  invoices?: Sync
-  setupIntents?: Sync
-  paymentIntents?: Sync
-  paymentMethods?: Sync
-  disputes?: Sync
-  charges?: Sync
-  taxIds?: Sync
-  creditNotes?: Sync
-  earlyFraudWarnings?: Sync
-  refunds?: Sync
-  checkoutSessions?: Sync
-  subscriptionItemChangeEventsV2Beta?: Sync
-  exchangeRatesFromUsd?: Sync
-  /** Sigma-backed results by table name (e.g. subscription_item_change_events_v2_beta). */
-  sigma?: Record<string, Sync>
-}
+/**
+ * Result of a backfill sync run, keyed by SyncObject name (e.g. 'product', 'customer', 'subscription_schedules').
+ */
+export type SyncBackfill = Record<string, Sync>
 
 export interface SyncParams {
   created?: {
@@ -249,12 +251,17 @@ export type StripeListResourceConfig = BaseResourceConfig & {
     data: unknown[]
     has_more: boolean
   }>
+  /** Function to retrieve a single item by ID from Stripe API */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  retrieveFn: (id: string) => Promise<Stripe.Response<any>>
   /** Function to upsert items to database */
   upsertFn: (
     items: unknown[],
     accountId: string,
     backfillRelated?: boolean
   ) => Promise<unknown[] | void>
+  /** Optional list of sub-resources to expand during upsert/fetching (e.g. 'refunds', 'listLineItems') */
+  listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
   /** discriminator */
   sigma?: undefined
 }
@@ -271,7 +278,11 @@ export type SigmaResourceConfig = BaseResourceConfig & {
   /** discriminator */
   listFn?: undefined
   /** discriminator */
+  retrieveFn?: undefined
+  /** discriminator */
   upsertFn?: undefined
+  /** discriminator */
+  listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
 }
 
 /** Union of all resource configuration types */

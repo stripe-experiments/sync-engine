@@ -39,7 +39,7 @@ const sync = new StripeSync({
 })
 
 // Create a managed webhook - no additional processing needed!
-const webhook = await sync.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
+const webhook = await sync.webhook.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
 
 // Cleanup when done (closes PostgreSQL connection pool)
 await sync.close()
@@ -54,7 +54,7 @@ The Stripe Sync Engine automatically manages webhook endpoints and their process
 ```typescript
 // Create or reuse an existing webhook endpoint
 // This webhook will automatically sync all Stripe events to your database
-const webhook = await sync.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
+const webhook = await sync.webhook.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
 
 // Create a webhook for specific events
 const webhook = await sync.createManagedWebhook('https://example.com/stripe-webhooks', {
@@ -71,7 +71,7 @@ console.log(webhook.secret) // whsec_xxx
 
 ```typescript
 // List all managed webhooks
-const webhooks = await sync.listManagedWebhooks()
+const webhooks = await sync.webhook.listManagedWebhooks()
 
 // Get a specific webhook
 const webhook = await sync.getManagedWebhook('we_xxx')
@@ -104,7 +104,7 @@ app.post('/stripe-webhooks', async (req, res) => {
   const payload = req.body
 
   try {
-    await sync.processWebhook(payload, signature)
+    await sync.webhook.processWebhook(payload, signature)
     res.status(200).send({ received: true })
   } catch (error) {
     res.status(400).send({ error: error.message })

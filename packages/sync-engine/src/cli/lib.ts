@@ -2,6 +2,7 @@ export {
   syncCommand,
   migrateCommand,
   backfillCommand,
+  fullResyncCommand,
   installCommand,
   uninstallCommand,
 } from './commands'

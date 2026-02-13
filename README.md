@@ -36,7 +36,7 @@ const sync = new StripeSync({
 })
 
 // Create a managed webhook - automatically syncs all Stripe events
-const webhook = await sync.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
+const webhook = await sync.webhook.findOrCreateManagedWebhook('https://example.com/stripe-webhooks')
 
 // Cleanup when done
 await sync.close()
@@ -63,7 +63,7 @@ app.post('/stripe-webhooks', express.raw({ type: 'application/json' }), async (r
   const signature = req.headers['stripe-signature']
 
   try {
-    await sync.processWebhook(req.body, signature)
+    await sync.webhook.processWebhook(req.body, signature)
     res.status(200).send({ received: true })
   } catch (error) {
     res.status(400).send({ error: error.message })
