@@ -14,8 +14,8 @@ export type StripeSyncWebhookDeps = {
   stripe: Stripe
   postgresClient: PostgresClient
   config: StripeSyncConfig
-  accountIdPromise: Promise<string>
-  getCurrentAccount: (objectAccountId?: string) => Promise<Stripe.Account | null>
+  readonly accountId: string
+  getAccountId: (objectAccountId?: string) => Promise<string>
   upsertAny: (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     items: any[],
@@ -33,10 +33,9 @@ export class StripeSyncWebhook {
     let webhookSecret: string | undefined = this.deps.config.stripeWebhookSecret
 
     if (!webhookSecret) {
-      const accountId = await this.deps.accountIdPromise
       const result = await this.deps.postgresClient.query(
         `SELECT secret FROM "stripe"."_managed_webhooks" WHERE account_id = $1 LIMIT 1`,
-        [accountId]
+        [this.deps.accountId]
       )
 
       if (result.rows.length > 0) {
@@ -70,9 +69,7 @@ export class StripeSyncWebhook {
       event.data?.object && typeof event.data.object === 'object' && 'account' in event.data.object
         ? (event.data.object as { account?: string }).account
         : undefined
-    const accountId = objectAccountId ?? (await this.deps.accountIdPromise)
-
-    await this.deps.getCurrentAccount()
+    const accountId = await this.deps.getAccountId(objectAccountId)
     await this.handleAnyEvent(event, accountId)
   }
 
@@ -145,8 +142,7 @@ export class StripeSyncWebhook {
       enabled_events: this.getSupportedEventTypes(),
       ...params,
     }
-    const accountId = await this.deps.accountIdPromise
-    const lockKey = `webhook:${accountId}:${url}`
+    const lockKey = `webhook:${this.deps.accountId}:${url}`
 
     return this.deps.postgresClient.withAdvisoryLock(lockKey, async () => {
       const existingWebhook = await this.getManagedWebhookByUrl(url)
@@ -236,34 +232,31 @@ export class StripeSyncWebhook {
         },
       })
 
-      await this.upsertManagedWebhooks([webhook], accountId)
+      await this.upsertManagedWebhooks([webhook], this.deps.accountId)
       return webhook
     })
   }
 
   async getManagedWebhook(id: string): Promise<Stripe.WebhookEndpoint | null> {
-    const accountId = await this.deps.accountIdPromise
     const result = await this.deps.postgresClient.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE id = $1 AND "account_id" = $2`,
-      [id, accountId]
+      [id, this.deps.accountId]
     )
     return result.rows.length > 0 ? (result.rows[0] as Stripe.WebhookEndpoint) : null
   }
 
   async getManagedWebhookByUrl(url: string): Promise<Stripe.WebhookEndpoint | null> {
-    const accountId = await this.deps.accountIdPromise
     const result = await this.deps.postgresClient.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE url = $1 AND "account_id" = $2`,
-      [url, accountId]
+      [url, this.deps.accountId]
     )
     return result.rows.length > 0 ? (result.rows[0] as Stripe.WebhookEndpoint) : null
   }
 
   async listManagedWebhooks(): Promise<Array<Stripe.WebhookEndpoint>> {
-    const accountId = await this.deps.accountIdPromise
     const result = await this.deps.postgresClient.query(
       `SELECT * FROM "stripe"."_managed_webhooks" WHERE "account_id" = $1 ORDER BY created DESC`,
-      [accountId]
+      [this.deps.accountId]
     )
     return result.rows as Array<Stripe.WebhookEndpoint>
   }
@@ -273,8 +266,7 @@ export class StripeSyncWebhook {
     params: Stripe.WebhookEndpointUpdateParams
   ): Promise<Stripe.WebhookEndpoint> {
     const webhook = await this.deps.stripe.webhookEndpoints.update(id, params)
-    const accountId = await this.deps.accountIdPromise
-    await this.upsertManagedWebhooks([webhook], accountId)
+    await this.upsertManagedWebhooks([webhook], this.deps.accountId)
     return webhook
   }
 

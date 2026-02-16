@@ -74,7 +74,8 @@ Deno.serve(async (req) => {
       await sql.end()
       return new Response('Forbidden: Invalid worker secret', { status: 403 })
     }
-    stripeSync = new StripeSync({
+
+    stripeSync = await StripeSync.create({
       poolConfig: { connectionString: dbUrl, max: 1 },
       stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
       enableSigma: (Deno.env.get('ENABLE_SIGMA') ?? 'false') === 'true',

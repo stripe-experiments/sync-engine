@@ -37,7 +37,7 @@ describe('Sync Run Lifecycle E2E', () => {
     })
 
     // Create StripeSync instance
-    sync = new StripeSync({
+    sync = await StripeSync.create({
       databaseUrl: getDatabaseUrl(PORT, DB_NAME),
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })

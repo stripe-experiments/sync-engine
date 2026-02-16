@@ -18,7 +18,7 @@ beforeAll(async () => {
     logger,
   })
 
-  stripeSync = new StripeSync({
+  stripeSync = await StripeSync.create({
     ...config,
     poolConfig: {
       connectionString: config.databaseUrl,

@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
       }
 
       // Step 1: Delete Stripe webhooks and clean up database
-      stripeSync = new StripeSync({
+      stripeSync = await StripeSync.create({
         poolConfig: { connectionString: dbUrl, max: 2 },
         stripeSecretKey: stripeKey,
       })
@@ -355,7 +355,7 @@ Deno.serve(async (req) => {
       embeddedMigrations
     )
 
-    stripeSync = new StripeSync({
+    stripeSync = await StripeSync.create({
       poolConfig: { connectionString: dbUrl, max: 2 }, // Need 2 for advisory lock + queries
       stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY'),
     })

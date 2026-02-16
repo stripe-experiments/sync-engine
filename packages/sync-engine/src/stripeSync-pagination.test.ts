@@ -13,10 +13,10 @@ import { StripeSync } from './stripeSync'
  */
 describe('Pagination regression tests', () => {
   describe('credit_notes supportsCreatedFilter', () => {
-    it('should have supportsCreatedFilter: true for credit_note', () => {
+    it('should have supportsCreatedFilter: true for credit_note', async () => {
       // Create a minimal StripeSync instance to check the registry
       // We'll access the private resourceRegistry through the object
-      const sync = new StripeSync({
+      const sync = await StripeSync.create({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
         poolConfig: {},
@@ -31,8 +31,8 @@ describe('Pagination regression tests', () => {
       expect(registry.credit_note.supportsCreatedFilter).toBe(true)
     })
 
-    it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', () => {
-      const sync = new StripeSync({
+    it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', async () => {
+      const sync = await StripeSync.create({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
         poolConfig: {},
@@ -73,8 +73,8 @@ describe('Pagination regression tests', () => {
     let sync: StripeSync
     let mockCreditNotesList: ReturnType<typeof vi.fn>
 
-    beforeEach(() => {
-      sync = new StripeSync({
+    beforeEach(async () => {
+      sync = await StripeSync.create({
         stripeSecretKey: 'sk_test_fake',
         databaseUrl: 'postgresql://fake',
         poolConfig: {},

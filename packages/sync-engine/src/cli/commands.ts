@@ -161,7 +161,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
       keepAlive: true,
     }
 
-    stripeSync = new StripeSync({
+    stripeSync = await StripeSync.create({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       enableSigma,
@@ -416,7 +416,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       keepAlive: true,
     }
 
-    stripeSync = new StripeSync({
+    stripeSync = await StripeSync.create({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       enableSigma: config.enableSigma,
@@ -679,7 +679,7 @@ export async function fullResyncCommand(options: CliOptions): Promise<void> {
       keepAlive: true,
     }
 
-    stripeSync = new StripeSync({
+    stripeSync = await StripeSync.create({
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       enableSigma,

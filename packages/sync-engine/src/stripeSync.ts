@@ -43,17 +43,16 @@ export class StripeSync {
   postgresClient: PostgresClient
   config: StripeSyncConfig
   readonly resourceRegistry: Record<string, ResourceConfig>
-  readonly webhook: StripeSyncWebhook
+  webhook!: StripeSyncWebhook
   readonly sigma: SigmaSyncProcessor
-  private readonly defaultAccountIdPromise: Promise<string>
+  accountId!: string
 
   get sigmaSchemaName(): string {
     return this.sigma.sigmaSchemaName
   }
 
-  constructor(config: StripeSyncConfig) {
+  private constructor(config: StripeSyncConfig) {
     this.config = config
-    // Create base Stripe client
     this.stripe = new Stripe(config.stripeSecretKey, {
       // https://github.com/stripe/stripe-node#configuration
       // @ts-ignore
@@ -110,35 +109,40 @@ export class StripeSync {
       upsertSubscriptions: this.upsertSubscriptions.bind(this),
       sigma: this.sigma,
     })
-    this.defaultAccountIdPromise = this.resolveDefaultAccountId()
-    this.webhook = new StripeSyncWebhook({
-      stripe: this.stripe,
-      postgresClient: this.postgresClient,
-      config: this.config,
-      accountIdPromise: this.defaultAccountIdPromise,
-      getCurrentAccount: this.getCurrentAccount.bind(this),
-      upsertAny: this.upsertAny.bind(this),
-      resourceRegistry: this.resourceRegistry,
-    })
   }
 
   /**
-   * Get the Stripe account ID. Delegates to getCurrentAccount() for the actual lookup.
+   * Create a new StripeSync instance. Resolves the default Stripe account,
+   * stores it in the database, and makes the account ID available immediately.
    */
-  async getAccountId(objectAccountId?: string): Promise<string> {
-    if (!objectAccountId) {
-      return this.defaultAccountIdPromise
-    }
-
-    const account = await this.getCurrentAccount(objectAccountId)
+  static async create(config: StripeSyncConfig): Promise<StripeSync> {
+    const instance = new StripeSync(config)
+    const account = await instance.getCurrentAccount()
     if (!account) {
       throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
     }
-    return account.id
+    instance.accountId = account.id
+    instance.webhook = new StripeSyncWebhook({
+      stripe: instance.stripe,
+      postgresClient: instance.postgresClient,
+      config: instance.config,
+      accountId: instance.accountId,
+      getAccountId: instance.getAccountId.bind(instance),
+      upsertAny: instance.upsertAny.bind(instance),
+      resourceRegistry: instance.resourceRegistry,
+    })
+    return instance
   }
 
-  private async resolveDefaultAccountId(): Promise<string> {
-    const account = await this.getCurrentAccount()
+  /**
+   * Get the Stripe account ID. Returns the default account ID, or resolves
+   * a Connect sub-account ID when provided (Connect scenarios).
+   */
+  async getAccountId(objectAccountId?: string): Promise<string> {
+    if (!objectAccountId) {
+      return this.accountId
+    }
+    const account = await this.getCurrentAccount(objectAccountId)
     if (!account) {
       throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
     }
@@ -203,7 +207,7 @@ export class StripeSync {
   }
 
   async syncSingleEntity(stripeId: string) {
-    const accountId = await this.getAccountId()
+    const accountId = this.accountId
     const resourceConfig = getResourceConfigFromId(stripeId, this.resourceRegistry)
     if (!resourceConfig || !resourceConfig.retrieveFn) {
       throw new Error(`Unsupported object type for syncSingleEntity: ${stripeId}`)
@@ -237,9 +241,7 @@ export class StripeSync {
     params?: ProcessNextParams
   ): Promise<ProcessNextResult> {
     try {
-      // Ensure account exists before syncing
-      await this.getCurrentAccount()
-      const accountId = await this.getAccountId()
+      const accountId = this.accountId
 
       // Map object type to resource name (database table)
       const resourceName = getResourceName(object)
@@ -526,8 +528,7 @@ export class StripeSync {
     runKey: RunKey
     objects: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
   }> {
-    await this.getCurrentAccount()
-    const accountId = await this.getAccountId()
+    const accountId = this.accountId
 
     const result = await this.postgresClient.getOrCreateSyncRun(accountId, triggeredBy)
 
@@ -713,7 +714,7 @@ export class StripeSync {
     object: SyncObject | undefined,
     params?: SyncParams
   ): Promise<SyncBackfill> {
-    const accountId = await this.getAccountId()
+    const accountId = this.accountId
 
     const results: SyncBackfill = {}
 
