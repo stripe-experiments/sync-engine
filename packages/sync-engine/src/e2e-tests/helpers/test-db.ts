@@ -94,8 +94,8 @@ export async function queryDbSingle<T = Record<string, unknown>>(
   return rows[0] ?? null
 }
 
-export async function queryDbCount(pool: pg.Pool, sql: string): Promise<number> {
-  const result = await pool.query(sql)
+export async function queryDbCount(pool: pg.Pool, sql: string, params?: any[]): Promise<number> {
+  const result = await pool.query(sql, params)
   return parseInt(result.rows[0]?.count ?? '0', 10)
 }
 

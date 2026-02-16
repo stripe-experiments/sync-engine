@@ -57,6 +57,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       retrieveFn: (id) => stripe.customers.retrieve(id),
       upsertFn: (items, id) => upsertAny(items as Stripe.Customer[], id),
       supportsCreatedFilter: true,
+      isFinalState: (customer: Stripe.Customer | Stripe.DeletedCustomer) =>
+        'deleted' in customer && customer.deleted === true,
     },
     subscription: {
       order: 5, // Depends on customer, price
@@ -67,6 +69,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         { items: (id) => stripe.subscriptionItems.list({ subscription: id, limit: 100 }) },
       ],
       supportsCreatedFilter: true,
+      isFinalState: (subscription: Stripe.Subscription) =>
+        subscription.status === 'canceled' || subscription.status === 'incomplete_expired',
     },
     subscription_schedules: {
       order: 6, // Depends on customer
@@ -74,6 +78,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       retrieveFn: (id) => stripe.subscriptionSchedules.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.SubscriptionSchedule[], id, bf),
       supportsCreatedFilter: true,
+      isFinalState: (schedule: Stripe.SubscriptionSchedule) =>
+        schedule.status === 'canceled' || schedule.status === 'completed',
     },
     invoice: {
       order: 7, // Depends on customer, subscription
@@ -82,6 +88,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Invoice[], id, bf),
       listExpands: [{ lines: (id) => stripe.invoices.listLineItems(id, { limit: 100 }) }],
       supportsCreatedFilter: true,
+      isFinalState: (invoice: Stripe.Invoice) => invoice.status === 'void',
     },
     charge: {
       order: 8, // Depends on customer, invoice
@@ -90,6 +97,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Charge[], id, bf),
       listExpands: [{ refunds: (id) => stripe.refunds.list({ charge: id, limit: 100 }) }],
       supportsCreatedFilter: true,
+      isFinalState: (charge: Stripe.Charge) =>
+        charge.status === 'failed' || charge.status === 'succeeded',
     },
     setup_intent: {
       order: 9, // Depends on customer
@@ -97,6 +106,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       retrieveFn: (id) => stripe.setupIntents.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.SetupIntent[], id, bf),
       supportsCreatedFilter: true,
+      isFinalState: (setupIntent: Stripe.SetupIntent) =>
+        setupIntent.status === 'canceled' || setupIntent.status === 'succeeded',
     },
     payment_method: {
       order: 10, // Depends on customer (special: iterates customers)
@@ -111,6 +122,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       retrieveFn: (id) => stripe.paymentIntents.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.PaymentIntent[], id, bf),
       supportsCreatedFilter: true,
+      isFinalState: (paymentIntent: Stripe.PaymentIntent) =>
+        paymentIntent.status === 'canceled' || paymentIntent.status === 'succeeded',
     },
     tax_id: {
       order: 12, // Depends on customer
@@ -128,6 +141,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         { listLineItems: (id) => stripe.creditNotes.listLineItems(id, { limit: 100 }) },
       ],
       supportsCreatedFilter: true, // credit_notes support created filter
+      isFinalState: (creditNote: Stripe.CreditNote) => creditNote.status === 'void',
     },
     dispute: {
       order: 14, // Depends on charge
@@ -135,6 +149,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       retrieveFn: (id) => stripe.disputes.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Dispute[], id, bf),
       supportsCreatedFilter: true,
+      isFinalState: (dispute: Stripe.Dispute) =>
+        dispute.status === 'won' || dispute.status === 'lost',
     },
     early_fraud_warning: {
       order: 15, // Depends on charge

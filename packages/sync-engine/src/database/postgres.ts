@@ -375,6 +375,20 @@ export class PostgresClient {
     return this.delete('products', id)
   }
 
+  async columnExists(table: string, column: string): Promise<boolean> {
+    const result = await this.query(
+      `SELECT EXISTS (
+          SELECT 1 
+          FROM information_schema.columns 
+          WHERE table_schema = $1 
+          AND table_name = $2 
+          AND column_name = $3
+      )`,
+      [this.config.schema, table, column]
+    )
+    return result.rows[0].exists
+  }
+
   async deleteTaxId(id: string): Promise<boolean> {
     return this.delete('tax_ids', id)
   }

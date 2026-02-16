@@ -56,6 +56,7 @@ describe('WebSocket E2E', () => {
 
     // Cleanup Stripe resources
     await tracker.cleanup(stripe)
+    console.log('cli logs: ', cli.getLogs())
 
     // Close pool and stop PostgreSQL
     await pool?.end()
@@ -125,6 +126,83 @@ describe('WebSocket E2E', () => {
     const logs = cli.getLogs()
     expect(logs).not.toContain('WebSocket error')
   })
+
+  it('should sync plan creation and deletion', async () => {
+    const timestamp = Date.now()
+
+    // 1. Create a product first (plans require a product)
+    const product = await stripe.products.create({
+      name: `Plan Test Product ${timestamp}`,
+      metadata: { test: 'wss-plan-integration' },
+    })
+    tracker.trackProduct(product.id)
+
+    // 2. Create a plan
+    const plan = await stripe.plans.create({
+      amount: 2000,
+      currency: 'usd',
+      interval: 'month',
+      product: product.id,
+      nickname: `Test Plan ${timestamp}`,
+      metadata: { test: 'wss-plan-integration' },
+    })
+    tracker.trackPlan(plan.id)
+
+    // Wait for plan creation event
+    await sleep(10000)
+
+    // Verify plan in database
+    const planCount = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.plans WHERE id = $1', [plan.id])
+    expect(planCount).toBe(1)
+
+    // 3. Delete the plan
+    await stripe.plans.del(plan.id)
+
+    // Wait for plan deletion event
+    await sleep(10000)
+
+    // Verify plan is removed from database
+    const planCountAfterDelete = await queryDbCount(
+      pool,
+      'SELECT COUNT(*) FROM stripe.plans WHERE id = $1',
+      [plan.id]
+    )
+    expect(planCountAfterDelete).toBe(0)
+  }, 40000)
+
+  it('should sync customer creation and soft deletion', async () => {
+    const timestamp = Date.now()
+
+    // 1. Create a customer
+    const customer = await stripe.customers.create({
+      name: `Soft Delete Test Customer ${timestamp}`,
+      email: `soft-delete-${timestamp}@example.com`,
+      metadata: { test: 'wss-customer-soft-delete' },
+    })
+    tracker.trackCustomer(customer.id)
+
+    // Wait for customer creation event
+    await sleep(10000)
+
+    // Verify customer in database
+    const customerCount = await queryDbCount(
+      pool,
+      'SELECT COUNT(*) FROM stripe.customers WHERE id = $1',
+      [customer.id]
+    )
+    expect(customerCount).toBe(1)
+
+    // 2. Delete the customer
+    await stripe.customers.del(customer.id)
+
+    // Wait for customer deletion event
+    await sleep(10000)
+
+    // Verify customer still exists in database but has deleted = true
+    const customerData = await pool.query('SELECT deleted FROM stripe.customers WHERE id = $1', [customer.id])
+    expect(customerData.rows.length).toBe(1)
+    expect(customerData.rows[0].deleted).toBe(true)
+  }, 40000)
 })
 
 function sleep(ms: number): Promise<void> {
