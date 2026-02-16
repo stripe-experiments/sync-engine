@@ -118,6 +118,7 @@ export class StripeSync {
       accountIdPromise: this.defaultAccountIdPromise,
       getCurrentAccount: this.getCurrentAccount.bind(this),
       upsertAny: this.upsertAny.bind(this),
+      resourceRegistry: this.resourceRegistry,
     })
   }
 
@@ -764,7 +765,7 @@ export class StripeSync {
   }
 
   getTableName(objectName: string): string {
-    let tableName = objectName.endsWith('s') ? objectName : `${objectName}s`
+    const tableName = objectName.endsWith('s') ? objectName : `${objectName}s`
     return tableName.replace(/\./g, '_')
   }
 

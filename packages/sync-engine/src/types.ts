@@ -246,6 +246,9 @@ export type BaseResourceConfig = {
   order: number
   /** Whether this resource supports incremental sync via 'created' filter or cursor */
   supportsCreatedFilter: boolean
+  /** Function to check if an entity is in a final state and doesn't need revalidation */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  isFinalState?: (entity: any) => boolean
 }
 
 export type StripeListResourceConfig = BaseResourceConfig & {
