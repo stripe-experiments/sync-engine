@@ -11,6 +11,8 @@ export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
 export const INSTALLATION_STARTED_SUFFIX = 'installation:started'
 export const INSTALLATION_ERROR_SUFFIX = 'installation:error'
 export const INSTALLATION_INSTALLED_SUFFIX = 'installed'
+export const UNINSTALLATION_STARTED_SUFFIX = 'uninstallation:started'
+export const UNINSTALLATION_ERROR_SUFFIX = 'uninstallation:error'
 
 export interface DeployClientOptions {
   accessToken: string
@@ -311,6 +313,27 @@ export class SupabaseSetupClient {
   }
 
   /**
+   * Check if a schema exists in the database
+   * @param schema The schema name to check (defaults to 'stripe')
+   * @returns true if schema exists, false otherwise
+   */
+  private async schemaExists(schema = 'stripe'): Promise<boolean> {
+    try {
+      const schemaCheck = (await this.runSQL(
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.schemata
+          WHERE schema_name = '${schema}'
+        ) as schema_exists`
+      )) as { rows?: { schema_exists: boolean }[] }[]
+
+      return schemaCheck[0]?.rows?.[0]?.schema_exists === true
+    } catch {
+      // Return false if query fails
+      return false
+    }
+  }
+
+  /**
    * Check if stripe-sync is installed in the database.
    *
    * Uses the Supabase Management API to run SQL queries.
@@ -324,16 +347,9 @@ export class SupabaseSetupClient {
   async isInstalled(schema = 'stripe'): Promise<boolean> {
     try {
       // Step 1: Duck typing - check if schema exists
-      const schemaCheck = (await this.runSQL(
-        `SELECT EXISTS (
-          SELECT 1 FROM information_schema.schemata
-          WHERE schema_name = '${schema}'
-        ) as schema_exists`
-      )) as { rows?: { schema_exists: boolean }[] }[]
+      const schemaExistsResult = await this.schemaExists(schema)
 
-      const schemaExists = schemaCheck[0]?.rows?.[0]?.schema_exists === true
-
-      if (!schemaExists) {
+      if (!schemaExistsResult) {
         // Schema doesn't exist - not installed
         return false
       }
@@ -381,6 +397,19 @@ export class SupabaseSetupClient {
         throw new Error(
           `Installation failed: Schema '${schema}' exists but installation encountered an error. ` +
             `Comment: ${comment}. Please uninstall and install again.`
+        )
+      }
+
+      // Check for uninstallation in progress
+      if (comment.includes(UNINSTALLATION_STARTED_SUFFIX)) {
+        return false
+      }
+
+      // Check for failed uninstallation (requires manual intervention)
+      if (comment.includes(UNINSTALLATION_ERROR_SUFFIX)) {
+        throw new Error(
+          `Uninstallation failed: Schema '${schema}' exists but uninstallation encountered an error. ` +
+            `Comment: ${comment}. Manual cleanup may be required.`
         )
       }
 
@@ -435,9 +464,18 @@ export class SupabaseSetupClient {
   /**
    * Uninstall stripe-sync from a Supabase project
    * Invokes the stripe-setup edge function's DELETE endpoint which handles cleanup
+   * Tracks uninstallation progress via schema comments
    */
   async uninstall(): Promise<void> {
     try {
+      // Check if schema exists and mark uninstall as started
+      const hasSchema = await this.schemaExists('stripe')
+      if (hasSchema) {
+        await this.updateInstallationComment(
+          `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${UNINSTALLATION_STARTED_SUFFIX}`
+        )
+      }
+
       // Invoke the DELETE endpoint on stripe-setup function
       // Use accessToken in Authorization header for Management API validation
       const url = `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-setup`
@@ -458,7 +496,23 @@ export class SupabaseSetupClient {
       if (result.success === false) {
         throw new Error(`Uninstall failed: ${result.error}`)
       }
+      // On success, schema is dropped by edge function (no comment update needed)
     } catch (error) {
+      // Mark schema with error if it still exists
+      try {
+        const hasSchema = await this.schemaExists('stripe')
+        if (hasSchema) {
+          await this.updateInstallationComment(
+            `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${UNINSTALLATION_ERROR_SUFFIX} - ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
+        }
+      } catch (error) {
+        throw new Error(
+          `Uninstall failed: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
       throw new Error(`Uninstall failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
