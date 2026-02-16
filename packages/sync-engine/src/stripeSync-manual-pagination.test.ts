@@ -8,7 +8,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
   let mockCustomersList: ReturnType<typeof vi.fn>
   let mockPaymentMethodsList: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers()
 
     // Create minimal config
@@ -24,7 +24,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
     }
 
     // Create StripeSync instance
-    sync = new StripeSync(config)
+    sync = await StripeSync.create(config)
 
     // Create mock functions
     mockCustomersList = vi.fn()

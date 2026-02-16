@@ -15,8 +15,8 @@ describe('joinOrCreateSyncRun', () => {
   let mockGetCurrentAccount: ReturnType<typeof vi.fn>
   let mockCreateObjectRuns: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
-    sync = new StripeSync({
+  beforeEach(async () => {
+    sync = await StripeSync.create({
       stripeSecretKey: 'sk_test_fake',
       databaseUrl: 'postgresql://fake',
       poolConfig: {},

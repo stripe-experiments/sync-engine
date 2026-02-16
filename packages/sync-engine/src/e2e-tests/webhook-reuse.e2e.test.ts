@@ -27,7 +27,7 @@ describe('Webhook Reuse E2E', () => {
     await runMigrations({ databaseUrl: getDatabaseUrl(PORT, DB_NAME) })
 
     // Create StripeSync instance
-    sync = new StripeSync({
+    sync = await StripeSync.create({
       databaseUrl: getDatabaseUrl(PORT, DB_NAME),
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })
@@ -169,7 +169,7 @@ describe('Webhook Reuse E2E', () => {
     }
 
     // Create second StripeSync instance
-    const sync2 = new StripeSync({
+    const sync2 = await StripeSync.create({
       databaseUrl: getDatabaseUrl(PORT, DB_NAME),
       stripeSecretKey: key2,
     })

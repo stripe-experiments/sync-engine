@@ -233,7 +233,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
     vi.restoreAllMocks()
 
-    sync = new StripeSync({
+    sync = await StripeSync.create({
       stripeSecretKey: 'sk_test_fake_sigma',
       databaseUrl: TEST_DB_URL!,
       poolConfig: {},

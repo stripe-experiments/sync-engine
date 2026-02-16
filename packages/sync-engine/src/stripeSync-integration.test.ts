@@ -188,7 +188,7 @@ describeWithDb('StripeSync Integration Tests', () => {
 
     if (validator) await validator.clearAccountData(TEST_ACCOUNT_ID)
 
-    sync = new StripeSync({
+    sync = await StripeSync.create({
       stripeSecretKey: 'sk_test_fake_integration',
       databaseUrl: TEST_DB_URL!,
       poolConfig: {},

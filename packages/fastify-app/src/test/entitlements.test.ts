@@ -19,7 +19,7 @@ beforeAll(async () => {
     logger,
   })
 
-  stripeSync = new StripeSync(config)
+  stripeSync = await StripeSync.create(config)
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
 })
