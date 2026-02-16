@@ -1,9 +1,14 @@
 import Stripe from 'stripe'
 import pkg from '../package.json' with { type: 'json' }
 import { managedWebhookSchema } from './schemas/managed_webhook'
-import { type RevalidateEntity, type StripeSyncConfig, type ResourceConfig } from './types'
+import {
+  type RevalidateEntity,
+  type StripeSyncConfig,
+  type ResourceConfig,
+  SUPPORTED_WEBHOOK_EVENTS,
+} from './types'
 import { PostgresClient } from './database/postgres'
-import { getResourceConfigFromId, getResourceName } from './resourceRegistry'
+import { getResourceName } from './resourceRegistry'
 
 export type StripeSyncWebhookDeps = {
   stripe: Stripe
@@ -22,102 +27,7 @@ export type StripeSyncWebhookDeps = {
 }
 
 export class StripeSyncWebhook {
-  // Note: Uses 'any' for event parameter to allow handlers with specific Stripe event types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly eventHandlers: Record<string, (event: any, accountId: string) => Promise<void>>
-
-  constructor(private readonly deps: StripeSyncWebhookDeps) {
-    this.eventHandlers = {
-      'charge.captured': this.handleAnyEvent.bind(this),
-      'charge.expired': this.handleAnyEvent.bind(this),
-      'charge.failed': this.handleAnyEvent.bind(this),
-      'charge.pending': this.handleAnyEvent.bind(this),
-      'charge.refunded': this.handleAnyEvent.bind(this),
-      'charge.succeeded': this.handleAnyEvent.bind(this),
-      'charge.updated': this.handleAnyEvent.bind(this),
-      'customer.deleted': this.handleAnyEvent.bind(this),
-      'customer.created': this.handleAnyEvent.bind(this),
-      'customer.updated': this.handleAnyEvent.bind(this),
-      'checkout.session.async_payment_failed': this.handleAnyEvent.bind(this),
-      'checkout.session.async_payment_succeeded': this.handleAnyEvent.bind(this),
-      'checkout.session.completed': this.handleAnyEvent.bind(this),
-      'checkout.session.expired': this.handleAnyEvent.bind(this),
-      'customer.subscription.created': this.handleAnyEvent.bind(this),
-      'customer.subscription.deleted': this.handleAnyEvent.bind(this),
-      'customer.subscription.paused': this.handleAnyEvent.bind(this),
-      'customer.subscription.pending_update_applied': this.handleAnyEvent.bind(this),
-      'customer.subscription.pending_update_expired': this.handleAnyEvent.bind(this),
-      'customer.subscription.trial_will_end': this.handleAnyEvent.bind(this),
-      'customer.subscription.resumed': this.handleAnyEvent.bind(this),
-      'customer.subscription.updated': this.handleAnyEvent.bind(this),
-      'customer.tax_id.updated': this.handleAnyEvent.bind(this),
-      'customer.tax_id.created': this.handleAnyEvent.bind(this),
-      'customer.tax_id.deleted': this.handleAnyEvent.bind(this),
-      'invoice.created': this.handleAnyEvent.bind(this),
-      'invoice.deleted': this.handleAnyEvent.bind(this),
-      'invoice.finalized': this.handleAnyEvent.bind(this),
-      'invoice.finalization_failed': this.handleAnyEvent.bind(this),
-      'invoice.paid': this.handleAnyEvent.bind(this),
-      'invoice.payment_action_required': this.handleAnyEvent.bind(this),
-      'invoice.payment_failed': this.handleAnyEvent.bind(this),
-      'invoice.payment_succeeded': this.handleAnyEvent.bind(this),
-      'invoice.upcoming': this.handleAnyEvent.bind(this),
-      'invoice.sent': this.handleAnyEvent.bind(this),
-      'invoice.voided': this.handleAnyEvent.bind(this),
-      'invoice.marked_uncollectible': this.handleAnyEvent.bind(this),
-      'invoice.updated': this.handleAnyEvent.bind(this),
-      'product.created': this.handleAnyEvent.bind(this),
-      'product.updated': this.handleAnyEvent.bind(this),
-      'product.deleted': this.handleAnyEvent.bind(this),
-      'price.created': this.handleAnyEvent.bind(this),
-      'price.updated': this.handleAnyEvent.bind(this),
-      'price.deleted': this.handleAnyEvent.bind(this),
-      'plan.created': this.handleAnyEvent.bind(this),
-      'plan.updated': this.handleAnyEvent.bind(this),
-      'plan.deleted': this.handleAnyEvent.bind(this),
-      'setup_intent.canceled': this.handleAnyEvent.bind(this),
-      'setup_intent.created': this.handleAnyEvent.bind(this),
-      'setup_intent.requires_action': this.handleAnyEvent.bind(this),
-      'setup_intent.setup_failed': this.handleAnyEvent.bind(this),
-      'setup_intent.succeeded': this.handleAnyEvent.bind(this),
-      'subscription_schedule.aborted': this.handleAnyEvent.bind(this),
-      'subscription_schedule.canceled': this.handleAnyEvent.bind(this),
-      'subscription_schedule.completed': this.handleAnyEvent.bind(this),
-      'subscription_schedule.created': this.handleAnyEvent.bind(this),
-      'subscription_schedule.expiring': this.handleAnyEvent.bind(this),
-      'subscription_schedule.released': this.handleAnyEvent.bind(this),
-      'subscription_schedule.updated': this.handleAnyEvent.bind(this),
-      'payment_method.attached': this.handleAnyEvent.bind(this),
-      'payment_method.automatically_updated': this.handleAnyEvent.bind(this),
-      'payment_method.detached': this.handleAnyEvent.bind(this),
-      'payment_method.updated': this.handleAnyEvent.bind(this),
-      'charge.dispute.created': this.handleAnyEvent.bind(this),
-      'charge.dispute.funds_reinstated': this.handleAnyEvent.bind(this),
-      'charge.dispute.funds_withdrawn': this.handleAnyEvent.bind(this),
-      'charge.dispute.updated': this.handleAnyEvent.bind(this),
-      'charge.dispute.closed': this.handleAnyEvent.bind(this),
-      'payment_intent.amount_capturable_updated': this.handleAnyEvent.bind(this),
-      'payment_intent.canceled': this.handleAnyEvent.bind(this),
-      'payment_intent.created': this.handleAnyEvent.bind(this),
-      'payment_intent.partially_funded': this.handleAnyEvent.bind(this),
-      'payment_intent.payment_failed': this.handleAnyEvent.bind(this),
-      'payment_intent.processing': this.handleAnyEvent.bind(this),
-      'payment_intent.requires_action': this.handleAnyEvent.bind(this),
-      'payment_intent.succeeded': this.handleAnyEvent.bind(this),
-      'credit_note.created': this.handleAnyEvent.bind(this),
-      'credit_note.updated': this.handleAnyEvent.bind(this),
-      'credit_note.voided': this.handleAnyEvent.bind(this),
-      'radar.early_fraud_warning.created': this.handleAnyEvent.bind(this),
-      'radar.early_fraud_warning.updated': this.handleAnyEvent.bind(this),
-      'refund.created': this.handleAnyEvent.bind(this),
-      'refund.failed': this.handleAnyEvent.bind(this),
-      'refund.updated': this.handleAnyEvent.bind(this),
-      'charge.refund.updated': this.handleAnyEvent.bind(this),
-      'review.closed': this.handleAnyEvent.bind(this),
-      'review.opened': this.handleAnyEvent.bind(this),
-      'entitlements.active_entitlement_summary.updated': this.handleAnyEvent.bind(this),
-    }
-  }
+  constructor(private readonly deps: StripeSyncWebhookDeps) {}
 
   async processWebhook(payload: Buffer | Uint8Array | string, signature: string | undefined) {
     let webhookSecret: string | undefined = this.deps.config.stripeWebhookSecret
@@ -167,9 +77,7 @@ export class StripeSyncWebhook {
   }
 
   public getSupportedEventTypes(): Stripe.WebhookEndpointCreateParams.EnabledEvent[] {
-    return Object.keys(
-      this.eventHandlers
-    ).sort() as Stripe.WebhookEndpointCreateParams.EnabledEvent[]
+    return [...SUPPORTED_WEBHOOK_EVENTS].sort()
   }
 
   async handleDeletedEvent(event: Stripe.Event, accountId: string): Promise<void> {
