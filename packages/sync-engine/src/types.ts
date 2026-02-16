@@ -240,26 +240,6 @@ export const SUPPORTED_WEBHOOK_EVENTS: Stripe.WebhookEndpointCreateParams.Enable
   'entitlements.active_entitlement_summary.updated',
 ]
 
-export const BACKFILL_DEPENDENCY_MAP: Record<string, string[]> = {
-  customer: [],
-  product: [],
-  price: ['product'],
-  plan: ['product'],
-  subscription: ['customer', 'price'],
-  subscription_schedules: ['customer'],
-  invoice: ['customer', 'subscription'],
-  charge: ['customer', 'invoice'],
-  checkout_sessions: ['customer', 'subscription', 'payment_intent', 'invoice'],
-  setup_intent: ['customer'],
-  payment_method: ['customer'],
-  payment_intent: ['customer', 'invoice'],
-  tax_id: ['customer'],
-  credit_note: ['customer', 'invoice'],
-  dispute: ['charge'],
-  early_fraud_warning: ['payment_intent', 'charge'],
-  refund: ['payment_intent', 'charge'],
-} as const
-
 export interface Sync {
   synced: number
 }
@@ -337,6 +317,8 @@ export type BaseResourceConfig = {
   order: number
   /** Whether this resource supports incremental sync via 'created' filter or cursor */
   supportsCreatedFilter: boolean
+  /** Resource types that must be backfilled before this one (e.g. price depends on product) */
+  dependencies?: string[]
   /** Function to check if an entity is in a final state and doesn't need revalidation */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   isFinalState?: (entity: any) => boolean

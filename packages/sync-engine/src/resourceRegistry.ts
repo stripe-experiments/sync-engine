@@ -31,28 +31,32 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
 
   const core: Record<string, ResourceConfig> = {
     product: {
-      order: 1, // No dependencies
+      order: 1,
+      dependencies: [],
       listFn: (p) => stripe.products.list(p),
       retrieveFn: (id) => stripe.products.retrieve(id),
       upsertFn: (items, id) => upsertAny(items as Stripe.Product[], id),
       supportsCreatedFilter: true,
     },
     price: {
-      order: 2, // Depends on product
+      order: 2,
+      dependencies: ['product'],
       listFn: (p) => stripe.prices.list(p),
       retrieveFn: (id) => stripe.prices.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Price[], id, bf),
       supportsCreatedFilter: true,
     },
     plan: {
-      order: 3, // Depends on product
+      order: 3,
+      dependencies: ['product'],
       listFn: (p) => stripe.plans.list(p),
       retrieveFn: (id) => stripe.plans.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Plan[], id, bf),
       supportsCreatedFilter: true,
     },
     customer: {
-      order: 4, // No dependencies
+      order: 4,
+      dependencies: [],
       listFn: (p) => stripe.customers.list(p),
       retrieveFn: (id) => stripe.customers.retrieve(id),
       upsertFn: (items, id) => upsertAny(items as Stripe.Customer[], id),
@@ -61,7 +65,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         'deleted' in customer && customer.deleted === true,
     },
     subscription: {
-      order: 5, // Depends on customer, price
+      order: 5,
+      dependencies: ['customer', 'price'],
       listFn: (p) => stripe.subscriptions.list(p),
       retrieveFn: (id) => stripe.subscriptions.retrieve(id),
       upsertFn: (items, id, bf) => upsertSubscriptions(items as Stripe.Subscription[], id, bf),
@@ -73,7 +78,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         subscription.status === 'canceled' || subscription.status === 'incomplete_expired',
     },
     subscription_schedules: {
-      order: 6, // Depends on customer
+      order: 6,
+      dependencies: ['customer'],
       listFn: (p) => stripe.subscriptionSchedules.list(p),
       retrieveFn: (id) => stripe.subscriptionSchedules.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.SubscriptionSchedule[], id, bf),
@@ -82,7 +88,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         schedule.status === 'canceled' || schedule.status === 'completed',
     },
     invoice: {
-      order: 7, // Depends on customer, subscription
+      order: 7,
+      dependencies: ['customer', 'subscription'],
       listFn: (p) => stripe.invoices.list(p),
       retrieveFn: (id) => stripe.invoices.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Invoice[], id, bf),
@@ -91,7 +98,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       isFinalState: (invoice: Stripe.Invoice) => invoice.status === 'void',
     },
     charge: {
-      order: 8, // Depends on customer, invoice
+      order: 8,
+      dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.charges.list(p),
       retrieveFn: (id) => stripe.charges.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Charge[], id, bf),
@@ -101,7 +109,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         charge.status === 'failed' || charge.status === 'succeeded',
     },
     setup_intent: {
-      order: 9, // Depends on customer
+      order: 9,
+      dependencies: ['customer'],
       listFn: (p) => stripe.setupIntents.list(p),
       retrieveFn: (id) => stripe.setupIntents.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.SetupIntent[], id, bf),
@@ -110,14 +119,16 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         setupIntent.status === 'canceled' || setupIntent.status === 'succeeded',
     },
     payment_method: {
-      order: 10, // Depends on customer (special: iterates customers)
+      order: 10,
+      dependencies: ['customer'],
       listFn: (p) => stripe.paymentMethods.list(p),
       retrieveFn: (id) => stripe.paymentMethods.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.PaymentMethod[], id, bf),
       supportsCreatedFilter: false, // Requires customer param, can't filter by created
     },
     payment_intent: {
-      order: 11, // Depends on customer
+      order: 11,
+      dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.paymentIntents.list(p),
       retrieveFn: (id) => stripe.paymentIntents.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.PaymentIntent[], id, bf),
@@ -126,14 +137,16 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         paymentIntent.status === 'canceled' || paymentIntent.status === 'succeeded',
     },
     tax_id: {
-      order: 12, // Depends on customer
+      order: 12,
+      dependencies: ['customer'],
       listFn: (p) => stripe.taxIds.list(p),
       retrieveFn: (id) => stripe.taxIds.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.TaxId[], id, bf),
       supportsCreatedFilter: false, // taxIds don't support created filter
     },
     credit_note: {
-      order: 13, // Depends on invoice
+      order: 13,
+      dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.creditNotes.list(p),
       retrieveFn: (id) => stripe.creditNotes.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.CreditNote[], id, bf),
@@ -144,7 +157,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       isFinalState: (creditNote: Stripe.CreditNote) => creditNote.status === 'void',
     },
     dispute: {
-      order: 14, // Depends on charge
+      order: 14,
+      dependencies: ['charge'],
       listFn: (p) => stripe.disputes.list(p),
       retrieveFn: (id) => stripe.disputes.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Dispute[], id, bf),
@@ -153,21 +167,24 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
         dispute.status === 'won' || dispute.status === 'lost',
     },
     early_fraud_warning: {
-      order: 15, // Depends on charge
+      order: 15,
+      dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.radar.earlyFraudWarnings.list(p),
       retrieveFn: (id) => stripe.radar.earlyFraudWarnings.retrieve(id),
       upsertFn: (items, id) => upsertAny(items as Stripe.Radar.EarlyFraudWarning[], id),
       supportsCreatedFilter: true,
     },
     refund: {
-      order: 16, // Depends on charge
+      order: 16,
+      dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.refunds.list(p),
       retrieveFn: (id) => stripe.refunds.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Refund[], id, bf),
       supportsCreatedFilter: true,
     },
     checkout_sessions: {
-      order: 17, // Depends on customer (optional)
+      order: 17,
+      dependencies: ['customer', 'subscription', 'payment_intent', 'invoice'],
       listFn: (p) => stripe.checkout.sessions.list(p),
       retrieveFn: (id) => stripe.checkout.sessions.retrieve(id),
       upsertFn: (items, id, bf) => upsertAny(items as Stripe.Checkout.Session[], id, bf),

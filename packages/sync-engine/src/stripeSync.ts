@@ -11,7 +11,6 @@ import {
   ProcessNextParams,
   SyncObject,
   type ResourceConfig,
-  BACKFILL_DEPENDENCY_MAP,
 } from './types'
 import { type PoolConfig } from 'pg'
 import { hashApiKey } from './utils/hashApiKey'
@@ -746,7 +745,7 @@ export class StripeSync {
   }
   /**
    * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
-   * used in BACKFILL_DEPENDENCY_MAP and getResourceName().
+   * used in resourceRegistry and getResourceName().
    */
   private static readonly STRIPE_OBJECT_TO_SYNC_OBJECT: Record<string, string> = {
     'checkout.session': 'checkout_sessions',
@@ -780,7 +779,7 @@ export class StripeSync {
     const stripeObjectName = items[0].object
 
     const syncObjectName = this.normalizeSyncObjectName(stripeObjectName)
-    const dependencies = BACKFILL_DEPENDENCY_MAP[syncObjectName] ?? []
+    const dependencies = this.resourceRegistry[syncObjectName]?.dependencies ?? []
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       await Promise.all(
         dependencies.map((dependency) =>
