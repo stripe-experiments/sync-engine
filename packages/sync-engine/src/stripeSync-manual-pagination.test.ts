@@ -17,10 +17,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
       poolConfig: {
         connectionString: 'postgresql://test',
       },
-      maxRetries: 3,
-      initialRetryDelayMs: 100,
-      maxRetryDelayMs: 1000,
-      retryJitterMs: 0,
     }
 
     // Create StripeSync instance

@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import type { ResourceConfig, SyncObject } from './types'
+import type { ResourceConfig } from './types'
 import type { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 
 /**
