@@ -59,7 +59,7 @@ describe('entitlements', () => {
       },
     ]
 
-    await stripeSync.deleteRemovedActiveEntitlements(
+    await stripeSync.postgresClient.deleteRemovedActiveEntitlements(
       customerId,
       activeEntitlements.map((entitlement) => entitlement.id)
     )
@@ -106,7 +106,7 @@ describe('entitlements', () => {
       },
     ]
 
-    await stripeSync.deleteRemovedActiveEntitlements(
+    await stripeSync.postgresClient.deleteRemovedActiveEntitlements(
       customerId,
       newActiveEntitlements.map((entitlement) => entitlement.id)
     )
