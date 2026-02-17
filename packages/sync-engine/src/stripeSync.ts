@@ -204,7 +204,7 @@ export class StripeSync {
     await resourceConfig.upsertFn([item], accountId, false)
   }
 
-  async fullResyncAll(
+  async fullSync(
     tables?: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
   ): Promise<{
     results: SyncBackfill
@@ -217,7 +217,7 @@ export class StripeSync {
     const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
     const runKey = await this.postgresClient.joinOrCreateSyncRun(
       this.accountId,
-      'fullResyncAll',
+      'fullSync',
       tableNames
     )
     const workerCount = 10

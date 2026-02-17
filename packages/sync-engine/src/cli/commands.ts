@@ -173,7 +173,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
 
     // Run sync for the specified entity
     if (entityName === 'all') {
-      const backfill = await stripeSync.fullResyncAll()
+      const backfill = await stripeSync.fullSync()
       const objectCount = Object.keys(backfill.totals).length
       console.log(
         chalk.green(
@@ -196,7 +196,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     } else {
       // Use processUntilDone for specific objects (including sigma tables)
       // Cast to any to allow sigma table names which aren't in SyncObject type
-      const result = await stripeSync.fullResyncAll(entityName)
+      const result = await stripeSync.fullSync(entityName)
       const totalSynced = Object.values(result).reduce(
         (sum, syncResult) => sum + (syncResult?.synced || 0),
         0
@@ -529,7 +529,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       }
 
       console.log(chalk.blue('\nStarting historical backfill (parallel sweep)...'))
-      const backfill = await stripeSync.fullResyncAll()
+      const backfill = await stripeSync.fullSync()
       const objectCount = Object.keys(backfill.totals).length
       console.log(
         chalk.green(
@@ -573,7 +573,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
  * Full resync command - clears all sync cursors and re-syncs everything from Stripe.
  * Unlike backfill (which is incremental), this performs a complete resync from scratch.
  */
-export async function fullResyncCommand(options: CliOptions): Promise<void> {
+export async function fullSyncCommand(options: CliOptions): Promise<void> {
   let stripeSync: StripeSync | null = null
 
   try {
@@ -676,7 +676,7 @@ export async function fullResyncCommand(options: CliOptions): Promise<void> {
     })
 
     // Run full resync
-    const result = await stripeSync.fullResyncAll()
+    const result = await stripeSync.fullSync()
     const objectCount = Object.keys(result.totals).length
     console.log(
       chalk.green(
