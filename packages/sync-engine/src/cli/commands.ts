@@ -145,6 +145,7 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
       await runMigrations({
         databaseUrl: config.databaseUrl,
         enableSigma,
+        stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))
@@ -278,6 +279,7 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
       await runMigrations({
         databaseUrl,
         enableSigma,
+        stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       })
       console.log(chalk.green('✓ Migrations completed successfully'))
     } catch (migrationError) {
@@ -400,6 +402,7 @@ export async function syncCommand(options: CliOptions): Promise<void> {
       await runMigrations({
         databaseUrl: config.databaseUrl,
         enableSigma: config.enableSigma,
+        stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))

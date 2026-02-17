@@ -355,7 +355,11 @@ Deno.serve(async (req) => {
     const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
     const enableSigma = (Deno.env.get('ENABLE_SIGMA') ?? 'false') === 'true'
-    await runMigrations({ databaseUrl: dbUrl, enableSigma })
+    await runMigrations({
+      databaseUrl: dbUrl,
+      enableSigma,
+      stripeApiVersion: Deno.env.get('STRIPE_API_VERSION') ?? '2020-08-27',
+    })
 
     stripeSync = new StripeSync({
       poolConfig: { connectionString: dbUrl, max: 2 }, // Need 2 for advisory lock + queries
