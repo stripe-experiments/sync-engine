@@ -105,11 +105,15 @@ export class StripeSync {
    */
   static async create(config: StripeSyncConfig): Promise<StripeSync> {
     const instance = new StripeSync(config)
-    const account = await instance.getCurrentAccount()
-    if (!account) {
-      throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
+    if (config.stripeAccountId) {
+      instance.accountId = config.stripeAccountId
+    } else {
+      const account = await instance.getCurrentAccount()
+      if (!account) {
+        throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
+      }
+      instance.accountId = account.id
     }
-    instance.accountId = account.id
     instance.webhook = new StripeSyncWebhook({
       stripe: instance.stripe,
       postgresClient: instance.postgresClient,

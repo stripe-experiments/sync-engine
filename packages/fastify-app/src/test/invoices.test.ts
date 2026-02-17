@@ -21,18 +21,13 @@ beforeAll(async () => {
 
   stripeSync = await StripeSync.create({
     ...config,
+    stripeAccountId: TEST_ACCOUNT_ID,
     poolConfig: {
       connectionString: config.databaseUrl,
     },
   })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
-
-  // Mock getCurrentAccount to avoid API calls
-  vitest.spyOn(stripeSync, 'getCurrentAccount').mockResolvedValue({
-    id: TEST_ACCOUNT_ID,
-    object: 'account',
-  } as Stripe.Account)
 
   // Ensure test account exists in database with API key hash
   const apiKeyHash = hashApiKey(config.stripeSecretKey)

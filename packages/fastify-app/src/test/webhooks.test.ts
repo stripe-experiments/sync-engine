@@ -29,6 +29,7 @@ describe('POST /webhooks', () => {
     })
 
     process.env.AUTO_EXPAND_LISTS = 'false'
+    process.env.STRIPE_ACCOUNT_ID = process.env.STRIPE_ACCOUNT_ID || 'acct_test_account'
     server = await createServer()
 
     const stripeSync = server.getDecorator<StripeSync>('stripeSync')

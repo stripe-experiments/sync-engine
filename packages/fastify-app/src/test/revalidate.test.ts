@@ -19,6 +19,7 @@ beforeAll(async () => {
 
   stripeSync = await StripeSync.create({
     ...config,
+    stripeAccountId: 'acct_test_account',
     poolConfig: {
       connectionString: config.databaseUrl,
     },
