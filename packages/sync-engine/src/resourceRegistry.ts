@@ -237,6 +237,27 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
 }
 
 /**
+ * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
+ * used in resourceRegistry and getTableName().
+ */
+const STRIPE_OBJECT_TO_SYNC_OBJECT: Record<string, string> = {
+  'checkout.session': 'checkout_sessions',
+  'radar.early_fraud_warning': 'early_fraud_warning',
+  'entitlements.active_entitlement': 'active_entitlements',
+  'entitlements.feature': 'features',
+  subscription_schedule: 'subscription_schedules',
+}
+
+/**
+ * Convert a Stripe API object name (e.g. "checkout.session") to a SyncObject-compatible key.
+ * Handles dotted names like "checkout.session" -> "checkout_sessions".
+ * For simple names, returns as-is (e.g. "customer" -> "customer").
+ */
+export function normalizeStripeObjectName(stripeObjectName: string): StripeObject {
+  return (STRIPE_OBJECT_TO_SYNC_OBJECT[stripeObjectName] ?? stripeObjectName) as StripeObject
+}
+
+/**
  * Maps Stripe ID prefixes to resource names used in the registry.
  * Used to resolve a Stripe object ID (e.g. "cus_xxx") to its resource type.
  * Prefixes are checked in order; longer prefixes should appear before shorter

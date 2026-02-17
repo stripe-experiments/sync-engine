@@ -1,12 +1,7 @@
 import Stripe from 'stripe'
 import pkg from '../package.json' with { type: 'json' }
 import { managedWebhookSchema } from './schemas/managed_webhook'
-import {
-  type RevalidateEntity,
-  type StripeSyncConfig,
-  type ResourceConfig,
-  SUPPORTED_WEBHOOK_EVENTS,
-} from './types'
+import { type StripeSyncConfig, type ResourceConfig, SUPPORTED_WEBHOOK_EVENTS } from './types'
 import { PostgresClient } from './database/postgres'
 import { getTableName } from './resourceRegistry'
 
@@ -126,12 +121,6 @@ export class StripeSyncWebhook {
 
   getSyncTimestamp(event: Stripe.Event, refetched: boolean) {
     return refetched ? new Date().toISOString() : new Date(event.created * 1000).toISOString()
-  }
-
-  shouldRefetchEntity(entity: { object: string }) {
-    return this.deps.config.revalidateObjectsViaStripeApi?.includes(
-      entity.object as RevalidateEntity
-    )
   }
 
   async findOrCreateManagedWebhook(

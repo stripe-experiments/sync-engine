@@ -2,15 +2,7 @@ import Stripe from 'stripe'
 import { pg as sql } from 'yesql'
 import pkg from '../package.json' with { type: 'json' }
 import { PostgresClient } from './database/postgres'
-import {
-  StripeSyncConfig,
-  SyncBackfill,
-  SyncParams,
-  ProcessNextResult,
-  ProcessNextParams,
-  SyncObject,
-  type ResourceConfig,
-} from './types'
+import { StripeSyncConfig, SyncBackfill, SyncObject, type ResourceConfig } from './types'
 import { type PoolConfig } from 'pg'
 import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
@@ -20,6 +12,7 @@ import {
   buildResourceRegistry,
   getResourceConfigFromId,
   getTableName,
+  normalizeStripeObjectName,
   StripeObject,
 } from './resourceRegistry'
 import { StripeSyncWorker } from './stripeSyncWorker'
@@ -32,11 +25,18 @@ export type RunKey = {
   runStartedAt: Date
 }
 
-function getUniqueIds<T>(entries: T[], key: string): string[] {
+function buildPoolConfig(config: StripeSyncConfig): PoolConfig {
+  const poolConfig = config.poolConfig ?? ({} as PoolConfig)
+  if (config.databaseUrl) poolConfig.connectionString = config.databaseUrl
+  if (config.maxPostgresConnections) poolConfig.max = config.maxPostgresConnections
+  poolConfig.max ??= 10
+  poolConfig.keepAlive ??= true
+  return poolConfig
+}
+
+function getUniqueIds<T>(entries: T[], key: keyof T & string): string[] {
   const set = new Set(
-    entries
-      .map((subscription) => subscription?.[key as keyof T]?.toString())
-      .filter((it): it is string => Boolean(it))
+    entries.map((entry) => entry?.[key]?.toString()).filter((it): it is string => Boolean(it))
   )
 
   return Array.from(set)
@@ -76,23 +76,7 @@ export class StripeSync {
       'StripeSync initialized'
     )
 
-    const poolConfig = config.poolConfig ?? ({} as PoolConfig)
-
-    if (config.databaseUrl) {
-      poolConfig.connectionString = config.databaseUrl
-    }
-
-    if (config.maxPostgresConnections) {
-      poolConfig.max = config.maxPostgresConnections
-    }
-
-    if (poolConfig.max === undefined) {
-      poolConfig.max = 10
-    }
-
-    if (poolConfig.keepAlive === undefined) {
-      poolConfig.keepAlive = true
-    }
+    const poolConfig = buildPoolConfig(config)
 
     this.postgresClient = new PostgresClient({
       schema: 'stripe',
@@ -270,28 +254,6 @@ export class StripeSync {
     return { results, totals, totalSynced, skipped: [], errors }
   }
 
-  /**
-   * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
-   * used in resourceRegistry and getTableName().
-   */
-  private static readonly STRIPE_OBJECT_TO_SYNC_OBJECT: Record<string, string> = {
-    'checkout.session': 'checkout_sessions',
-    'radar.early_fraud_warning': 'early_fraud_warning',
-    'entitlements.active_entitlement': 'active_entitlements',
-    'entitlements.feature': 'features',
-    subscription_schedule: 'subscription_schedules',
-  }
-
-  /**
-   * Convert a Stripe API object name (items[0].object) to a SyncObject-compatible key.
-   * Handles dotted names like "checkout.session" → "checkout_sessions".
-   * For simple names, returns as-is (e.g. "customer" → "customer").
-   */
-  private normalizeSyncObjectName(stripeObjectName: string): StripeObject {
-    return (StripeSync.STRIPE_OBJECT_TO_SYNC_OBJECT[stripeObjectName] ??
-      stripeObjectName) as StripeObject
-  }
-
   async upsertAny(
     items: { [Key: string]: any }[], // eslint-disable-line @typescript-eslint/no-explicit-any
     accountId: string,
@@ -301,7 +263,7 @@ export class StripeSync {
     if (items.length === 0) return []
     const stripeObjectName = items[0].object
 
-    const syncObjectName = this.normalizeSyncObjectName(stripeObjectName)
+    const syncObjectName = normalizeStripeObjectName(stripeObjectName)
     const dependencies = this.resourceRegistry[syncObjectName]?.dependencies ?? []
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       await Promise.all(
@@ -353,20 +315,12 @@ export class StripeSync {
     accountId: string,
     syncTimestamp?: string
   ) {
-    const modifiedSubscriptionItems = subscriptionItems.map((subscriptionItem) => {
-      // Modify price object to string id; reference prices table
-      const priceId = subscriptionItem.price.id.toString()
-      // deleted exists only on a deleted item
-      const deleted = subscriptionItem.deleted
-      // quantity not exist on volume tier item
-      const quantity = subscriptionItem.quantity
-      return {
-        ...subscriptionItem,
-        price: priceId,
-        deleted: deleted ?? false,
-        quantity: quantity ?? null,
-      }
-    })
+    const modifiedSubscriptionItems = subscriptionItems.map((subscriptionItem) => ({
+      ...subscriptionItem,
+      price: subscriptionItem.price.id.toString(),
+      deleted: subscriptionItem.deleted ?? false,
+      quantity: subscriptionItem.quantity ?? null,
+    }))
 
     await this.postgresClient.upsertManyWithTimestampProtection(
       modifiedSubscriptionItems,
@@ -457,15 +411,7 @@ export class StripeSync {
     fetch: (id: string) => Promise<Stripe.Response<T>>
   ): Promise<T[]> {
     if (!ids.length) return []
-
-    const entities: T[] = []
-
-    for (const id of ids) {
-      const entity = await fetch(id)
-      entities.push(entity)
-    }
-
-    return entities
+    return Promise.all(ids.map(fetch))
   }
 
   /**
