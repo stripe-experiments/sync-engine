@@ -16,7 +16,13 @@ import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
-import { buildResourceRegistry, getResourceConfigFromId, getResourceName } from './resourceRegistry'
+import {
+  buildResourceRegistry,
+  getResourceConfigFromId,
+  getTableName,
+  StripeObject,
+} from './resourceRegistry'
+import { StripeSyncWorker } from './stripeSyncWorker'
 
 /**
  * Identifies a specific sync run.
@@ -40,7 +46,7 @@ export class StripeSync {
   stripe: Stripe
   postgresClient: PostgresClient
   config: StripeSyncConfig
-  readonly resourceRegistry: Record<string, ResourceConfig>
+  readonly resourceRegistry: Record<StripeObject, ResourceConfig>
   webhook!: StripeSyncWebhook
   readonly sigma: SigmaSyncProcessor
   accountId!: string
@@ -242,7 +248,7 @@ export class StripeSync {
       const accountId = this.accountId
 
       // Map object type to resource name (database table)
-      const resourceName = getResourceName(object)
+      const resourceName = getTableName(object, this.resourceRegistry)
 
       // Get or create sync run
       let runStartedAt: Date
@@ -328,23 +334,8 @@ export class StripeSync {
 
       return result
     } catch (error) {
-      throw this.appendMigrationHint(error)
+      throw new Error(`Error processing next page for ${object}: ${error}`)
     }
-  }
-
-  appendMigrationHint(error: unknown): Error {
-    const hint =
-      'Error occurred. Make sure you are up to date with DB migrations which can sometimes help with this. Details:'
-    const withHint = (message: string) => (message.includes(hint) ? message : `${hint}\n${message}`)
-
-    if (error instanceof Error) {
-      const { stack } = error
-      error.message = withHint(error.message)
-      if (stack) error.stack = stack
-      return error
-    }
-
-    return new Error(withHint(String(error)))
   }
 
   /**
@@ -488,34 +479,39 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = this.getSupportedSyncObjects()
+    const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
     const runKey = await this.postgresClient.joinOrCreateSyncRun(
       this.accountId,
       'fullResyncAll',
-      objects.map((obj) => getResourceName(obj))
+      tableNames
+    )
+    const worker = new StripeSyncWorker(
+      this.stripe,
+      this.config,
+      this.sigma,
+      this.postgresClient,
+      this.accountId,
+      this.resourceRegistry,
+      runKey
+    )
+    worker.start()
+    await worker.waitUntilDone()
+
+    const totals = await this.postgresClient.getObjectSyncedCounts(
+      this.accountId,
+      runKey.runStartedAt
     )
 
-    for (const obj of objects) {
-      // Clear sync cursor from previous runs so this run starts from scratch
-      const resourceName = getResourceName(obj)
-      await this.postgresClient.clearObjectCursorHistory(
-        runKey.accountId,
-        resourceName,
-        runKey.runStartedAt
-      )
-      // Clear pagination page_cursor on the current run
-      await this.postgresClient.clearObjectPageCursor(
-        runKey.accountId,
-        runKey.runStartedAt,
-        resourceName
-      )
+    const results: SyncBackfill = {}
+    const errors: Array<{ object: string; message: string }> = []
+    for (const [obj, count] of Object.entries(totals)) {
+      results[obj] = { synced: count }
     }
-    const result = await this.processUntilDoneParallel({
-      object: 'all',
-      triggeredBy: 'fullResyncAll',
-      maxParallel: 10,
-      skipInaccessibleSigmaTables: true,
-    })
-    return result
+    const totalSynced = Object.values(totals).reduce((sum, count) => sum + count, 0)
+
+    await this.postgresClient.closeSyncRun(runKey.accountId, runKey.runStartedAt)
+
+    return { results, totals, totalSynced, skipped: [], errors }
   }
 
   async processUntilDoneParallel(
@@ -547,7 +543,7 @@ export class StripeSync {
     const runKey = await this.postgresClient.joinOrCreateSyncRun(
       this.accountId,
       triggeredBy,
-      objectsToSync.map((obj) => getResourceName(obj))
+      objectsToSync.map((obj) => getTableName(obj, this.resourceRegistry))
     )
     const runConfig = await this.postgresClient.getSyncRun(runKey.accountId, runKey.runStartedAt)
     const maxConcurrent = runConfig?.maxConcurrent ?? 10
@@ -629,7 +625,7 @@ export class StripeSync {
   }
   /**
    * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
-   * used in resourceRegistry and getResourceName().
+   * used in resourceRegistry and getTableName().
    */
   private static readonly STRIPE_OBJECT_TO_SYNC_OBJECT: Record<string, string> = {
     'checkout.session': 'checkout_sessions',
@@ -644,13 +640,9 @@ export class StripeSync {
    * Handles dotted names like "checkout.session" → "checkout_sessions".
    * For simple names, returns as-is (e.g. "customer" → "customer").
    */
-  private normalizeSyncObjectName(stripeObjectName: string): string {
-    return StripeSync.STRIPE_OBJECT_TO_SYNC_OBJECT[stripeObjectName] ?? stripeObjectName
-  }
-
-  getTableName(objectName: string): string {
-    const tableName = objectName.endsWith('s') ? objectName : `${objectName}s`
-    return tableName.replace(/\./g, '_')
+  private normalizeSyncObjectName(stripeObjectName: string): StripeObject {
+    return (StripeSync.STRIPE_OBJECT_TO_SYNC_OBJECT[stripeObjectName] ??
+      stripeObjectName) as StripeObject
   }
 
   async upsertAny(
@@ -667,7 +659,7 @@ export class StripeSync {
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       await Promise.all(
         dependencies.map((dependency) =>
-          this.backfillAny(getUniqueIds(items, dependency), dependency as SyncObject, accountId)
+          this.backfillAny(getUniqueIds(items, dependency), dependency as StripeObject, accountId)
         )
       )
     }
@@ -686,7 +678,7 @@ export class StripeSync {
       }
     }
 
-    const tableName = this.getTableName(stripeObjectName)
+    const tableName = getTableName(syncObjectName, this.resourceRegistry)
     const rows = this.postgresClient.upsertManyWithTimestampProtection(
       items,
       tableName,
@@ -696,9 +688,9 @@ export class StripeSync {
     return rows
   }
 
-  async backfillAny(ids: string[], objectName: SyncObject, accountId: string) {
-    const tableName = this.getTableName(objectName)
+  async backfillAny(ids: string[], objectName: StripeObject, accountId: string) {
     const config = this.resourceRegistry[objectName]
+    const tableName = config?.tableName ?? objectName
     if (!config?.retrieveFn) {
       throw new Error(`No retrieveFn registered for resource: ${objectName}`)
     }

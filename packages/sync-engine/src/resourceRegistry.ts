@@ -22,6 +22,25 @@ export type ResourceRegistryDeps = {
   sigma: SigmaSyncProcessor
 }
 
+export type StripeObject =
+  | 'product'
+  | 'price'
+  | 'plan'
+  | 'customer'
+  | 'subscription'
+  | 'subscription_schedules'
+  | 'invoice'
+  | 'charge'
+  | 'setup_intent'
+  | 'payment_method'
+  | 'payment_intent'
+  | 'tax_id'
+  | 'credit_note'
+  | 'dispute'
+  | 'early_fraud_warning'
+  | 'refund'
+  | 'checkout_sessions'
+
 // Resource registry - maps SyncObject → list/upsert operations for processNext()
 // Complements eventHandlers which maps event types → handlers for webhooks
 // Both registries share the same underlying upsert methods
@@ -29,9 +48,10 @@ export type ResourceRegistryDeps = {
 export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string, ResourceConfig> {
   const { stripe, upsertAny, upsertSubscriptions, sigma } = deps
 
-  const core: Record<string, ResourceConfig> = {
+  const core: Record<StripeObject, ResourceConfig> = {
     product: {
       order: 1,
+      tableName: 'products',
       dependencies: [],
       listFn: (p) => stripe.products.list(p),
       retrieveFn: (id) => stripe.products.retrieve(id),
@@ -40,6 +60,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     price: {
       order: 2,
+      tableName: 'prices',
       dependencies: ['product'],
       listFn: (p) => stripe.prices.list(p),
       retrieveFn: (id) => stripe.prices.retrieve(id),
@@ -48,6 +69,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     plan: {
       order: 3,
+      tableName: 'plans',
       dependencies: ['product'],
       listFn: (p) => stripe.plans.list(p),
       retrieveFn: (id) => stripe.plans.retrieve(id),
@@ -56,6 +78,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     customer: {
       order: 4,
+      tableName: 'customers',
       dependencies: [],
       listFn: (p) => stripe.customers.list(p),
       retrieveFn: (id) => stripe.customers.retrieve(id),
@@ -66,6 +89,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     subscription: {
       order: 5,
+      tableName: 'subscriptions',
       dependencies: ['customer', 'price'],
       listFn: (p) => stripe.subscriptions.list(p),
       retrieveFn: (id) => stripe.subscriptions.retrieve(id),
@@ -79,6 +103,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     subscription_schedules: {
       order: 6,
+      tableName: 'subscription_schedules',
       dependencies: ['customer'],
       listFn: (p) => stripe.subscriptionSchedules.list(p),
       retrieveFn: (id) => stripe.subscriptionSchedules.retrieve(id),
@@ -89,6 +114,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     invoice: {
       order: 7,
+      tableName: 'invoices',
       dependencies: ['customer', 'subscription'],
       listFn: (p) => stripe.invoices.list(p),
       retrieveFn: (id) => stripe.invoices.retrieve(id),
@@ -99,6 +125,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     charge: {
       order: 8,
+      tableName: 'charges',
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.charges.list(p),
       retrieveFn: (id) => stripe.charges.retrieve(id),
@@ -110,6 +137,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     setup_intent: {
       order: 9,
+      tableName: 'setup_intents',
       dependencies: ['customer'],
       listFn: (p) => stripe.setupIntents.list(p),
       retrieveFn: (id) => stripe.setupIntents.retrieve(id),
@@ -120,6 +148,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     payment_method: {
       order: 10,
+      tableName: 'payment_methods',
       dependencies: ['customer'],
       listFn: (p) => stripe.paymentMethods.list(p),
       retrieveFn: (id) => stripe.paymentMethods.retrieve(id),
@@ -128,6 +157,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     payment_intent: {
       order: 11,
+      tableName: 'payment_intents',
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.paymentIntents.list(p),
       retrieveFn: (id) => stripe.paymentIntents.retrieve(id),
@@ -138,6 +168,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     tax_id: {
       order: 12,
+      tableName: 'tax_ids',
       dependencies: ['customer'],
       listFn: (p) => stripe.taxIds.list(p),
       retrieveFn: (id) => stripe.taxIds.retrieve(id),
@@ -146,6 +177,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     credit_note: {
       order: 13,
+      tableName: 'credit_notes',
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.creditNotes.list(p),
       retrieveFn: (id) => stripe.creditNotes.retrieve(id),
@@ -158,6 +190,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     dispute: {
       order: 14,
+      tableName: 'disputes',
       dependencies: ['charge'],
       listFn: (p) => stripe.disputes.list(p),
       retrieveFn: (id) => stripe.disputes.retrieve(id),
@@ -168,6 +201,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     early_fraud_warning: {
       order: 15,
+      tableName: 'early_fraud_warnings',
       dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.radar.earlyFraudWarnings.list(p),
       retrieveFn: (id) => stripe.radar.earlyFraudWarnings.retrieve(id),
@@ -176,6 +210,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     refund: {
       order: 16,
+      tableName: 'refunds',
       dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.refunds.list(p),
       retrieveFn: (id) => stripe.refunds.retrieve(id),
@@ -184,6 +219,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
     checkout_sessions: {
       order: 17,
+      tableName: 'checkout_sessions',
       dependencies: ['customer', 'subscription', 'payment_intent', 'invoice'],
       listFn: (p) => stripe.checkout.sessions.list(p),
       retrieveFn: (id) => stripe.checkout.sessions.retrieve(id),
@@ -252,28 +288,15 @@ export function getResourceConfigFromId(
 }
 
 /**
- * Get the database resource name (table name) for a SyncObject type.
+ * Get the database table name for a SyncObject type from the resource registry.
  */
-const RESOURCE_NAME_MAP: Record<string, string> = {
-  customer: 'customers',
-  invoice: 'invoices',
-  price: 'prices',
-  product: 'products',
-  subscription: 'subscriptions',
-  subscription_schedules: 'subscription_schedules',
-  setup_intent: 'setup_intents',
-  payment_method: 'payment_methods',
-  dispute: 'disputes',
-  charge: 'charges',
-  payment_intent: 'payment_intents',
-  plan: 'plans',
-  tax_id: 'tax_ids',
-  credit_note: 'credit_notes',
-  early_fraud_warning: 'early_fraud_warnings',
-  refund: 'refunds',
-  checkout_sessions: 'checkout_sessions',
-}
-
-export function getResourceName(object: SyncObject | string): string {
-  return RESOURCE_NAME_MAP[object] || object
+export function getTableName(
+  object: string,
+  registry: Record<string, ResourceConfig>
+): string {
+  const config = registry[object]
+  if (!config) {
+    throw new Error(`No resource config found for object type: ${object}`)
+  }
+  return config.tableName
 }

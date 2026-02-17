@@ -315,6 +315,8 @@ export interface ProcessNextParams extends SyncParams {
 export type BaseResourceConfig = {
   /** Backfill order: lower numbers sync first; parents before children for FK dependencies */
   order: number
+  /** Database table name for this resource (e.g. 'customers', 'invoices') */
+  tableName: string
   /** Whether this resource supports incremental sync via 'created' filter or cursor */
   supportsCreatedFilter: boolean
   /** Resource types that must be backfilled before this one (e.g. price depends on product) */

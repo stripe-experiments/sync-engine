@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PostgresClient } from './database/postgres'
-import { getResourceName } from './resourceRegistry'
+import { getTableName } from './resourceRegistry'
+import type { ResourceConfig } from './types'
 
 /**
  * Unit tests for PostgresClient.joinOrCreateSyncRun().
@@ -98,17 +99,26 @@ describe('joinOrCreateSyncRun', () => {
   })
 
   describe('Resource Name Mapping Contract', () => {
-    it('getResourceName should produce plural resource names from object types', () => {
+    it('getTableName should produce plural resource names from object types', () => {
+      const mockRegistry: Record<string, ResourceConfig> = {
+        customer: { tableName: 'customers' } as ResourceConfig,
+        product: { tableName: 'products' } as ResourceConfig,
+        price: { tableName: 'prices' } as ResourceConfig,
+        invoice: { tableName: 'invoices' } as ResourceConfig,
+        subscription_schedules: { tableName: 'subscription_schedules' } as ResourceConfig,
+        checkout_sessions: { tableName: 'checkout_sessions' } as ResourceConfig,
+      }
+
       // This test documents the contract that callers must map object types
       // to resource names before calling joinOrCreateSyncRun
-      expect(getResourceName('customer')).toBe('customers')
-      expect(getResourceName('product')).toBe('products')
-      expect(getResourceName('price')).toBe('prices')
-      expect(getResourceName('invoice')).toBe('invoices')
+      expect(getTableName('customer', mockRegistry)).toBe('customers')
+      expect(getTableName('product', mockRegistry)).toBe('products')
+      expect(getTableName('price', mockRegistry)).toBe('prices')
+      expect(getTableName('invoice', mockRegistry)).toBe('invoices')
 
       // Already plural types pass through
-      expect(getResourceName('subscription_schedules')).toBe('subscription_schedules')
-      expect(getResourceName('checkout_sessions')).toBe('checkout_sessions')
+      expect(getTableName('subscription_schedules', mockRegistry)).toBe('subscription_schedules')
+      expect(getTableName('checkout_sessions', mockRegistry)).toBe('checkout_sessions')
     })
   })
 })
