@@ -56,7 +56,7 @@ describe('WebSocket E2E', () => {
 
     // Cleanup Stripe resources
     await tracker.cleanup(stripe)
-    console.log('cli logs: ', cli.getLogs())
+    console.log('cli logs: ', cli?.getLogs())
 
     // Close pool and stop PostgreSQL
     await pool?.end()

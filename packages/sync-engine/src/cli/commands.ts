@@ -13,6 +13,7 @@ import {
   type StripeWebhookEvent,
 } from '../index'
 import { createTunnel, type NgrokTunnel } from './ngrok'
+import { type StripeObject } from '../resourceRegistry'
 import { install, uninstall } from '../supabase'
 import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
 
@@ -194,16 +195,14 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
         }
       }
     } else {
-      // Use processUntilDone for specific objects (including sigma tables)
-      // Cast to any to allow sigma table names which aren't in SyncObject type
-      const result = await stripeSync.fullSync(entityName)
-      const totalSynced = Object.values(result).reduce(
-        (sum, syncResult) => sum + (syncResult?.synced || 0),
-        0
-      )
+      // Use fullSync for specific objects (including sigma tables)
+      // Cast to allow sigma table names which aren't in SyncObject type
+      const result = await stripeSync.fullSync([entityName] as StripeObject[])
       const tableType = isSigmaTable ? '(sigma)' : ''
       console.log(
-        chalk.green(`✓ Backfill complete: ${totalSynced} ${entityName} ${tableType} rows synced`)
+        chalk.green(
+          `✓ Full sync complete: ${result.totalSynced} ${entityName} ${tableType} rows synced`
+        )
       )
     }
 

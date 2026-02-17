@@ -38,27 +38,6 @@ function buildCsvContentString(rows: CsvRow[]): string {
   return lines.join('\n')
 }
 
-async function processSigmaUntilDone(
-  sync: StripeSync,
-  object: string,
-  runStartedAt: Date,
-  maxSteps: number = 20
-): Promise<{ total: number; result: { processed: number; hasMore: boolean } }> {
-  let total = 0
-  let result: { processed: number; hasMore: boolean } = { processed: 0, hasMore: true }
-
-  for (let i = 0; i < maxSteps; i += 1) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    result = await sync.processNext(object as any, { runStartedAt })
-    total += result.processed
-    if (!result.hasMore) {
-      break
-    }
-  }
-
-  return { total, result }
-}
-
 function mockSigmaApiRuns(params: {
   csvs: string[]
   sqlCalls?: string[]
@@ -236,7 +215,6 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
     sync = await StripeSync.create({
       stripeSecretKey: 'sk_test_fake_sigma',
       databaseUrl: TEST_DB_URL!,
-      poolConfig: {},
       enableSigma: true,
     })
 

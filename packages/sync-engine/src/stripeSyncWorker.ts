@@ -1,12 +1,11 @@
 import Stripe from 'stripe'
 import { PostgresClient } from './database/postgres'
 import { ProcessNextResult, ResourceConfig, StripeSyncConfig } from './types'
-import { StripeObject } from './resourceRegistry'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { RunKey } from './stripeSync'
 
 export type SyncTask = {
-  object: StripeObject
+  object: string
   cursor: string | null
   pageCursor: string | null
 }
@@ -22,7 +21,7 @@ export class StripeSyncWorker {
     private readonly sigma: SigmaSyncProcessor,
     private readonly postgresClient: PostgresClient,
     private readonly accountId: string,
-    private readonly resourceRegistry: Record<StripeObject, ResourceConfig>,
+    private readonly resourceRegistry: Record<string, ResourceConfig>,
     private readonly runKey: RunKey,
     private readonly taskLimit: number = Infinity
   ) {}
@@ -95,7 +94,15 @@ export class StripeSyncWorker {
     const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt)
     if (!claimed) return null
 
-    const object = claimed.object as StripeObject
+    const object = claimed.object
+
+    // Sigma resources use the obj_run cursor to advance page-by-page within a run.
+    // Core Stripe resources use the cursor from the last completed run (incremental sync).
+    const config = Object.values(this.resourceRegistry).find((cfg) => cfg.tableName === object)
+    if (config?.sigma) {
+      return { object, cursor: claimed.cursor, pageCursor: claimed.pageCursor }
+    }
+
     const cursor = await this.postgresClient.getLastCursorBeforeRun(accountId, object, runStartedAt)
     return { object, cursor, pageCursor: claimed.pageCursor }
   }
@@ -149,9 +156,39 @@ export class StripeSyncWorker {
 
   async processSingleTask(task: SyncTask): Promise<ProcessNextResult> {
     const config = Object.entries(this.resourceRegistry).find(
-      ([_, cfg]) => cfg.tableName === task.object && cfg.sigma === undefined
+      ([_, cfg]) => cfg.tableName === task.object
     )?.[1]
     if (!config) throw new Error(`Unsupported object type for processSingleTask: ${task.object}`)
+
+    // Sigma resources are processed via the SigmaSyncProcessor
+    if (config.sigma) {
+      if (!this.config.enableSigma) {
+        throw new Error(`Sigma sync is disabled. Enable sigma to sync ${task.object}.`)
+      }
+
+      const result = await this.sigma.fetchOneSigmaPage(
+        this.accountId,
+        task.object,
+        this.runKey.runStartedAt,
+        task.cursor,
+        config.sigma
+      )
+
+      // fetchOneSigmaPage handles progress, cursor advancement, and completion internally.
+      // If there are more pages, release the task back to pending for re-claiming.
+      if (result.hasMore) {
+        await this.postgresClient.releaseObjectSync(
+          this.accountId,
+          this.runKey.runStartedAt,
+          task.object,
+          ''
+        )
+      }
+
+      return result
+    }
+
+    // Core Stripe API resources
     const { data, has_more } = await this.fetchOnePage(
       task.object,
       task.cursor,
