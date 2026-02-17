@@ -875,6 +875,50 @@ export class PostgresClient {
   }
 
   /**
+   * Atomically claim the next pending task using FOR UPDATE SKIP LOCKED.
+   * Two concurrent workers will never claim the same row — the second worker
+   * skips the locked row and grabs the next one.
+   *
+   * Respects max_concurrent: returns null if already at the concurrency limit.
+   */
+  async claimNextTask(
+    accountId: string,
+    runStartedAt: Date
+  ): Promise<{ object: string; cursor: string | null; pageCursor: string | null } | null> {
+    const run = await this.getSyncRun(accountId, runStartedAt)
+    if (!run) return null
+
+    const runningCount = await this.countRunningObjects(accountId, runStartedAt)
+    if (runningCount >= run.maxConcurrent) return null
+
+    const result = await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET status = 'running', started_at = now(), updated_at = now()
+       WHERE "_account_id" = $1
+         AND run_started_at = $2
+         AND object = (
+           SELECT object FROM "${this.config.schema}"."_sync_obj_runs"
+           WHERE "_account_id" = $1
+             AND run_started_at = $2
+             AND status = 'pending'
+           ORDER BY object
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED
+         )
+       RETURNING object, cursor, page_cursor`,
+      [accountId, runStartedAt]
+    )
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return {
+      object: row.object,
+      cursor: row.cursor,
+      pageCursor: row.page_cursor,
+    }
+  }
+
+  /**
    * Get object run details.
    */
   async getObjectRun(
@@ -938,6 +982,24 @@ export class PostgresClient {
     await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET page_cursor = $4, updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+      [accountId, runStartedAt, object, pageCursor]
+    )
+  }
+
+  /**
+   * Release a running object back to pending with an updated page_cursor.
+   * Used after processing a single page when more pages remain.
+   */
+  async releaseObjectSync(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    pageCursor: string
+  ): Promise<void> {
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET status = 'pending', page_cursor = $4, updated_at = now()
        WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
       [accountId, runStartedAt, object, pageCursor]
     )

@@ -85,32 +85,13 @@ export class StripeSyncWorker {
   async getNextTask(): Promise<SyncTask | null> {
     const { accountId, runStartedAt } = this.runKey
 
-    // Check running objects first (mid-pagination), then pending
-    const runningObjects = await this.postgresClient.listObjectsByStatus(
-      accountId,
-      runStartedAt,
-      'running'
-    )
-    const pendingObjects = await this.postgresClient.listObjectsByStatus(
-      accountId,
-      runStartedAt,
-      'pending'
-    )
+    // Atomically claim the next pending task (FOR UPDATE SKIP LOCKED).
+    const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt)
+    if (!claimed) return null
 
-    const nextObject = (runningObjects[0] ?? pendingObjects[0]) as StripeObject | undefined
-    if (!nextObject) return null
-
-    const cursor = await this.postgresClient.getLastCursorBeforeRun(
-      accountId,
-      nextObject,
-      runStartedAt
-    )
-
-    // Read page_cursor from the current run for pagination resumption
-    const objRun = await this.postgresClient.getObjectRun(accountId, runStartedAt, nextObject)
-    const pageCursor = objRun?.pageCursor ?? null
-
-    return { object: nextObject, cursor, pageCursor }
+    const object = claimed.object as StripeObject
+    const cursor = await this.postgresClient.getLastCursorBeforeRun(accountId, object, runStartedAt)
+    return { object, cursor, pageCursor: claimed.pageCursor }
   }
 
   async updateTaskProgress(
@@ -139,10 +120,10 @@ export class StripeSyncWorker {
       )
     }
 
-    // Update pagination page_cursor with last item's ID
+    // Update pagination page_cursor and mark back as pending for next claim
     if (has_more && data.length > 0) {
       const lastId = (data[data.length - 1] as { id: string }).id
-      await this.postgresClient.updateObjectPageCursor(
+      await this.postgresClient.releaseObjectSync(
         this.accountId,
         this.runKey.runStartedAt,
         task.object,
