@@ -1,4 +1,8 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
+import * as esbuild from 'esbuild'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 import {
   setupFunctionCode,
   webhookFunctionCode,
@@ -6,6 +10,9 @@ import {
   sigmaWorkerFunctionCode,
 } from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
 export const INSTALLATION_STARTED_SUFFIX = 'installation:started'
@@ -96,6 +103,78 @@ export class SupabaseSetupClient {
       /from ['"]npm:stripe-experiment-sync['"]/g,
       `from 'npm:stripe-experiment-sync@${version}'`
     )
+  }
+
+  /**
+   * Find the package root by walking up from __dirname looking for package.json
+   * with the expected package name. Handles tsup chunk files that live in dist/.
+   */
+  private findPackageRoot(): string {
+    let dir = __dirname
+    for (let i = 0; i < 10; i++) {
+      const pkgPath = path.join(dir, 'package.json')
+      if (fs.existsSync(pkgPath)) {
+        const content = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+        if (content.name === 'stripe-experiment-sync') return dir
+      }
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    throw new Error(`Cannot find package root from ${__dirname}`)
+  }
+
+  /**
+   * Resolve the local package entry point for bundling.
+   * Tries src/index.ts first (local dev), then dist/index.js (built package).
+   */
+  private resolveLocalEntryPoint(): string {
+    const packageRoot = this.findPackageRoot()
+    const srcEntry = path.resolve(packageRoot, 'src/index.ts')
+    if (fs.existsSync(srcEntry)) return srcEntry
+    const distEntry = path.resolve(packageRoot, 'dist/index.js')
+    if (fs.existsSync(distEntry)) return distEntry
+    throw new Error(
+      `Cannot find local package entry point. Looked for:\n  ${srcEntry}\n  ${distEntry}`
+    )
+  }
+
+  /**
+   * Bundle an edge function with the local stripe-experiment-sync source inlined.
+   * Resolves npm:stripe-experiment-sync to the local package so no npm fetch is needed at runtime.
+   * All other npm dependencies (stripe, pg, etc.) are kept external with npm: prefixes for Deno.
+   */
+  async bundleEdgeFunction(code: string): Promise<string> {
+    const entryPoint = this.resolveLocalEntryPoint()
+    const resolveDir = path.dirname(entryPoint)
+
+    const result = await esbuild.build({
+      stdin: {
+        contents: code,
+        resolveDir,
+        loader: 'ts',
+      },
+      bundle: true,
+      format: 'esm',
+      platform: 'neutral',
+      packages: 'external',
+      external: ['npm:postgres'],
+      alias: {
+        'npm:stripe-experiment-sync': entryPoint,
+      },
+      write: false,
+    })
+
+    let bundled = result.outputFiles[0].text
+
+    // esbuild outputs bare specifiers (e.g. from "stripe") but Deno needs npm: prefixes.
+    // Replace the known set of packages that appear in the bundle.
+    const barePackages = ['stripe', 'yesql', 'pg', 'papaparse', 'pg-node-migrations', 'ws']
+    for (const pkg of barePackages) {
+      bundled = bundled.replaceAll(`from "${pkg}"`, `from "npm:${pkg}"`)
+    }
+
+    return bundled
   }
 
   /**
@@ -489,19 +568,28 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
       )
 
-      // Deploy Edge Functions with specified package version
-      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
-      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
-      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
+      // Deploy Edge Functions — bundle locally or pin to npm version
+      const prepareCode = async (code: string) => {
+        if (version === 'local') {
+          return this.bundleEdgeFunction(code)
+        }
+        return this.injectPackageVersion(code, version)
+      }
 
-      await this.deployFunction('stripe-setup', versionedSetup, false)
-      await this.deployFunction('stripe-webhook', versionedWebhook, false)
-      await this.deployFunction('stripe-worker', versionedWorker, false)
+      const [bundledSetup, bundledWebhook, bundledWorker] = await Promise.all([
+        prepareCode(setupFunctionCode),
+        prepareCode(webhookFunctionCode),
+        prepareCode(workerFunctionCode),
+      ])
+
+      await this.deployFunction('stripe-setup', bundledSetup, false)
+      await this.deployFunction('stripe-webhook', bundledWebhook, false)
+      await this.deployFunction('stripe-worker', bundledWorker, false)
 
       // Deploy sigma worker only if enabled
       if (enableSigma) {
-        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
-        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
+        const bundledSigmaWorker = await prepareCode(sigmaWorkerFunctionCode)
+        await this.deployFunction('sigma-data-worker', bundledSigmaWorker, false)
       }
 
       // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
