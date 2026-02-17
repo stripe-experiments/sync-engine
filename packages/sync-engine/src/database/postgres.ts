@@ -653,34 +653,44 @@ export class PostgresClient {
    * Auto-cancels stale runs before checking.
    *
    * @param triggeredBy - Worker type (e.g., 'worker', 'sigma-worker'). Runs are isolated per triggeredBy.
-   * @returns RunKey with isNew flag, or null if constraint violation (race condition)
+   * @returns RunKey with isNew flag. Always returns a run (retries on race condition).
    */
   async getOrCreateSyncRun(
     accountId: string,
     triggeredBy?: string
-  ): Promise<{ accountId: string; runStartedAt: Date; isNew: boolean } | null> {
+  ): Promise<{ accountId: string; runStartedAt: Date; isNew: boolean }> {
     // 1. Auto-cancel stale runs
     await this.cancelStaleRuns(accountId)
 
+    const triggeredByValue = triggeredBy ?? null
+
     // 2. Check for existing active run for this triggeredBy (closed_at IS NULL = still running)
     // Runs are isolated per (accountId, triggeredBy)
-    const triggeredByValue = triggeredBy ?? null
-    const existing = triggeredByValue
-      ? await this.query(
-          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
-           WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by = $2`,
-          [accountId, triggeredByValue]
-        )
-      : await this.query(
-          `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
-           WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by IS NULL`,
-          [accountId]
-        )
-
-    if (existing.rows.length > 0) {
-      const row = existing.rows[0]
-      return { accountId: row._account_id, runStartedAt: row.started_at, isNew: false }
+    const findExisting = async () => {
+      const existing = triggeredByValue
+        ? await this.query(
+            `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+             WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by = $2`,
+            [accountId, triggeredByValue]
+          )
+        : await this.query(
+            `SELECT "_account_id", started_at FROM "${this.config.schema}"."_sync_runs"
+             WHERE "_account_id" = $1 AND closed_at IS NULL AND triggered_by IS NULL`,
+            [accountId]
+          )
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0]
+        return {
+          accountId: row._account_id as string,
+          runStartedAt: row.started_at as Date,
+          isNew: false,
+        }
+      }
+      return null
     }
+
+    const existingRun = await findExisting()
+    if (existingRun) return existingRun
 
     // 3. Try to create new run (EXCLUDE constraint prevents duplicates per triggeredBy)
     // Use date_trunc to ensure millisecond precision for JavaScript Date compatibility
@@ -694,12 +704,37 @@ export class PostgresClient {
       const row = result.rows[0]
       return { accountId: row._account_id, runStartedAt: row.started_at, isNew: true }
     } catch (error: unknown) {
-      // Only return null for exclusion constraint violation (concurrent run)
+      // Exclusion constraint violation means a concurrent writer created the run — re-read it
       if (error instanceof Error && 'code' in error && error.code === '23P01') {
-        return null
+        const retried = await findExisting()
+        if (retried) return retried
       }
       throw error
     }
+  }
+
+  /**
+   * Join an existing sync run or create a new one, and ensure object run rows exist.
+   *
+   * Combines getOrCreateSyncRun + createObjectRuns into a single atomic-ish operation.
+   * Object runs are created idempotently (ON CONFLICT DO NOTHING) so this is safe
+   * to call from multiple workers adding objects to the same run.
+   *
+   * @param accountId - The Stripe account ID
+   * @param triggeredBy - What triggered this sync (for observability)
+   * @param resourceNames - Database resource names (e.g. 'products', 'customers')
+   * @returns Run key with accountId and runStartedAt
+   */
+  async joinOrCreateSyncRun(
+    accountId: string,
+    triggeredBy: string,
+    resourceNames: string[]
+  ): Promise<{ accountId: string; runStartedAt: Date }> {
+    const run = await this.getOrCreateSyncRun(accountId, triggeredBy)
+
+    await this.createObjectRuns(run.accountId, run.runStartedAt, resourceNames)
+
+    return { accountId: run.accountId, runStartedAt: run.runStartedAt }
   }
 
   /**

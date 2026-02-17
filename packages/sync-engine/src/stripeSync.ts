@@ -4,7 +4,6 @@ import pkg from '../package.json' with { type: 'json' }
 import { PostgresClient } from './database/postgres'
 import {
   StripeSyncConfig,
-  Sync,
   SyncBackfill,
   SyncParams,
   ProcessNextResult,
@@ -250,8 +249,12 @@ export class StripeSync {
       if (params?.runStartedAt) {
         runStartedAt = params.runStartedAt
       } else {
-        const { runKey } = await this.joinOrCreateSyncRun(params?.triggeredBy ?? 'processNext')
-        runStartedAt = runKey.runStartedAt
+        const run = await this.postgresClient.joinOrCreateSyncRun(
+          this.accountId,
+          params?.triggeredBy ?? 'processNext',
+          [resourceName]
+        )
+        runStartedAt = run.runStartedAt
       }
 
       // Ensure object run exists
@@ -477,98 +480,6 @@ export class StripeSync {
     }
   }
 
-  /**
-   * Process all pages for a single object type until complete.
-   * Loops processNext() internally until hasMore is false.
-   *
-   * @param object - The object type to sync
-   * @param runStartedAt - The sync run to use (for sharing across objects)
-   * @param params - Optional sync parameters
-   * @returns Sync result with count of synced items
-   */
-  async processObjectUntilDone(
-    object: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>,
-    runStartedAt: Date,
-    params?: SyncParams
-  ): Promise<Sync> {
-    let totalSynced = 0
-
-    while (true) {
-      const result = await this.processNext(object, {
-        ...params,
-        runStartedAt,
-        triggeredBy: 'processUntilDone',
-      })
-      totalSynced += result.processed
-
-      if (!result.hasMore) {
-        break
-      }
-    }
-
-    return { synced: totalSynced }
-  }
-
-  /**
-   * Join existing sync run or create a new one.
-   * Returns sync run key and list of supported objects to sync.
-   *
-   * Cooperative behavior: If a sync run already exists, joins it instead of failing.
-   * This is used by workers and background processes that should cooperate.
-   *
-   * @param triggeredBy - What triggered this sync (for observability)
-   * @param objectFilter - Optional specific object to sync (e.g. 'payment_intent'). If 'all' or undefined, syncs all objects.
-   * @returns Run key and list of objects to sync
-   */
-  async joinOrCreateSyncRun(
-    triggeredBy: string = 'worker',
-    objectFilter?: SyncObject
-  ): Promise<{
-    runKey: RunKey
-    objects: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
-  }> {
-    const accountId = this.accountId
-
-    const result = await this.postgresClient.getOrCreateSyncRun(accountId, triggeredBy)
-
-    // Determine which objects to create runs for
-    const objects =
-      objectFilter === 'all' || objectFilter === undefined
-        ? this.getSupportedSyncObjects()
-        : [objectFilter as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
-
-    if (!result) {
-      const activeRun = await this.postgresClient.getActiveSyncRun(accountId)
-      if (!activeRun) {
-        throw new Error('Failed to get or create sync run')
-      }
-      // Create object runs upfront to prevent premature close
-      // Convert object types to resource names for database storage
-      await this.postgresClient.createObjectRuns(
-        activeRun.accountId,
-        activeRun.runStartedAt,
-        objects.map((obj) => getResourceName(obj))
-      )
-      return {
-        runKey: { accountId: activeRun.accountId, runStartedAt: activeRun.runStartedAt },
-        objects,
-      }
-    }
-
-    const { accountId: runAccountId, runStartedAt } = result
-    // Create object runs upfront to prevent premature close
-    // Convert object types to resource names for database storage
-    await this.postgresClient.createObjectRuns(
-      runAccountId,
-      runStartedAt,
-      objects.map((obj) => getResourceName(obj))
-    )
-    return {
-      runKey: { accountId: runAccountId, runStartedAt },
-      objects,
-    }
-  }
-
   async fullResyncAll(): Promise<{
     results: SyncBackfill
     totals: Record<string, number>
@@ -577,7 +488,11 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = this.getSupportedSyncObjects()
-    const { runKey } = await this.joinOrCreateSyncRun('fullResyncAll', 'all')
+    const runKey = await this.postgresClient.joinOrCreateSyncRun(
+      this.accountId,
+      'fullResyncAll',
+      objects.map((obj) => getResourceName(obj))
+    )
 
     for (const obj of objects) {
       // Clear sync cursor from previous runs so this run starts from scratch
@@ -625,22 +540,30 @@ export class StripeSync {
       skipInaccessibleSigmaTables = false,
     } = params ?? {}
 
-    const { runKey, objects } = await this.joinOrCreateSyncRun(triggeredBy, object)
+    const objectsToSync =
+      object === 'all' || object === undefined
+        ? this.getSupportedSyncObjects()
+        : [object as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
+    const runKey = await this.postgresClient.joinOrCreateSyncRun(
+      this.accountId,
+      triggeredBy,
+      objectsToSync.map((obj) => getResourceName(obj))
+    )
     const runConfig = await this.postgresClient.getSyncRun(runKey.accountId, runKey.runStartedAt)
     const maxConcurrent = runConfig?.maxConcurrent ?? 10
     const workerCount = Math.max(
       1,
-      Math.min(objects.length, maxParallel ?? maxConcurrent, maxConcurrent)
+      Math.min(objectsToSync.length, maxParallel ?? maxConcurrent, maxConcurrent)
     )
 
     const totals: Record<string, number> = {}
-    for (const obj of objects) {
+    for (const obj of objectsToSync) {
       totals[obj] = 0
     }
 
     const skipped: string[] = []
     const errors: Array<{ object: string; message: string }> = []
-    const queue = [...objects]
+    const queue = [...objectsToSync]
     const shouldSkipInaccessibleTable = (message: string) =>
       message.includes('tables which do not exist or are inaccessible')
 
@@ -682,7 +605,7 @@ export class StripeSync {
       await Promise.all(workers)
 
       const results: SyncBackfill = {}
-      for (const obj of objects) {
+      for (const obj of objectsToSync) {
         results[obj] = { synced: totals[obj] ?? 0 }
       }
 
@@ -697,51 +620,12 @@ export class StripeSync {
   }
 
   async processUntilDone(params?: SyncParams): Promise<SyncBackfill> {
-    const { object } = params ?? { object: 'all' }
-
-    // Join or create sync run with object filter
-    const { runKey } = await this.joinOrCreateSyncRun('processUntilDone', object)
-
-    return this.processUntilDoneWithRun(runKey.runStartedAt, object, params)
-  }
-
-  /**
-   * Internal implementation of processUntilDone with an existing run.
-   */
-  async processUntilDoneWithRun(
-    runStartedAt: Date,
-    object: SyncObject | undefined,
-    params?: SyncParams
-  ): Promise<SyncBackfill> {
-    const accountId = this.accountId
-
-    const results: SyncBackfill = {}
-
-    try {
-      // Determine which objects to sync
-      // getSupportedSyncObjects() returns objects in correct dependency order for backfills
-      const objectsToSync: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[] =
-        object === 'all' || object === undefined
-          ? this.getSupportedSyncObjects()
-          : [object as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>]
-
-      console.log('objectsToSync', objectsToSync)
-      // Sync each object type
-      for (const obj of objectsToSync) {
-        this.config.logger?.info(`Syncing ${obj}`)
-        const result = await this.processObjectUntilDone(obj, runStartedAt, params)
-        results[obj] = result
-      }
-
-      // Close the sync run after all objects are done (status derived from object states)
-      await this.postgresClient.closeSyncRun(accountId, runStartedAt)
-
-      return results
-    } catch (error) {
-      // Close the sync run on error (status will be 'error' based on failed object states)
-      await this.postgresClient.closeSyncRun(accountId, runStartedAt)
-      throw error
-    }
+    const { results } = await this.processUntilDoneParallel({
+      ...params,
+      maxParallel: 1,
+      triggeredBy: 'processUntilDone',
+    })
+    return results
   }
   /**
    * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
