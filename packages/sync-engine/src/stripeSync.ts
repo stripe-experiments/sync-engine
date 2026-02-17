@@ -485,17 +485,22 @@ export class StripeSync {
       'fullResyncAll',
       tableNames
     )
-    const worker = new StripeSyncWorker(
-      this.stripe,
-      this.config,
-      this.sigma,
-      this.postgresClient,
-      this.accountId,
-      this.resourceRegistry,
-      runKey
+    const workerCount = 10
+    const workers = Array.from(
+      { length: workerCount },
+      () =>
+        new StripeSyncWorker(
+          this.stripe,
+          this.config,
+          this.sigma,
+          this.postgresClient,
+          this.accountId,
+          this.resourceRegistry,
+          runKey
+        )
     )
-    worker.start()
-    await worker.waitUntilDone()
+    workers.forEach((worker) => worker.start())
+    await Promise.all(workers.map((worker) => worker.waitUntilDone()))
 
     const totals = await this.postgresClient.getObjectSyncedCounts(
       this.accountId,
