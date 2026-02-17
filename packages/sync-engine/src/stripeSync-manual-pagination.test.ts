@@ -10,6 +10,9 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers()
+    vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
+      id: 'acct_test',
+    } as Stripe.Account)
 
     // Create minimal config
     const config: StripeSyncConfig = {

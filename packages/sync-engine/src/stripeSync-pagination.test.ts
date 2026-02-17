@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { StripeSyncWorker } from './stripeSyncWorker'
 import type { ResourceConfig } from './types'
 
+async function createSyncForRegistry() {
+  const { StripeSync } = await import('./stripeSync')
+  vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
+    id: 'acct_test',
+  } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  return StripeSync.create({
+    stripeSecretKey: 'sk_test_fake',
+    databaseUrl: 'postgresql://fake',
+  })
+}
+
 /**
  * Regression tests for pagination behavior.
  *
@@ -16,11 +28,7 @@ describe('Pagination regression tests', () => {
   describe('credit_notes supportsCreatedFilter', () => {
     it('should have supportsCreatedFilter: true for credit_note', async () => {
       // Create a minimal StripeSync instance to check the registry
-      const { StripeSync } = await import('./stripeSync')
-      const sync = await StripeSync.create({
-        stripeSecretKey: 'sk_test_fake',
-        databaseUrl: 'postgresql://fake',
-      })
+      const sync = await createSyncForRegistry()
 
       // Access resourceRegistry for testing
       const registry = sync.resourceRegistry
@@ -31,11 +39,7 @@ describe('Pagination regression tests', () => {
     })
 
     it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', async () => {
-      const { StripeSync } = await import('./stripeSync')
-      const sync = await StripeSync.create({
-        stripeSecretKey: 'sk_test_fake',
-        databaseUrl: 'postgresql://fake',
-      })
+      const sync = await createSyncForRegistry()
 
       const registry = sync.resourceRegistry
 

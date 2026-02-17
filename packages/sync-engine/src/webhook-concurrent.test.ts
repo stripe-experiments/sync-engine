@@ -163,7 +163,7 @@ describe('Webhook Race Condition Tests', () => {
 
         // Clean up
         for (const id of uniqueIds) {
-          await stripeSync.deleteManagedWebhook(id)
+          await stripeSync.webhook.deleteManagedWebhook(id)
         }
       },
       30000
@@ -190,7 +190,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(webhook1.id).toBe(webhook2.id)
 
         // Clean up
-        await stripeSync.deleteManagedWebhook(webhook1.id)
+        await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000
     )
@@ -230,7 +230,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(matchingWebhooks.length).toBe(1)
 
         // Clean up
-        await stripeSync.deleteManagedWebhook(webhook1.id)
+        await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000
     )
