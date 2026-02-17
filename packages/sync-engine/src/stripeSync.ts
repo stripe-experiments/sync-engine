@@ -218,6 +218,21 @@ export class StripeSync {
       'fullSync',
       tableNames
     )
+
+    // Reset any orphaned 'running' objects back to 'pending' (crash recovery).
+    // If the previous process was killed mid-sync, object runs may be stuck in
+    // 'running' with no active worker. Resetting lets new workers re-claim them.
+    const resetCount = await this.postgresClient.resetStuckRunningObjects(
+      runKey.accountId,
+      runKey.runStartedAt
+    )
+    if (resetCount > 0) {
+      this.config.logger?.info(
+        { resetCount },
+        `Reset ${resetCount} stuck 'running' object(s) to 'pending' (crash recovery)`
+      )
+    }
+
     const workerCount = 10
     const workers = Array.from(
       { length: workerCount },
