@@ -2,6 +2,7 @@ import { describe, it, beforeAll, afterAll, beforeEach, vi, expect } from 'vites
 import { StripeSync, runMigrations } from './index'
 import pg from 'pg'
 import * as sigmaApi from './sigma/sigmaApi'
+import type { StripeObject } from './resourceRegistry'
 
 /**
  * Integration tests for Sigma-backed resources.
@@ -16,6 +17,9 @@ import * as sigmaApi from './sigma/sigmaApi'
 const TEST_DB_URL = process.env.TEST_POSTGRES_DB_URL
 const TEST_ACCOUNT_ID = 'acct_test_sigma_integration'
 const SIGMA_SCHEMA = 'sigma'
+const SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT =
+  'subscription_item_change_events_v2_beta' as unknown as StripeObject
+const EXCHANGE_RATES_OBJECT = 'exchange_rates_from_usd' as unknown as StripeObject
 
 const describeWithDb = TEST_DB_URL ? describe : describe.skip
 
@@ -227,110 +231,13 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
     ;(sync as any).getCurrentAccount = vi.fn().mockResolvedValue({ id: TEST_ACCOUNT_ID })
   })
 
-  describe('processNext (sigma)', () => {
+  describe('fullSync (sigma)', () => {
     it('should sync subscription item change events from Sigma', async () => {
       mockSigmaApiRuns({ csvs: [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV] })
 
-      const { runKey } = await sync.joinOrCreateSyncRun(
-        'test',
-        'subscription_item_change_events_v2_beta'
-      )
-      const { total, result } = await processSigmaUntilDone(
-        sync,
-        'subscription_item_change_events_v2_beta',
-        runKey.runStartedAt
-      )
+      const result = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
 
-      expect(total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
-      expect(result.hasMore).toStrictEqual(false)
-
-      const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
-      expect(count).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
-
-      const ids = await validator.getSubscriptionItemChangeEventIds(TEST_ACCOUNT_ID)
-      expect(ids).toStrictEqual(
-        SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.map((row) => row.subscription_item_id)
-      )
-    })
-
-    it('should pick up new subscription item change events on subsequent runs', async () => {
-      const csvs = [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV, SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_CSV]
-      mockSigmaApiRuns({
-        csvs,
-        validateSql: (sql) => {
-          if (!sql.includes('subscription_item_change_events_v2_beta')) {
-            throw new Error(`Unexpected Sigma query: ${sql}`)
-          }
-        },
-      })
-
-      const { runKey: runA } = await sync.joinOrCreateSyncRun(
-        'test',
-        'subscription_item_change_events_v2_beta'
-      )
-      const first = await processSigmaUntilDone(
-        sync,
-        'subscription_item_change_events_v2_beta',
-        runA.runStartedAt
-      )
-      expect(first.total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
-
-      const { runKey: runB } = await sync.joinOrCreateSyncRun(
-        'test',
-        'subscription_item_change_events_v2_beta'
-      )
-      const second = await processSigmaUntilDone(
-        sync,
-        'subscription_item_change_events_v2_beta',
-        runB.runStartedAt
-      )
-      expect(second.total).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length)
-      expect(second.result.hasMore).toStrictEqual(false)
-
-      const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
-      expect(count).toStrictEqual(
-        SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length +
-          SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length
-      )
-    })
-
-    it('should sync exchange rates from Sigma', async () => {
-      mockSigmaApiRuns({
-        csvs: [EXCHANGE_RATES_CSV],
-        validateSql: (sql) => {
-          if (!sql.includes('exchange_rates_from_usd')) {
-            throw new Error(`Unexpected Sigma query: ${sql}`)
-          }
-        },
-      })
-
-      const { runKey } = await sync.joinOrCreateSyncRun('test', 'exchange_rates_from_usd')
-      const { total, result } = await processSigmaUntilDone(
-        sync,
-        'exchange_rates_from_usd',
-        runKey.runStartedAt
-      )
-
-      expect(total).toStrictEqual(1)
-      expect(result.hasMore).toStrictEqual(false)
-
-      const count = await validator.getExchangeRatesCount(TEST_ACCOUNT_ID)
-      expect(count).toStrictEqual(1)
-
-      const keys = await validator.getExchangeRateKeys(TEST_ACCOUNT_ID)
-      expect(keys).toStrictEqual([{ date: '2021-03-07', sell_currency: 'usd' }])
-    })
-  })
-
-  describe('processUntilDone (sigma)', () => {
-    it('should sync subscription item change events from Sigma', async () => {
-      mockSigmaApiRuns({ csvs: [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV] })
-
-      const result = await sync.processUntilDone({
-        object: 'subscription_item_change_events_v2_beta',
-      })
-
-      expect(result['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
+      expect(result.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
@@ -359,19 +266,38 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
       mockSigmaApiRuns({ csvs, sqlCalls })
 
       try {
-        const result = await sync.processUntilDone({
-          object: 'subscription_item_change_events_v2_beta',
-        })
+        const result = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
 
         expect(sqlCalls.length).toBeGreaterThan(1)
         expect(sqlCalls[0]).not.toContain('WHERE')
         expect(sqlCalls[1]).toContain('WHERE')
-        expect(result['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
+        expect(result.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
           SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
         )
       } finally {
         sigmaConfig.pageSize = originalPageSize
       }
+    })
+
+    it('should sync exchange rates from Sigma', async () => {
+      mockSigmaApiRuns({
+        csvs: [EXCHANGE_RATES_CSV],
+        validateSql: (sql) => {
+          if (!sql.includes('exchange_rates_from_usd')) {
+            throw new Error(`Unexpected Sigma query: ${sql}`)
+          }
+        },
+      })
+
+      const result = await sync.fullSync([EXCHANGE_RATES_OBJECT])
+
+      expect(result.results['exchange_rates_from_usd']?.synced).toStrictEqual(1)
+
+      const count = await validator.getExchangeRatesCount(TEST_ACCOUNT_ID)
+      expect(count).toStrictEqual(1)
+
+      const keys = await validator.getExchangeRateKeys(TEST_ACCOUNT_ID)
+      expect(keys).toStrictEqual([{ date: '2021-03-07', sell_currency: 'usd' }])
     })
 
     it('should pick up new subscription item change events on subsequent runs', async () => {
@@ -385,17 +311,13 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         },
       })
 
-      const first = await sync.processUntilDone({
-        object: 'subscription_item_change_events_v2_beta',
-      })
-      expect(first['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
+      const first = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+      expect(first.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
-      const second = await sync.processUntilDone({
-        object: 'subscription_item_change_events_v2_beta',
-      })
-      expect(second['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
+      const second = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+      expect(second.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length
       )
 

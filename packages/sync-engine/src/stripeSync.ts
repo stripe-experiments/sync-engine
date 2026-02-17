@@ -174,7 +174,6 @@ export class StripeSync {
   }
 
   /**
-   * Returns an array of all object types that can be synced via processNext/processUntilDone.
    * Ordered for backfill: parents before children (products before prices, customers before subscriptions).
    * Order is determined by the `order` field in resourceRegistry.
    */

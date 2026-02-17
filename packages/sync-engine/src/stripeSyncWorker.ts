@@ -98,7 +98,7 @@ export class StripeSyncWorker {
 
     // Sigma resources use the obj_run cursor to advance page-by-page within a run.
     // Core Stripe resources use the cursor from the last completed run (incremental sync).
-    const config = Object.values(this.resourceRegistry).find((cfg) => cfg.tableName === object)
+    const config = this.getConfigForTaskObject(object)
     if (config?.sigma) {
       return { object, cursor: claimed.cursor, pageCursor: claimed.pageCursor }
     }
@@ -155,9 +155,7 @@ export class StripeSyncWorker {
   }
 
   async processSingleTask(task: SyncTask): Promise<ProcessNextResult> {
-    const config = Object.entries(this.resourceRegistry).find(
-      ([_, cfg]) => cfg.tableName === task.object
-    )?.[1]
+    const config = this.getConfigForTaskObject(task.object)
     if (!config) throw new Error(`Unsupported object type for processSingleTask: ${task.object}`)
 
     // Sigma resources are processed via the SigmaSyncProcessor
@@ -208,5 +206,20 @@ export class StripeSyncWorker {
 
     await this.updateTaskProgress(task, data, has_more)
     return { hasMore: has_more, processed: data.length, runStartedAt: this.runKey.runStartedAt }
+  }
+
+  private getConfigForTaskObject(taskObject: string): ResourceConfig | undefined {
+    const matches = Object.values(this.resourceRegistry).filter(
+      (cfg) => cfg.tableName === taskObject
+    )
+    if (matches.length === 0) {
+      return undefined
+    }
+
+    // Prefer core Stripe resources when table names overlap with Sigma resources.
+    // This preserves registry precedence and avoids accidental Sigma processing
+    // when sync tasks are keyed by destination table name.
+    const coreMatch = matches.find((cfg) => !cfg.sigma)
+    return coreMatch ?? matches[0]
   }
 }

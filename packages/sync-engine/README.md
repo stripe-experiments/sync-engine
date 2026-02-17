@@ -182,17 +182,14 @@ await sync.syncSingleEntity('prod_xyz')
 ### Backfill Historical Data
 
 ```ts
-// Sync all products created after a date
-await sync.processUntilDone({
-  object: 'product',
-  created: { gte: 1643872333 }, // Unix timestamp
-})
+// Sync all products
+await sync.fullSync(['product'])
 
 // Sync all customers
-await sync.processUntilDone({ object: 'customer' })
+await sync.fullSync(['customer'])
 
 // Sync everything
-await sync.processUntilDone({ object: 'all' })
+await sync.fullSync()
 ```
 
 Supported objects: `all`, `charge`, `checkout_sessions`, `credit_note`, `customer`, `customer_with_entitlements`, `dispute`, `early_fraud_warning`, `invoice`, `payment_intent`, `payment_method`, `plan`, `price`, `product`, `refund`, `setup_intent`, `subscription`, `subscription_schedules`, `tax_id`.
