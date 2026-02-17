@@ -203,7 +203,7 @@ Deno.serve(async (req) => {
       })
 
       // Delete all managed webhooks
-      const webhooks = await stripesync.webhook.listManagedWebhooks()
+      const webhooks = await stripeSync.webhook.listManagedWebhooks()
       for (const webhook of webhooks) {
         try {
           await stripeSync.deleteManagedWebhook(webhook.id)
@@ -372,7 +372,7 @@ Deno.serve(async (req) => {
     }
     const webhookUrl = supabaseUrl + '/functions/v1/stripe-webhook'
 
-    const webhook = await stripesync.webhook.findOrCreateManagedWebhook(webhookUrl)
+    const webhook = await stripeSync.webhook.findOrCreateManagedWebhook(webhookUrl)
 
     await stripeSync.postgresClient.pool.end()
 

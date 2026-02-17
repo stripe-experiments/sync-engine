@@ -14,6 +14,7 @@ export type SyncTask = {
 export class StripeSyncWorker {
   private running = false
   private loopPromise: Promise<void> | null = null
+  private tasksCompleted = 0
 
   constructor(
     private readonly stripe: Stripe,
@@ -22,7 +23,8 @@ export class StripeSyncWorker {
     private readonly postgresClient: PostgresClient,
     private readonly accountId: string,
     private readonly resourceRegistry: Record<StripeObject, ResourceConfig>,
-    private readonly runKey: RunKey
+    private readonly runKey: RunKey,
+    private readonly taskLimit: number = Infinity
   ) {}
 
   start(): void {
@@ -38,7 +40,10 @@ export class StripeSyncWorker {
 
   private async loop(): Promise<void> {
     while (this.running) {
-      if (!this.running) break
+      if (this.tasksCompleted >= this.taskLimit) {
+        this.running = false
+        break
+      }
 
       const task = await this.getNextTask()
       if (!task) {
@@ -46,6 +51,7 @@ export class StripeSyncWorker {
         break
       }
       await this.processSingleTask(task)
+      this.tasksCompleted++
     }
   }
 
@@ -162,7 +168,6 @@ export class StripeSyncWorker {
     } else if (data.length > 0) {
       await config.upsertFn!(data, this.accountId, false)
     }
-    console.log(`Synced: ${task.object} ${data.length}`)
 
     await this.updateTaskProgress(task, data, has_more)
     return { hasMore: has_more, processed: data.length, runStartedAt: this.runKey.runStartedAt }
