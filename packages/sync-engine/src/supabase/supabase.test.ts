@@ -474,6 +474,57 @@ describe('SupabaseDeployClient', () => {
       }
     })
 
+    it('should return false when uninstallation is in progress (uninstallation:started)', async () => {
+      const client = new SupabaseSetupClient({
+        accessToken: mockAccessToken,
+        projectRef: mockProjectRef,
+      })
+
+      // Mock runSQL to return in-progress uninstallation
+      const mockRunSQL = vi
+        .fn()
+        .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
+        .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
+        .mockResolvedValueOnce([
+          { rows: [{ comment: 'stripe-sync v1.0.0 uninstallation:started' }] },
+        ]) // in progress
+      // @ts-expect-error - accessing private method for testing
+      client.runSQL = mockRunSQL
+
+      const installed = await client.isInstalled()
+
+      expect(installed).toBe(false)
+    })
+
+    it('should throw error when uninstallation has failed (uninstallation:error)', async () => {
+      const client = new SupabaseSetupClient({
+        accessToken: mockAccessToken,
+        projectRef: mockProjectRef,
+      })
+
+      // Mock runSQL to return failed uninstallation
+      const mockRunSQL = vi
+        .fn()
+        .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
+        .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
+        .mockResolvedValueOnce([
+          {
+            rows: [{ comment: 'stripe-sync v1.0.0 uninstallation:error - Cleanup failed' }],
+          },
+        ]) // failed
+      // @ts-expect-error - accessing private method for testing
+      client.runSQL = mockRunSQL
+
+      try {
+        await client.isInstalled()
+        expect.fail('Should have thrown an error')
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error)
+        expect((error as Error).message).toContain('Uninstallation failed')
+        expect((error as Error).message).toContain('Manual cleanup may be required')
+      }
+    })
+
     it('should return true when installation is complete', async () => {
       const client = new SupabaseSetupClient({
         accessToken: mockAccessToken,

@@ -387,6 +387,20 @@ export class SupabaseSetupClient {
         )
       }
 
+      // Check for uninstallation in progress
+      // NOTE: Check uninstallation before installation since "uninstallation:*" contains "installation:*"
+      if (comment.includes(UNINSTALLATION_STARTED_SUFFIX)) {
+        return false
+      }
+
+      // Check for failed uninstallation (requires manual intervention)
+      if (comment.includes(UNINSTALLATION_ERROR_SUFFIX)) {
+        throw new Error(
+          `Uninstallation failed: Schema '${schema}' exists but uninstallation encountered an error. ` +
+            `Comment: ${comment}. Manual cleanup may be required.`
+        )
+      }
+
       // Check for incomplete installation (can retry)
       if (comment.includes(INSTALLATION_STARTED_SUFFIX)) {
         return false
@@ -400,19 +414,6 @@ export class SupabaseSetupClient {
         )
       }
 
-      // Check for uninstallation in progress
-      if (comment.includes(UNINSTALLATION_STARTED_SUFFIX)) {
-        return false
-      }
-
-      // Check for failed uninstallation (requires manual intervention)
-      if (comment.includes(UNINSTALLATION_ERROR_SUFFIX)) {
-        throw new Error(
-          `Uninstallation failed: Schema '${schema}' exists but uninstallation encountered an error. ` +
-            `Comment: ${comment}. Manual cleanup may be required.`
-        )
-      }
-
       // All checks passed
       return true
     } catch (error) {
@@ -420,7 +421,8 @@ export class SupabaseSetupClient {
       if (
         error instanceof Error &&
         (error.message.includes('Legacy installation detected') ||
-          error.message.includes('Installation failed'))
+          error.message.includes('Installation failed') ||
+          error.message.includes('Uninstallation failed'))
       ) {
         throw error
       }
