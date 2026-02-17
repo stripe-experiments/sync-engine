@@ -204,9 +204,7 @@ export class StripeSync {
     await resourceConfig.upsertFn([item], accountId, false)
   }
 
-  async fullSync(
-    tables?: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
-  ): Promise<{
+  async fullSync(tables?: Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]): Promise<{
     results: SyncBackfill
     totals: Record<string, number>
     totalSynced: number

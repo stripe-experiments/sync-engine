@@ -311,10 +311,7 @@ export function getResourceConfigFromId(
 /**
  * Get the database table name for a SyncObject type from the resource registry.
  */
-export function getTableName(
-  object: string,
-  registry: Record<string, ResourceConfig>
-): string {
+export function getTableName(object: string, registry: Record<string, ResourceConfig>): string {
   const config = registry[object]
   if (!config) {
     throw new Error(`No resource config found for object type: ${object}`)

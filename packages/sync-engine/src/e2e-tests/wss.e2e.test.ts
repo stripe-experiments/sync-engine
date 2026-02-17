@@ -152,7 +152,9 @@ describe('WebSocket E2E', () => {
     await sleep(10000)
 
     // Verify plan in database
-    const planCount = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.plans WHERE id = $1', [plan.id])
+    const planCount = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.plans WHERE id = $1', [
+      plan.id,
+    ])
     expect(planCount).toBe(1)
 
     // 3. Delete the plan
@@ -199,7 +201,9 @@ describe('WebSocket E2E', () => {
     await sleep(10000)
 
     // Verify customer still exists in database but has deleted = true
-    const customerData = await pool.query('SELECT deleted FROM stripe.customers WHERE id = $1', [customer.id])
+    const customerData = await pool.query('SELECT deleted FROM stripe.customers WHERE id = $1', [
+      customer.id,
+    ])
     expect(customerData.rows.length).toBe(1)
     expect(customerData.rows[0].deleted).toBe(true)
   }, 40000)
