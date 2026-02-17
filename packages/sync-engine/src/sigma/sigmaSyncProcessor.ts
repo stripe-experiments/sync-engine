@@ -62,6 +62,7 @@ export class SigmaSyncProcessor {
           key,
           {
             order: maxCoreOrder + 1 + idx,
+            tableName: sigmaConfig.destinationTable,
             supportsCreatedFilter: false,
             sigma: { ...sigmaConfig, pageSize },
           },

@@ -8,7 +8,7 @@ import {
   SUPPORTED_WEBHOOK_EVENTS,
 } from './types'
 import { PostgresClient } from './database/postgres'
-import { getResourceName } from './resourceRegistry'
+import { getTableName } from './resourceRegistry'
 
 export type StripeSyncWebhookDeps = {
   stripe: Stripe
@@ -79,7 +79,7 @@ export class StripeSyncWebhook {
 
   async handleDeletedEvent(event: Stripe.Event, accountId: string): Promise<void> {
     const objectType = event.data.object.object
-    const tableName = getResourceName(objectType)
+    const tableName = getTableName(objectType, this.deps.resourceRegistry)
     const softDelete = await this.deps.postgresClient.columnExists(tableName, 'deleted')
     const stripeObject = event.data.object as { id: string; object: string }
     if (softDelete) {

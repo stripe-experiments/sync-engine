@@ -915,13 +915,15 @@ export class PostgresClient {
     runStartedAt: Date,
     object: string,
     count: number
-  ): Promise<void> {
-    await this.query(
+  ): Promise<number> {
+    const result = await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET processed_count = processed_count + $4, updated_at = now()
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3
+       RETURNING processed_count`,
       [accountId, runStartedAt, object, count]
     )
+    return result.rows[0]?.processed_count ?? 0
   }
 
   /**
@@ -1046,6 +1048,26 @@ export class PostgresClient {
     )
 
     return result.rows.map((row) => row.object as string)
+  }
+
+  /**
+   * Get per-object processed counts for a sync run.
+   */
+  async getObjectSyncedCounts(
+    accountId: string,
+    runStartedAt: Date
+  ): Promise<Record<string, number>> {
+    const result = await this.query(
+      `SELECT object, processed_count
+       FROM "${this.config.schema}"."_sync_obj_runs"
+       WHERE "_account_id" = $1 AND run_started_at = $2`,
+      [accountId, runStartedAt]
+    )
+    const counts: Record<string, number> = {}
+    for (const row of result.rows) {
+      counts[row.object] = row.processed_count ?? 0
+    }
+    return counts
   }
 
   /**
