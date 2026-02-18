@@ -1,12 +1,11 @@
 import Stripe from 'stripe'
 import { PostgresClient } from './database/postgres'
 import { ProcessNextResult, ResourceConfig, StripeSyncConfig } from './types'
-import { StripeObject } from './resourceRegistry'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { RunKey } from './stripeSync'
 
 export type SyncTask = {
-  object: StripeObject
+  object: string
   cursor: string | null
   pageCursor: string | null
 }
@@ -22,8 +21,14 @@ export class StripeSyncWorker {
     private readonly sigma: SigmaSyncProcessor,
     private readonly postgresClient: PostgresClient,
     private readonly accountId: string,
-    private readonly resourceRegistry: Record<StripeObject, ResourceConfig>,
+    private readonly resourceRegistry: Record<string, ResourceConfig>,
     private readonly runKey: RunKey,
+    private readonly upsertAny: (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: { [Key: string]: any }[],
+      accountId: string,
+      backfillRelated?: boolean
+    ) => Promise<unknown[] | void>,
     private readonly taskLimit: number = Infinity
   ) {}
 
@@ -95,7 +100,15 @@ export class StripeSyncWorker {
     const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt)
     if (!claimed) return null
 
-    const object = claimed.object as StripeObject
+    const object = claimed.object
+
+    // Sigma resources use the obj_run cursor to advance page-by-page within a run.
+    // Core Stripe resources use the cursor from the last completed run (incremental sync).
+    const config = this.getConfigForTaskObject(object)
+    if (config?.sigma) {
+      return { object, cursor: claimed.cursor, pageCursor: claimed.pageCursor }
+    }
+
     const cursor = await this.postgresClient.getLastCursorBeforeRun(accountId, object, runStartedAt)
     return { object, cursor, pageCursor: claimed.pageCursor }
   }
@@ -148,10 +161,38 @@ export class StripeSyncWorker {
   }
 
   async processSingleTask(task: SyncTask): Promise<ProcessNextResult> {
-    const config = Object.entries(this.resourceRegistry).find(
-      ([_, cfg]) => cfg.tableName === task.object && cfg.sigma === undefined
-    )?.[1]
+    const config = this.getConfigForTaskObject(task.object)
     if (!config) throw new Error(`Unsupported object type for processSingleTask: ${task.object}`)
+
+    // Sigma resources are processed via the SigmaSyncProcessor
+    if (config.sigma) {
+      if (!this.config.enableSigma) {
+        throw new Error(`Sigma sync is disabled. Enable sigma to sync ${task.object}.`)
+      }
+
+      const result = await this.sigma.fetchOneSigmaPage(
+        this.accountId,
+        task.object,
+        this.runKey.runStartedAt,
+        task.cursor,
+        config.sigma
+      )
+
+      // fetchOneSigmaPage handles progress, cursor advancement, and completion internally.
+      // If there are more pages, release the task back to pending for re-claiming.
+      if (result.hasMore) {
+        await this.postgresClient.releaseObjectSync(
+          this.accountId,
+          this.runKey.runStartedAt,
+          task.object,
+          ''
+        )
+      }
+
+      return result
+    }
+
+    // Core Stripe API resources
     const { data, has_more } = await this.fetchOnePage(
       task.object,
       task.cursor,
@@ -166,10 +207,26 @@ export class StripeSyncWorker {
         'Stripe returned has_more=true with empty page'
       )
     } else if (data.length > 0) {
-      await config.upsertFn!(data, this.accountId, false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this.upsertAny(data as { [Key: string]: any }[], this.accountId, false)
     }
 
     await this.updateTaskProgress(task, data, has_more)
     return { hasMore: has_more, processed: data.length, runStartedAt: this.runKey.runStartedAt }
+  }
+
+  private getConfigForTaskObject(taskObject: string): ResourceConfig | undefined {
+    const matches = Object.values(this.resourceRegistry).filter(
+      (cfg) => cfg.tableName === taskObject
+    )
+    if (matches.length === 0) {
+      return undefined
+    }
+
+    // Prefer core Stripe resources when table names overlap with Sigma resources.
+    // This preserves registry precedence and avoids accidental Sigma processing
+    // when sync tasks are keyed by destination table name.
+    const coreMatch = matches.find((cfg) => !cfg.sigma)
+    return coreMatch ?? matches[0]
   }
 }

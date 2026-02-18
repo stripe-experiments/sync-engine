@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { stripeSync } from './stripeSync'
+import { StripeSync } from './stripeSync'
 import { runMigrations } from './database/migrate'
 import type { PoolConfig } from 'pg'
 import type Stripe from 'stripe'
 
 describe('Webhook Race Condition Tests', () => {
-  let stripeSync: stripeSync
+  let stripeSync: StripeSync
   const databaseUrl =
     process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
   const stripeApiKey = process.env.STRIPE_API_KEY
@@ -26,7 +26,7 @@ describe('Webhook Race Condition Tests', () => {
       keepAlive: true,
     }
 
-    stripeSync = new stripeSync({
+    stripeSync = await StripeSync.create({
       databaseUrl,
       stripeSecretKey: stripeApiKey,
       stripeApiVersion: '2020-08-27',
@@ -54,7 +54,7 @@ describe('Webhook Race Condition Tests', () => {
     }
 
     // Close database connection
-    await stripeSync['postgresClient'].pool.end()
+    await stripeSync.postgresClient.pool.end()
   })
 
   beforeEach(async () => {
@@ -66,7 +66,7 @@ describe('Webhook Race Condition Tests', () => {
 
     for (const webhook of matchingWebhooks) {
       try {
-        await stripeSync.deleteManagedWebhook(webhook.id)
+        await stripeSync.webhook.deleteManagedWebhook(webhook.id)
       } catch {
         // Ignore errors, webhook might already be deleted
       }
@@ -108,7 +108,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(matchingWebhooks.length).toBe(1)
 
         // Verify only 1 webhook in Stripe
-        const stripeWebhooks = await stripeSync['stripe'].webhookEndpoints.list({ limit: 100 })
+        const stripeWebhooks = await stripeSync.stripe.webhookEndpoints.list({ limit: 100 })
         const matchingStripeWebhooks = stripeWebhooks.data.filter(
           (w) => w.url === uniqueUrl && w.metadata?.managed_by === 'stripe-sync'
         )
@@ -163,7 +163,7 @@ describe('Webhook Race Condition Tests', () => {
 
         // Clean up
         for (const id of uniqueIds) {
-          await stripeSync.deleteManagedWebhook(id)
+          await stripeSync.webhook.deleteManagedWebhook(id)
         }
       },
       30000
@@ -190,7 +190,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(webhook1.id).toBe(webhook2.id)
 
         // Clean up
-        await stripeSync.deleteManagedWebhook(webhook1.id)
+        await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000
     )
@@ -230,7 +230,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(matchingWebhooks.length).toBe(1)
 
         // Clean up
-        await stripeSync.deleteManagedWebhook(webhook1.id)
+        await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000
     )

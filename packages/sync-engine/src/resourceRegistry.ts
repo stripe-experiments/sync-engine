@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import type { ResourceConfig, SyncObject } from './types'
+import type { ResourceConfig } from './types'
 import type { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 
 /**
@@ -8,17 +8,6 @@ import type { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
  */
 export type ResourceRegistryDeps = {
   stripe: Stripe
-  upsertAny: (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    items: { [Key: string]: any }[],
-    accountId: string,
-    backfillRelated?: boolean
-  ) => Promise<unknown[] | void>
-  upsertSubscriptions: (
-    items: Stripe.Subscription[],
-    accountId: string,
-    backfillRelated?: boolean
-  ) => Promise<void>
   sigma: SigmaSyncProcessor
 }
 
@@ -40,13 +29,15 @@ export type StripeObject =
   | 'early_fraud_warning'
   | 'refund'
   | 'checkout_sessions'
+  | 'active_entitlements'
+  | 'review'
 
-// Resource registry - maps SyncObject → list/upsert operations for processNext()
+// Resource registry - maps SyncObject → list/retrieve operations for processNext()
 // Complements eventHandlers which maps event types → handlers for webhooks
-// Both registries share the same underlying upsert methods
+// Upsert is handled universally via StripeSync.upsertAny()
 // Order field determines backfill sequence - parents before children for FK dependencies
 export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string, ResourceConfig> {
-  const { stripe, upsertAny, upsertSubscriptions, sigma } = deps
+  const { stripe, sigma } = deps
 
   const core: Record<StripeObject, ResourceConfig> = {
     product: {
@@ -55,8 +46,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: [],
       listFn: (p) => stripe.products.list(p),
       retrieveFn: (id) => stripe.products.retrieve(id),
-      upsertFn: (items, id) => upsertAny(items as Stripe.Product[], id),
       supportsCreatedFilter: true,
+      sync: true,
     },
     price: {
       order: 2,
@@ -64,8 +55,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['product'],
       listFn: (p) => stripe.prices.list(p),
       retrieveFn: (id) => stripe.prices.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Price[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
     },
     plan: {
       order: 3,
@@ -73,8 +64,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['product'],
       listFn: (p) => stripe.plans.list(p),
       retrieveFn: (id) => stripe.plans.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Plan[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
     },
     customer: {
       order: 4,
@@ -82,8 +73,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: [],
       listFn: (p) => stripe.customers.list(p),
       retrieveFn: (id) => stripe.customers.retrieve(id),
-      upsertFn: (items, id) => upsertAny(items as Stripe.Customer[], id),
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (customer: Stripe.Customer | Stripe.DeletedCustomer) =>
         'deleted' in customer && customer.deleted === true,
     },
@@ -93,11 +84,11 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'price'],
       listFn: (p) => stripe.subscriptions.list(p),
       retrieveFn: (id) => stripe.subscriptions.retrieve(id),
-      upsertFn: (items, id, bf) => upsertSubscriptions(items as Stripe.Subscription[], id, bf),
       listExpands: [
         { items: (id) => stripe.subscriptionItems.list({ subscription: id, limit: 100 }) },
       ],
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (subscription: Stripe.Subscription) =>
         subscription.status === 'canceled' || subscription.status === 'incomplete_expired',
     },
@@ -107,8 +98,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer'],
       listFn: (p) => stripe.subscriptionSchedules.list(p),
       retrieveFn: (id) => stripe.subscriptionSchedules.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.SubscriptionSchedule[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (schedule: Stripe.SubscriptionSchedule) =>
         schedule.status === 'canceled' || schedule.status === 'completed',
     },
@@ -118,9 +109,9 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'subscription'],
       listFn: (p) => stripe.invoices.list(p),
       retrieveFn: (id) => stripe.invoices.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Invoice[], id, bf),
       listExpands: [{ lines: (id) => stripe.invoices.listLineItems(id, { limit: 100 }) }],
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (invoice: Stripe.Invoice) => invoice.status === 'void',
     },
     charge: {
@@ -129,9 +120,9 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.charges.list(p),
       retrieveFn: (id) => stripe.charges.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Charge[], id, bf),
       listExpands: [{ refunds: (id) => stripe.refunds.list({ charge: id, limit: 100 }) }],
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (charge: Stripe.Charge) =>
         charge.status === 'failed' || charge.status === 'succeeded',
     },
@@ -141,8 +132,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer'],
       listFn: (p) => stripe.setupIntents.list(p),
       retrieveFn: (id) => stripe.setupIntents.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.SetupIntent[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (setupIntent: Stripe.SetupIntent) =>
         setupIntent.status === 'canceled' || setupIntent.status === 'succeeded',
     },
@@ -152,8 +143,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer'],
       listFn: (p) => stripe.paymentMethods.list(p),
       retrieveFn: (id) => stripe.paymentMethods.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.PaymentMethod[], id, bf),
-      supportsCreatedFilter: false, // Requires customer param, can't filter by created
+      supportsCreatedFilter: false,
+      sync: true,
     },
     payment_intent: {
       order: 11,
@@ -161,8 +152,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.paymentIntents.list(p),
       retrieveFn: (id) => stripe.paymentIntents.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.PaymentIntent[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (paymentIntent: Stripe.PaymentIntent) =>
         paymentIntent.status === 'canceled' || paymentIntent.status === 'succeeded',
     },
@@ -172,8 +163,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer'],
       listFn: (p) => stripe.taxIds.list(p),
       retrieveFn: (id) => stripe.taxIds.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.TaxId[], id, bf),
-      supportsCreatedFilter: false, // taxIds don't support created filter
+      supportsCreatedFilter: false,
+      sync: true,
     },
     credit_note: {
       order: 13,
@@ -181,11 +172,11 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.creditNotes.list(p),
       retrieveFn: (id) => stripe.creditNotes.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.CreditNote[], id, bf),
       listExpands: [
         { listLineItems: (id) => stripe.creditNotes.listLineItems(id, { limit: 100 }) },
       ],
-      supportsCreatedFilter: true, // credit_notes support created filter
+      supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (creditNote: Stripe.CreditNote) => creditNote.status === 'void',
     },
     dispute: {
@@ -194,8 +185,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['charge'],
       listFn: (p) => stripe.disputes.list(p),
       retrieveFn: (id) => stripe.disputes.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Dispute[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
       isFinalState: (dispute: Stripe.Dispute) =>
         dispute.status === 'won' || dispute.status === 'lost',
     },
@@ -205,8 +196,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.radar.earlyFraudWarnings.list(p),
       retrieveFn: (id) => stripe.radar.earlyFraudWarnings.retrieve(id),
-      upsertFn: (items, id) => upsertAny(items as Stripe.Radar.EarlyFraudWarning[], id),
       supportsCreatedFilter: true,
+      sync: true,
     },
     refund: {
       order: 16,
@@ -214,8 +205,8 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['payment_intent', 'charge'],
       listFn: (p) => stripe.refunds.list(p),
       retrieveFn: (id) => stripe.refunds.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Refund[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
     },
     checkout_sessions: {
       order: 17,
@@ -223,9 +214,30 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'subscription', 'payment_intent', 'invoice'],
       listFn: (p) => stripe.checkout.sessions.list(p),
       retrieveFn: (id) => stripe.checkout.sessions.retrieve(id),
-      upsertFn: (items, id, bf) => upsertAny(items as Stripe.Checkout.Session[], id, bf),
       supportsCreatedFilter: true,
+      sync: true,
       listExpands: [{ lines: (id) => stripe.checkout.sessions.listLineItems(id, { limit: 100 }) }],
+    },
+    active_entitlements: {
+      order: 18,
+      tableName: 'active_entitlements',
+      dependencies: ['customer'],
+      listFn: (p) =>
+        stripe.entitlements.activeEntitlements.list(
+          p as unknown as Stripe.Entitlements.ActiveEntitlementListParams
+        ),
+      retrieveFn: (id) => stripe.entitlements.activeEntitlements.retrieve(id),
+      supportsCreatedFilter: true,
+      sync: false,
+    },
+    review: {
+      order: 19,
+      tableName: 'reviews',
+      dependencies: ['payment_intent', 'charge'],
+      listFn: (p) => stripe.reviews.list(p),
+      retrieveFn: (id) => stripe.reviews.retrieve(id),
+      supportsCreatedFilter: true,
+      sync: false,
     },
   }
 
@@ -234,6 +246,27 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
 
   // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
   return { ...sigmaEntries, ...core }
+}
+
+/**
+ * Maps Stripe API object type strings (e.g. "checkout.session") to SyncObject keys
+ * used in resourceRegistry and getTableName().
+ */
+const STRIPE_OBJECT_TO_SYNC_OBJECT: Record<string, string> = {
+  'checkout.session': 'checkout_sessions',
+  'radar.early_fraud_warning': 'early_fraud_warning',
+  'entitlements.active_entitlement': 'active_entitlements',
+  'entitlements.feature': 'features',
+  subscription_schedule: 'subscription_schedules',
+}
+
+/**
+ * Convert a Stripe API object name (e.g. "checkout.session") to a SyncObject-compatible key.
+ * Handles dotted names like "checkout.session" -> "checkout_sessions".
+ * For simple names, returns as-is (e.g. "customer" -> "customer").
+ */
+export function normalizeStripeObjectName(stripeObjectName: string): StripeObject {
+  return (STRIPE_OBJECT_TO_SYNC_OBJECT[stripeObjectName] ?? stripeObjectName) as StripeObject
 }
 
 /**
@@ -290,10 +323,7 @@ export function getResourceConfigFromId(
 /**
  * Get the database table name for a SyncObject type from the resource registry.
  */
-export function getTableName(
-  object: string,
-  registry: Record<string, ResourceConfig>
-): string {
+export function getTableName(object: string, registry: Record<string, ResourceConfig>): string {
   const config = registry[object]
   if (!config) {
     throw new Error(`No resource config found for object type: ${object}`)

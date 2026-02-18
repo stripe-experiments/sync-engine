@@ -6,7 +6,7 @@ import {
   syncCommand,
   migrateCommand,
   backfillCommand,
-  fullResyncCommand,
+  fullSyncCommand,
   installCommand,
   uninstallCommand,
 } from './commands'
@@ -69,15 +69,15 @@ program
     )
   })
 
-// Full resync command
+// Full sync command
 program
-  .command('full-resync')
+  .command('full-sync')
   .description('Clear all sync cursors and re-sync everything from Stripe from scratch')
   .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
   .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
   .option('--sigma', 'Enable Sigma tables')
   .action(async (options) => {
-    await fullResyncCommand({
+    await fullSyncCommand({
       stripeKey: options.stripeKey,
       databaseUrl: options.databaseUrl,
       enableSigma: options.sigma,

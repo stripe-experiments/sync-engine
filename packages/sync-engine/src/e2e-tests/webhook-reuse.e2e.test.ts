@@ -62,7 +62,7 @@ describe('Webhook Reuse E2E', () => {
 
     // Verify webhook count
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const webhooks = await (sync as any).listManagedWebhooks()
+    const webhooks = await (sync.webhook as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
   })
 
@@ -81,7 +81,7 @@ describe('Webhook Reuse E2E', () => {
 
     // Verify still only one webhook
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const webhooks = await (sync as any).listManagedWebhooks()
+    const webhooks = await (sync.webhook as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
   })
 
@@ -155,7 +155,7 @@ describe('Webhook Reuse E2E', () => {
 
     // Verify only one webhook in database
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const webhooks = await (sync as any).listManagedWebhooks()
+    const webhooks = await (sync.webhook as any).listManagedWebhooks()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matching = webhooks.filter((w: any) => w.url === concurrentUrl)
     expect(matching.length).toBe(1)

@@ -1225,6 +1225,22 @@ export class PostgresClient {
   }
 
   /**
+   * Reset orphaned 'running' object runs back to 'pending'.
+   * Used for crash recovery: if a worker was killed mid-sync, the object run
+   * is left in 'running' state with no active worker. Resetting to 'pending'
+   * allows new workers to re-claim and finish the work.
+   */
+  async resetStuckRunningObjects(accountId: string, runStartedAt: Date): Promise<number> {
+    const result = await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET status = 'pending', updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = 'running'`,
+      [accountId, runStartedAt]
+    )
+    return result.rowCount ?? 0
+  }
+
+  /**
    * Mark an object sync as complete.
    * Auto-closes the run when all objects are done.
    */

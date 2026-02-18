@@ -91,34 +91,9 @@ export type StripeSyncConfig = {
   /** @deprecated Use `poolConfig` instead. */
   maxPostgresConnections?: number
 
-  poolConfig: PoolConfig
+  poolConfig?: PoolConfig
 
   logger?: Logger
-
-  /**
-   * Maximum number of retry attempts for 429 rate limit errors.
-   * Default: 5
-   */
-  maxRetries?: number
-
-  /**
-   * Initial delay in milliseconds before first retry attempt.
-   * Delay increases exponentially: 1s, 2s, 4s, 8s, 16s, etc.
-   * Default: 1000 (1 second)
-   */
-  initialRetryDelayMs?: number
-
-  /**
-   * Maximum delay in milliseconds between retry attempts.
-   * Default: 60000 (60 seconds)
-   */
-  maxRetryDelayMs?: number
-
-  /**
-   * Random jitter in milliseconds added to retry delays to prevent thundering herd.
-   * Default: 500
-   */
-  retryJitterMs?: number
 
   /**
    * Maximum number of customers to process concurrently when syncing payment methods.
@@ -319,6 +294,8 @@ export type BaseResourceConfig = {
   tableName: string
   /** Whether this resource supports incremental sync via 'created' filter or cursor */
   supportsCreatedFilter: boolean
+  /** Whether this resource is included in sync runs by default. Default: true */
+  sync?: boolean
   /** Resource types that must be backfilled before this one (e.g. price depends on product) */
   dependencies?: string[]
   /** Function to check if an entity is in a final state and doesn't need revalidation */
@@ -335,12 +312,6 @@ export type StripeListResourceConfig = BaseResourceConfig & {
   /** Function to retrieve a single item by ID from Stripe API */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   retrieveFn: (id: string) => Promise<Stripe.Response<any>>
-  /** Function to upsert items to database */
-  upsertFn: (
-    items: unknown[],
-    accountId: string,
-    backfillRelated?: boolean
-  ) => Promise<unknown[] | void>
   /** Optional list of sub-resources to expand during upsert/fetching (e.g. 'refunds', 'listLineItems') */
   listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
   /** discriminator */
@@ -360,8 +331,6 @@ export type SigmaResourceConfig = BaseResourceConfig & {
   listFn?: undefined
   /** discriminator */
   retrieveFn?: undefined
-  /** discriminator */
-  upsertFn?: undefined
   /** discriminator */
   listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
 }

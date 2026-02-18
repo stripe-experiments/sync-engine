@@ -132,9 +132,6 @@ await sync.close()
 | `autoExpandLists`               | boolean | Fetch all list items from Stripe (not just the default 10)                                                                                                                                                                                                                                             |
 | `backfillRelatedEntities`       | boolean | Ensure related entities exist for foreign key integrity                                                                                                                                                                                                                                                |
 | `revalidateObjectsViaStripeApi` | Array   | Always fetch latest data from Stripe instead of trusting webhook payload. Possible values: charge, credit_note, customer, dispute, invoice, payment_intent, payment_method, plan, price, product, refund, review, radar.early_fraud_warning, setup_intent, subscription, subscription_schedule, tax_id |
-| `maxRetries`                    | number  | Maximum retry attempts for 429 rate limits. Default: 5                                                                                                                                                                                                                                                 |
-| `initialRetryDelayMs`           | number  | Initial retry delay in milliseconds. Default: 1000                                                                                                                                                                                                                                                     |
-| `maxRetryDelayMs`               | number  | Maximum retry delay in milliseconds. Default: 60000                                                                                                                                                                                                                                                    |
 | `logger`                        | Logger  | Logger instance (pino-compatible)                                                                                                                                                                                                                                                                      |
 
 ## Database Schema
@@ -185,17 +182,14 @@ await sync.syncSingleEntity('prod_xyz')
 ### Backfill Historical Data
 
 ```ts
-// Sync all products created after a date
-await sync.processUntilDone({
-  object: 'product',
-  created: { gte: 1643872333 }, // Unix timestamp
-})
+// Sync all products
+await sync.fullSync(['product'])
 
 // Sync all customers
-await sync.processUntilDone({ object: 'customer' })
+await sync.fullSync(['customer'])
 
 // Sync everything
-await sync.processUntilDone({ object: 'all' })
+await sync.fullSync()
 ```
 
 Supported objects: `all`, `charge`, `checkout_sessions`, `credit_note`, `customer`, `customer_with_entitlements`, `dispute`, `early_fraud_warning`, `invoice`, `payment_intent`, `payment_method`, `plan`, `price`, `product`, `refund`, `setup_intent`, `subscription`, `subscription_schedules`, `tax_id`.

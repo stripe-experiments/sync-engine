@@ -10,6 +10,9 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers()
+    vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
+      id: 'acct_test',
+    } as Stripe.Account)
 
     // Create minimal config
     const config: StripeSyncConfig = {
@@ -17,10 +20,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
       poolConfig: {
         connectionString: 'postgresql://test',
       },
-      maxRetries: 3,
-      initialRetryDelayMs: 100,
-      maxRetryDelayMs: 1000,
-      retryJitterMs: 0,
     }
 
     // Create StripeSync instance

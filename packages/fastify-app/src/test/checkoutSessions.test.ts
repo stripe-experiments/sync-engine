@@ -20,18 +20,13 @@ beforeAll(async () => {
 
   stripeSync = await StripeSync.create({
     ...config,
+    stripeAccountId: TEST_ACCOUNT_ID,
     poolConfig: {
       connectionString: config.databaseUrl,
     },
   })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
-
-  // Mock getCurrentAccount to avoid API calls
-  vitest.spyOn(stripeSync, 'getCurrentAccount').mockResolvedValue({
-    id: TEST_ACCOUNT_ID,
-    object: 'account',
-  } as Stripe.Account)
 
   // Ensure test account exists in database with API key hash
   const apiKeyHash = hashApiKey(config.stripeSecretKey)
@@ -171,7 +166,7 @@ describe('checkout sessions', () => {
       } as Stripe.Checkout.Session,
     ]
 
-    await stripeSync.upsertCheckoutSessions(checkoutSessions, TEST_ACCOUNT_ID, false)
+    await stripeSync?.upsertAny(checkoutSessions, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select id, object, amount_discount, amount_subtotal, amount_tax, amount_total, currency, description, price, quantity from stripe.checkout_session_line_items where checkout_session = 'cs_live_9RBjcHiy2i5p99Tf1MYM90c3SHK1grU0E6Ae6pKWR2KPA4ZiuKiB2X1Y3X'`

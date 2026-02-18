@@ -26,7 +26,7 @@ describe('Edge Function Files', () => {
     })
 
     test('calls processWebhook with raw body and signature', () => {
-      expect(webhookFunctionCode).toContain('stripeSync.processWebhook(rawBody, sig)')
+      expect(webhookFunctionCode).toContain('stripeSync.webhook.processWebhook(rawBody, sig)')
     })
 
     test('returns 200 on success', () => {
@@ -45,11 +45,7 @@ describe('Edge Function Files', () => {
   })
 
   describe('workerFunctionCode', () => {
-    test('imports StripeSync from npm', () => {
-      expect(workerFunctionCode).toContain("import { StripeSync } from '")
-    })
-
-    test('imports postgres from npm for pgmq operations', () => {
+    test('imports postgres from npm for vault secret validation', () => {
       expect(workerFunctionCode).toContain("import postgres from 'npm:postgres'")
     })
 
@@ -76,28 +72,26 @@ describe('Edge Function Files', () => {
       expect(workerFunctionCode).toContain('status: 401')
     })
 
-    test('reads batch from pgmq queue', () => {
-      expect(workerFunctionCode).toContain('pgmq.read')
-      expect(workerFunctionCode).toContain('VISIBILITY_TIMEOUT')
-      expect(workerFunctionCode).toContain('BATCH_SIZE')
+    test('validates worker secret against vault', () => {
+      expect(workerFunctionCode).toContain('stripe_sync_worker_secret')
+      expect(workerFunctionCode).toContain('Forbidden: Invalid worker secret')
     })
 
-    test('enqueues all objects when queue is empty', () => {
+    test('initializes sync run via object-run model', () => {
       expect(workerFunctionCode).toContain('joinOrCreateSyncRun')
-      expect(workerFunctionCode).toContain('pgmq.send_batch')
+      expect(workerFunctionCode).toContain('stripe-worker')
+      expect(workerFunctionCode).toContain('tableNames')
     })
 
-    test('calls processNext with object to process pending work', () => {
-      expect(workerFunctionCode).toContain('stripeSync.processNext(object)')
+    test('runs StripeSyncWorker and waits for completion', () => {
+      expect(workerFunctionCode).toContain('new StripeSyncWorker')
+      expect(workerFunctionCode).toContain('worker.start()')
+      expect(workerFunctionCode).toContain('worker.waitUntilDone()')
     })
 
-    test('deletes message after successful processing', () => {
-      expect(workerFunctionCode).toContain('pgmq.delete')
-    })
-
-    test('re-enqueues object if hasMore pages', () => {
-      expect(workerFunctionCode).toContain('if (result.hasMore)')
-      expect(workerFunctionCode).toContain('pgmq.send')
+    test('returns synced totals from object runs', () => {
+      expect(workerFunctionCode).toContain('getObjectSyncedCounts')
+      expect(workerFunctionCode).toContain('JSON.stringify({ totals })')
     })
 
     test('returns 200 on success', () => {
