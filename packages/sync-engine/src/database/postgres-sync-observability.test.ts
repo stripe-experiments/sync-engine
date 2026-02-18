@@ -10,7 +10,9 @@ describe('Observable Sync System Methods', () => {
 
   beforeAll(async () => {
     const databaseUrl =
-      process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
+      process.env.TEST_POSTGRES_DB_URL ||
+      process.env.DATABASE_URL ||
+      'postgresql://postgres:postgres@localhost:55432/postgres'
 
     // Run migrations to ensure schema and tables exist
     await runMigrations({ databaseUrl })

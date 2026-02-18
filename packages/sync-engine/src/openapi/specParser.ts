@@ -7,33 +7,17 @@ import type {
   ParsedOpenApiSpec,
   ScalarType,
 } from './types'
+import { RUNTIME_REQUIRED_TABLES as DEFAULT_RUNTIME_REQUIRED_TABLES } from '../syncObjects'
 
-const RESERVED_COLUMNS = new Set(['id', '_raw_data', '_last_synced_at', '_updated_at', '_account_id'])
+const RESERVED_COLUMNS = new Set([
+  'id',
+  '_raw_data',
+  '_last_synced_at',
+  '_updated_at',
+  '_account_id',
+])
 
-export const RUNTIME_REQUIRED_TABLES = [
-  'active_entitlements',
-  'charges',
-  'checkout_session_line_items',
-  'checkout_sessions',
-  'credit_notes',
-  'customers',
-  'disputes',
-  'early_fraud_warnings',
-  'features',
-  'invoices',
-  'payment_intents',
-  'payment_methods',
-  'plans',
-  'prices',
-  'products',
-  'refunds',
-  'reviews',
-  'setup_intents',
-  'subscription_items',
-  'subscription_schedules',
-  'subscriptions',
-  'tax_ids',
-] as const
+export const RUNTIME_REQUIRED_TABLES = DEFAULT_RUNTIME_REQUIRED_TABLES
 
 export const RUNTIME_RESOURCE_ALIASES: Record<string, string> = {
   active_entitlement: 'active_entitlements',
@@ -66,8 +50,18 @@ export const RUNTIME_RESOURCE_ALIASES: Record<string, string> = {
 }
 
 const COMPATIBILITY_COLUMNS: Record<string, ParsedColumn[]> = {
-  active_entitlements: [{ name: 'customer', type: 'text', nullable: true }],
-  checkout_session_line_items: [{ name: 'checkout_session', type: 'text', nullable: true }],
+  active_entitlements: [
+    { name: 'customer', type: 'text', nullable: true },
+    { name: 'object', type: 'text', nullable: true },
+    { name: 'feature', type: 'text', nullable: true },
+    { name: 'livemode', type: 'boolean', nullable: true },
+    { name: 'lookup_key', type: 'text', nullable: true },
+  ],
+  checkout_session_line_items: [
+    { name: 'checkout_session', type: 'text', nullable: true },
+    { name: 'amount_discount', type: 'bigint', nullable: true },
+    { name: 'amount_tax', type: 'bigint', nullable: true },
+  ],
   customers: [{ name: 'deleted', type: 'boolean', nullable: true }],
   subscription_items: [
     { name: 'deleted', type: 'boolean', nullable: true },
@@ -242,7 +236,7 @@ export class SpecParser {
     spec: OpenApiSpec
   ): { type: ScalarType; nullable: boolean } {
     const schema = this.resolveSchema(schemaOrRef, spec)
-    let nullable = Boolean(schema.nullable)
+    const nullable = Boolean(schema.nullable)
 
     if (schema.oneOf?.length) {
       const merged = this.inferFromCandidates(schema.oneOf, spec)
@@ -331,7 +325,10 @@ export class SpecParser {
     return merged
   }
 
-  private resolveSchema(schemaOrRef: OpenApiSchemaOrReference, spec: OpenApiSpec): OpenApiSchemaObject {
+  private resolveSchema(
+    schemaOrRef: OpenApiSchemaOrReference,
+    spec: OpenApiSpec
+  ): OpenApiSchemaObject {
     if (!this.isReference(schemaOrRef)) {
       return schemaOrRef
     }

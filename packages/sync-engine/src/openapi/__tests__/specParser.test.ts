@@ -40,14 +40,18 @@ describe('SpecParser', () => {
       { allowedTables: ['active_entitlements', 'subscription_items'] }
     )
 
-    const activeEntitlements = parsed.tables.find((table) => table.tableName === 'active_entitlements')
+    const activeEntitlements = parsed.tables.find(
+      (table) => table.tableName === 'active_entitlements'
+    )
     expect(activeEntitlements?.columns).toContainEqual({
       name: 'customer',
       type: 'text',
       nullable: true,
     })
 
-    const subscriptionItems = parsed.tables.find((table) => table.tableName === 'subscription_items')
+    const subscriptionItems = parsed.tables.find(
+      (table) => table.tableName === 'subscription_items'
+    )
     expect(subscriptionItems?.columns).toContainEqual({
       name: 'deleted',
       type: 'boolean',

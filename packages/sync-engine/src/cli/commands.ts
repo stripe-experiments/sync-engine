@@ -12,6 +12,7 @@ import {
   type StripeWebSocketClient,
   type StripeWebhookEvent,
 } from '../index'
+import { SYNC_OBJECTS } from '../syncObjects'
 import { createTunnel, type NgrokTunnel } from './ngrok'
 import { install, uninstall } from '../supabase'
 import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
@@ -28,28 +29,6 @@ export interface DeployOptions {
 
 export type { CliOptions }
 
-const VALID_SYNC_OBJECTS: SyncObject[] = [
-  'all',
-  'customer',
-  'customer_with_entitlements',
-  'invoice',
-  'price',
-  'product',
-  'subscription',
-  'subscription_schedules',
-  'setup_intent',
-  'payment_method',
-  'dispute',
-  'charge',
-  'payment_intent',
-  'plan',
-  'tax_id',
-  'credit_note',
-  'early_fraud_warning',
-  'refund',
-  'checkout_sessions',
-]
-
 /**
  * Backfill command - backfills a specific entity type from Stripe.
  */
@@ -65,11 +44,11 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
 
     // Validate entity name - allow sigma table names when sigma is enabled
     const sigmaTableNames = enableSigma ? Object.keys(SIGMA_INGESTION_CONFIGS) : []
-    const validEntities = [...VALID_SYNC_OBJECTS, ...sigmaTableNames]
-    if (!validEntities.includes(entityName as SyncObject)) {
+    const validEntities = new Set<string>([...SYNC_OBJECTS, ...sigmaTableNames])
+    if (!validEntities.has(entityName)) {
       const entityList = enableSigma
-        ? `${VALID_SYNC_OBJECTS.join(', ')}, and ${sigmaTableNames.length} sigma tables`
-        : VALID_SYNC_OBJECTS.join(', ')
+        ? `${SYNC_OBJECTS.join(', ')}, and ${sigmaTableNames.length} sigma tables`
+        : SYNC_OBJECTS.join(', ')
       console.error(
         chalk.red(`Error: Invalid entity name "${entityName}". Valid entities are: ${entityList}`)
       )

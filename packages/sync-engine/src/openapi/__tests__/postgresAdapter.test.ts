@@ -23,11 +23,19 @@ describe('PostgresAdapter', () => {
     expect(statements[0]).toContain('CREATE TABLE "stripe"."customers"')
     expect(statements[0]).toContain('"_raw_data" jsonb NOT NULL')
     expect(statements[0]).toContain('"_account_id" text NOT NULL')
-    expect(statements[0]).toContain('"id" text GENERATED ALWAYS AS ((_raw_data->>\'id\')::text) STORED')
-    expect(statements[0]).toContain('"metadata" jsonb GENERATED ALWAYS AS ((_raw_data->\'metadata\')::jsonb) STORED')
+    expect(statements[0]).toContain(
+      '"id" text GENERATED ALWAYS AS ((_raw_data->>\'id\')::text) STORED'
+    )
+    expect(statements[0]).toContain(
+      '"metadata" jsonb GENERATED ALWAYS AS ((_raw_data->\'metadata\')::jsonb) STORED'
+    )
     // Temporal columns are stored as text generated columns for immutability safety.
-    expect(statements[0]).toContain('"expires_at" text GENERATED ALWAYS AS ((_raw_data->>\'expires_at\')::text) STORED')
-    expect(statements[1]).toContain('FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id)')
+    expect(statements[0]).toContain(
+      '"expires_at" text GENERATED ALWAYS AS ((_raw_data->>\'expires_at\')::text) STORED'
+    )
+    expect(statements[1]).toContain(
+      'FOREIGN KEY ("_account_id") REFERENCES "stripe"."accounts" (id)'
+    )
     expect(statements[3]).toContain('DROP TRIGGER IF EXISTS handle_updated_at')
     expect(statements[4]).toContain('EXECUTE FUNCTION set_updated_at()')
   })
