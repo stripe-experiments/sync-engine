@@ -2,7 +2,7 @@ import Stripe from 'stripe'
 import { pg as sql } from 'yesql'
 import pkg from '../package.json' with { type: 'json' }
 import { PostgresClient } from './database/postgres'
-import { StripeSyncConfig, SyncBackfill, SyncObject, type ResourceConfig } from './types'
+import { StripeSyncConfig, Sync, SyncObject, type ResourceConfig } from './types'
 import { type PoolConfig } from 'pg'
 import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
@@ -203,7 +203,7 @@ export class StripeSync {
   }
 
   async fullSync(tables?: StripeObject[]): Promise<{
-    results: SyncBackfill
+    results: Record<string, Sync>
     totals: Record<string, number>
     totalSynced: number
     skipped: string[]
@@ -254,7 +254,7 @@ export class StripeSync {
       runKey.runStartedAt
     )
 
-    const results: SyncBackfill = {}
+    const results: Record<string, Sync> = {}
     const errors: Array<{ object: string; message: string }> = []
     for (const [obj, count] of Object.entries(totals)) {
       results[obj] = { synced: count }

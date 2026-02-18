@@ -219,11 +219,6 @@ export interface Sync {
   synced: number
 }
 
-/**
- * Result of a backfill sync run, keyed by SyncObject name (e.g. 'product', 'customer', 'subscription_schedules').
- */
-export type SyncBackfill = Record<string, Sync>
-
 export interface SyncParams {
   created?: {
     /**
