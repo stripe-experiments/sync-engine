@@ -46,7 +46,7 @@ describe('entitlements', () => {
         name: 'Test Customer 1',
       } as Stripe.Customer,
     ]
-    await stripeSync.upsertCustomers(customer, accountId)
+    await stripeSync.upsertAny(customer, accountId)
 
     const activeEntitlements = [
       {

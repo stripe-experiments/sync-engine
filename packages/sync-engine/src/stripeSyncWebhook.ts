@@ -1,9 +1,14 @@
 import Stripe from 'stripe'
 import pkg from '../package.json' with { type: 'json' }
 import { managedWebhookSchema } from './schemas/managed_webhook'
-import { type StripeSyncConfig, type ResourceConfig, SUPPORTED_WEBHOOK_EVENTS } from './types'
+import {
+  type StripeSyncConfig,
+  type ResourceConfig,
+  SUPPORTED_WEBHOOK_EVENTS,
+  RevalidateEntity,
+} from './types'
 import { PostgresClient } from './database/postgres'
-import { getTableName } from './resourceRegistry'
+import { getTableName, normalizeStripeObjectName } from './resourceRegistry'
 
 export type StripeSyncWebhookDeps = {
   stripe: Stripe
@@ -73,7 +78,7 @@ export class StripeSyncWebhook {
   }
 
   async handleDeletedEvent(event: Stripe.Event, accountId: string): Promise<void> {
-    const objectType = event.data.object.object
+    const objectType = normalizeStripeObjectName(event.data.object.object)
     const tableName = getTableName(objectType, this.deps.resourceRegistry)
     const softDelete = await this.deps.postgresClient.columnExists(tableName, 'deleted')
     const stripeObject = event.data.object as { id: string; object: string }
@@ -91,15 +96,18 @@ export class StripeSyncWebhook {
   }
 
   async defaultHandler(event: Stripe.Event, accountId: string): Promise<void> {
-    let stripeObject = event.data.object
-    const objectType = event.data.object.object
+    let stripeObject = event.data.object as { id: string; object: string }
+    const objectType = normalizeStripeObjectName(stripeObject.object)
     const config = this.deps.resourceRegistry[objectType]
     if (!config || !config.retrieveFn) {
       throw new Error(`Unsupported object type for handleAnyEvent: ${objectType}`)
     }
     let refetched: boolean = false
-    const isFinalState = config.isFinalState && config.isFinalState(event.data.object)
-    if (!isFinalState && 'id' in stripeObject) {
+    const shouldRevalidate = this.deps.config.revalidateObjectsViaStripeApi?.includes(
+      objectType as RevalidateEntity
+    )
+    const isFinalState = config.isFinalState && config.isFinalState(stripeObject)
+    if (!isFinalState && shouldRevalidate) {
       stripeObject = await config.retrieveFn(stripeObject.id)
       refetched = true
     }
@@ -111,8 +119,51 @@ export class StripeSyncWebhook {
     )
   }
 
+  async handleEntitlementSummaryEvent(event: Stripe.Event, accountId: string): Promise<void> {
+    const summary = event.data.object as {
+      customer: string
+      entitlements: {
+        data: Array<{
+          id: string
+          object: string
+          feature: string | { id: string }
+          livemode: boolean
+          lookup_key: string
+        }>
+      }
+    }
+    const customerId = summary.customer
+    const activeEntitlements = summary.entitlements.data.map((entitlement) => ({
+      id: entitlement.id,
+      object: entitlement.object,
+      feature:
+        typeof entitlement.feature === 'string' ? entitlement.feature : entitlement.feature.id,
+      customer: customerId,
+      livemode: entitlement.livemode,
+      lookup_key: entitlement.lookup_key,
+    }))
+
+    await this.deps.postgresClient.deleteRemovedActiveEntitlements(
+      customerId,
+      activeEntitlements.map((e) => e.id)
+    )
+    if (activeEntitlements.length > 0) {
+      await this.deps.upsertAny(
+        activeEntitlements,
+        accountId,
+        false,
+        this.getSyncTimestamp(event, false)
+      )
+    }
+  }
+
   async handleAnyEvent(event: Stripe.Event, accountId: string): Promise<void> {
-    if (event.type.includes('.deleted')) {
+    if (event.type === 'entitlements.active_entitlement_summary.updated') {
+      await this.handleEntitlementSummaryEvent(event, accountId)
+    } else if (
+      'deleted' in event.data.object &&
+      (event.data.object as { deleted?: boolean }).deleted === true
+    ) {
       await this.handleDeletedEvent(event, accountId)
     } else {
       await this.defaultHandler(event, accountId)

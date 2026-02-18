@@ -17,7 +17,8 @@ export async function expandEntity<
   if (!autoExpandLists) return
 
   for (const entity of entities) {
-    if (entity[property]?.has_more) {
+    const existingList = entity[property]
+    if (!existingList || existingList.has_more) {
       const allData: K[] = []
 
       // Manual pagination - each fetch() gets automatic retry protection
@@ -39,10 +40,11 @@ export async function expandEntity<
       }
 
       entity[property] = {
-        ...entity[property],
+        ...existingList,
+        object: 'list',
         data: allData,
         has_more: false,
-      }
+      } as T[P]
     }
   }
 }

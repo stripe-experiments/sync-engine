@@ -89,7 +89,6 @@ describe('Pagination regression tests', () => {
         order: 0,
         supportsCreatedFilter: true,
         listFn: mockCreditNotesList,
-        upsertFn: vi.fn().mockResolvedValue([]),
       } as unknown as ResourceConfig
     })
 

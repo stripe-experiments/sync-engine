@@ -93,8 +93,6 @@ export class StripeSync {
 
     this.resourceRegistry = buildResourceRegistry({
       stripe: this.stripe,
-      upsertAny: this.upsertAny.bind(this),
-      upsertSubscriptions: this.upsertSubscriptions.bind(this),
       sigma: this.sigma,
     })
   }
@@ -109,9 +107,6 @@ export class StripeSync {
       instance.accountId = config.stripeAccountId
     } else {
       const account = await instance.getCurrentAccount()
-      if (!account) {
-        throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
-      }
       instance.accountId = account.id
     }
     instance.webhook = new StripeSyncWebhook({
@@ -135,9 +130,6 @@ export class StripeSync {
       return this.accountId
     }
     const account = await this.getCurrentAccount(objectAccountId)
-    if (!account) {
-      throw new Error('Failed to retrieve Stripe account. Please ensure API key is valid.')
-    }
     return account.id
   }
 
@@ -146,7 +138,7 @@ export class StripeSync {
    * with fallback to Stripe API if not found (first-time setup or new API key).
    * @param objectAccountId - Optional account ID from event data (Connect scenarios)
    */
-  async getCurrentAccount(objectAccountId?: string): Promise<Stripe.Account | null> {
+  async getCurrentAccount(objectAccountId?: string): Promise<Stripe.Account> {
     const apiKeyHash = hashApiKey(this.config.stripeSecretKey)
 
     // Try to lookup account from database using API key hash (fast path)
@@ -173,7 +165,9 @@ export class StripeSync {
       return account
     } catch (error) {
       this.config.logger?.error(error, 'Failed to retrieve account from Stripe API')
-      return null
+      const message =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
+      throw new Error(`Failed to retrieve Stripe account: ${message}`)
     }
   }
 
@@ -204,7 +198,7 @@ export class StripeSync {
       throw new Error(`Unsupported object type for syncSingleEntity: ${stripeId}`)
     }
     const item = await resourceConfig.retrieveFn(stripeId)
-    await resourceConfig.upsertFn([item], accountId, false)
+    await this.upsertAny([item], accountId, false)
   }
 
   async fullSync(tables?: StripeObject[]): Promise<{
@@ -247,7 +241,8 @@ export class StripeSync {
           this.postgresClient,
           this.accountId,
           this.resourceRegistry,
-          runKey
+          runKey,
+          this.upsertAny.bind(this)
         )
     )
     workers.forEach((worker) => worker.start())
@@ -284,7 +279,12 @@ export class StripeSync {
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       await Promise.all(
         dependencies.map((dependency) =>
-          this.backfillAny(getUniqueIds(items, dependency), dependency as StripeObject, accountId)
+          this.backfillAny(
+            getUniqueIds(items, dependency),
+            dependency as StripeObject,
+            accountId,
+            syncTimestamp
+          )
         )
       )
     }
@@ -304,16 +304,34 @@ export class StripeSync {
     }
 
     const tableName = getTableName(syncObjectName, this.resourceRegistry)
-    const rows = this.postgresClient.upsertManyWithTimestampProtection(
+    const rows = await this.postgresClient.upsertManyWithTimestampProtection(
       items,
       tableName,
       accountId,
       syncTimestamp
     )
+
+    if (syncObjectName === 'subscription') {
+      await this.syncSubscriptionItems(items as Stripe.Subscription[], accountId, syncTimestamp)
+    }
+
+    if (syncObjectName === 'checkout_sessions') {
+      await this.syncCheckoutSessionLineItems(
+        items as Stripe.Checkout.Session[],
+        accountId,
+        syncTimestamp
+      )
+    }
+
     return rows
   }
 
-  async backfillAny(ids: string[], objectName: StripeObject, accountId: string) {
+  async backfillAny(
+    ids: string[],
+    objectName: StripeObject,
+    accountId: string,
+    syncTimestamp?: string
+  ) {
     const config = this.resourceRegistry[objectName]
     const tableName = config?.tableName ?? objectName
     if (!config?.retrieveFn) {
@@ -323,7 +341,62 @@ export class StripeSync {
     const missingIds = await this.postgresClient.findMissingEntries(tableName, ids)
 
     const items = await this.fetchMissingEntities(missingIds, (id) => config.retrieveFn!(id))
-    return this.upsertAny(items, accountId)
+    return this.upsertAny(items, accountId, false, syncTimestamp)
+  }
+
+  /**
+   * Upsert subscription items into a separate table and mark removed items as deleted.
+   * Skips deleted subscriptions that have no items data.
+   */
+  private async syncSubscriptionItems(
+    subscriptions: Stripe.Subscription[],
+    accountId: string,
+    syncTimestamp?: string
+  ) {
+    const subscriptionsWithItems = subscriptions.filter((s) => s.items?.data)
+
+    const allSubscriptionItems = subscriptionsWithItems.flatMap((s) => s.items.data)
+    await this.upsertSubscriptionItems(allSubscriptionItems, accountId, syncTimestamp)
+
+    // Mark existing subscription items in db as deleted
+    // if they don't exist in the current subscriptionItems list
+    await Promise.all(
+      subscriptionsWithItems.map((subscription) => {
+        const subItemIds = subscription.items.data.map((x: Stripe.SubscriptionItem) => x.id)
+        return this.markDeletedSubscriptionItems(subscription.id, subItemIds)
+      })
+    )
+  }
+
+  /**
+   * Upsert checkout session line items into a separate table.
+   * Skips sessions that have no line items data.
+   */
+  private async syncCheckoutSessionLineItems(
+    sessions: Stripe.Checkout.Session[],
+    accountId: string,
+    syncTimestamp?: string
+  ) {
+    const sessionsWithLines = sessions.filter(
+      (s) => (s as unknown as { lines?: { data?: unknown[] } }).lines?.data
+    )
+    if (sessionsWithLines.length === 0) return
+
+    const allLineItems = sessionsWithLines.flatMap((session) => {
+      const lines = (session as unknown as { lines: { data: Record<string, unknown>[] } }).lines
+      return lines.data.map((item) => ({
+        ...item,
+        checkout_session: session.id,
+        price: typeof item.price === 'string' ? item.price : (item.price as { id: string })?.id,
+      }))
+    })
+
+    await this.postgresClient.upsertManyWithTimestampProtection(
+      allLineItems,
+      'checkout_session_line_items',
+      accountId,
+      syncTimestamp
+    )
   }
 
   async upsertSubscriptionItems(
@@ -374,32 +447,6 @@ export class StripeSync {
     } else {
       return { rowCount: 0 }
     }
-  }
-
-  async upsertSubscriptions(
-    subscriptions: Stripe.Subscription[],
-    accountId: string,
-    backfillRelatedEntities?: boolean,
-    syncTimestamp?: string
-  ): Promise<void> {
-    await this.upsertAny(subscriptions, accountId, backfillRelatedEntities, syncTimestamp)
-
-    // Upsert subscription items into a separate table
-    // need to run after upsert subscription cos subscriptionItems will reference the subscription
-    const allSubscriptionItems = subscriptions.flatMap((subscription) => subscription.items.data)
-    await this.upsertSubscriptionItems(allSubscriptionItems, accountId, syncTimestamp)
-
-    // We have to mark existing subscription item in db as deleted
-    // if it doesn't exist in current subscriptionItems list
-    const markSubscriptionItemsDeleted: Promise<{ rowCount: number }>[] = []
-    for (const subscription of subscriptions) {
-      const subscriptionItems = subscription.items.data
-      const subItemIds = subscriptionItems.map((x: Stripe.SubscriptionItem) => x.id)
-      markSubscriptionItemsDeleted.push(
-        this.markDeletedSubscriptionItems(subscription.id, subItemIds)
-      )
-    }
-    await Promise.all(markSubscriptionItemsDeleted)
   }
 
   async upsertActiveEntitlements(

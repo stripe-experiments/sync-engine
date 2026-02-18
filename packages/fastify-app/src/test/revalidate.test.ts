@@ -5,7 +5,7 @@ import { mockStripe } from './helpers/mockStripe'
 import { logger } from '../logger'
 import type Stripe from 'stripe'
 
-let stripeSync: StripeSync | undefined
+let stripeSync: StripeSync
 
 beforeAll(async () => {
   process.env.REVALIDATE_OBJECTS_VIA_STRIPE_API = 'invoice'
@@ -38,7 +38,7 @@ describe('invoices', () => {
       ({ default: myData }) => myData
     )
 
-    await stripeSync.processEvent(eventBody as unknown as Stripe.Event)
+    await stripeSync.webhook.processEvent(eventBody as unknown as Stripe.Event)
 
     const result = await stripeSync.postgresClient.query(
       `select customer from stripe.invoices where id = 'in_1KJdKkJDPojXS6LNSwSWkZSN' limit 1`
@@ -52,7 +52,7 @@ describe('invoices', () => {
       ({ default: myData }) => myData
     )
 
-    await stripeSync.processEvent(eventBody as unknown as Stripe.Event)
+    await stripeSync.webhook.processEvent(eventBody as unknown as Stripe.Event)
 
     const result = await stripeSync.postgresClient.query(
       `select customer from stripe.invoices where id = 'in_1KJqKBJDPojXS6LNJbvLUgEy' limit 1`

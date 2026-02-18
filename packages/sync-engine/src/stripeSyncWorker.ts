@@ -23,6 +23,12 @@ export class StripeSyncWorker {
     private readonly accountId: string,
     private readonly resourceRegistry: Record<string, ResourceConfig>,
     private readonly runKey: RunKey,
+    private readonly upsertAny: (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: { [Key: string]: any }[],
+      accountId: string,
+      backfillRelated?: boolean
+    ) => Promise<unknown[] | void>,
     private readonly taskLimit: number = Infinity
   ) {}
 
@@ -201,7 +207,8 @@ export class StripeSyncWorker {
         'Stripe returned has_more=true with empty page'
       )
     } else if (data.length > 0) {
-      await config.upsertFn!(data, this.accountId, false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this.upsertAny(data as { [Key: string]: any }[], this.accountId, false)
     }
 
     await this.updateTaskProgress(task, data, has_more)

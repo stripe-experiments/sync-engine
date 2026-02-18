@@ -166,7 +166,7 @@ describe('checkout sessions', () => {
       } as Stripe.Checkout.Session,
     ]
 
-    await stripeSync.upsertCheckoutSessions(checkoutSessions, TEST_ACCOUNT_ID, false)
+    await stripeSync?.upsertAny(checkoutSessions, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select id, object, amount_discount, amount_subtotal, amount_tax, amount_total, currency, description, price, quantity from stripe.checkout_session_line_items where checkout_session = 'cs_live_9RBjcHiy2i5p99Tf1MYM90c3SHK1grU0E6Ae6pKWR2KPA4ZiuKiB2X1Y3X'`

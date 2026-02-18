@@ -54,7 +54,7 @@ describe('invoices', () => {
       } as Stripe.Invoice,
     ]
 
-    await stripeSync.upsertInvoices(invoices, TEST_ACCOUNT_ID, false)
+    await stripeSync.upsertAny(invoices, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select lines->'data' as lines from stripe.invoices where id = 'in_xyz' limit 1`
@@ -75,7 +75,7 @@ describe('invoices', () => {
       } as Stripe.Invoice,
     ]
 
-    await stripeSync.upsertInvoices(invoices, TEST_ACCOUNT_ID, false)
+    await stripeSync.upsertAny(invoices, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select lines->'data' as lines from stripe.invoices where id = 'in_xyz2' limit 1`

@@ -310,12 +310,6 @@ export type StripeListResourceConfig = BaseResourceConfig & {
   /** Function to retrieve a single item by ID from Stripe API */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   retrieveFn: (id: string) => Promise<Stripe.Response<any>>
-  /** Function to upsert items to database */
-  upsertFn: (
-    items: unknown[],
-    accountId: string,
-    backfillRelated?: boolean
-  ) => Promise<unknown[] | void>
   /** Optional list of sub-resources to expand during upsert/fetching (e.g. 'refunds', 'listLineItems') */
   listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
   /** discriminator */
@@ -335,8 +329,6 @@ export type SigmaResourceConfig = BaseResourceConfig & {
   listFn?: undefined
   /** discriminator */
   retrieveFn?: undefined
-  /** discriminator */
-  upsertFn?: undefined
   /** discriminator */
   listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
 }
