@@ -135,7 +135,7 @@ async function connectAndMigrate(
   client: Client,
   migrationsDirectory: string,
   config: MigrationConfig,
-  logOnError = false
+  logOnError = true
 ) {
   if (!fs.existsSync(migrationsDirectory)) {
     throw new Error(`Migrations directory not found. ${migrationsDirectory} does not exist.`)
@@ -332,10 +332,8 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
   const schema = 'stripe'
 
   try {
-    console.log('Starting migrations')
     // Run migrations
     await client.connect()
-    console.log('Connected to database')
 
     // Ensure schema exists, not doing it via migration to not break current migration checksums
     await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema};`)
