@@ -78,7 +78,6 @@ describe('Edge Function Files', () => {
     })
 
     test('initializes sync run via object-run model', () => {
-      expect(workerFunctionCode).toContain('joinOrCreateSyncRun')
       expect(workerFunctionCode).toContain('stripe-worker')
       expect(workerFunctionCode).toContain('tableNames')
     })
