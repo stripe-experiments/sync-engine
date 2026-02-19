@@ -151,9 +151,8 @@ async function connectAndMigrate(
   } catch (error) {
     if (logOnError && error instanceof Error) {
       config.logger?.error(error, 'Migration error:')
-    } else {
-      throw error
     }
+    throw error
   }
 }
 
