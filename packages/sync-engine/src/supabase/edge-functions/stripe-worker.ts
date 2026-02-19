@@ -84,9 +84,14 @@ Deno.serve(async (req) => {
         stripeSync.upsertAny.bind(stripeSync)
       )
   )
+  const MAX_EXECUTION_MS = 50_000 // edge function limit
   workers.forEach((worker) => worker.start())
-  await Promise.all(workers.map((worker) => worker.waitUntilDone()))
-
+  await Promise.race([
+    Promise.all(workers.map((w) => w.waitUntilDone())),
+    new Promise((resolve) => setTimeout(resolve, MAX_EXECUTION_MS)),
+  ])
+  workers.forEach((w) => w.shutdown())
+  console.log("Finished after 50s")
   const totals = await stripeSync.postgresClient.getObjectSyncedCounts(
     stripeSync.accountId,
     runKey.runStartedAt
