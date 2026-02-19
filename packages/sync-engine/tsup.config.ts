@@ -1,6 +1,5 @@
 import { defineConfig } from 'tsup'
 import path from 'node:path'
-import fs from 'node:fs'
 import * as esbuild from 'esbuild'
 
 import { builtinModules } from 'node:module'
@@ -90,9 +89,8 @@ export const rawTsBundledPlugin: esbuild.Plugin = {
         sourcemap: false,
         minify: false,
 
-        // IMPORTANT: do NOT include this plugin (or you'd recurse / re-resolve ?raw)
         logLevel: 'silent',
-        plugins: [nodePrefixBuiltinsPlugin(), embeddedMigrationsPlugin],
+        plugins: [nodePrefixBuiltinsPlugin()],
       })
 
       const bundled = result.outputFiles?.[0]?.text ?? ''
@@ -105,43 +103,8 @@ export const rawTsBundledPlugin: esbuild.Plugin = {
   },
 }
 
-// Plugin to embed all SQL migrations from a directory at build time
-// Usage: import migrations from './migrations?embedded'
-// Returns: Array<{name: string, sql: string}> sorted by filename
-export const embeddedMigrationsPlugin: esbuild.Plugin = {
-  name: 'embedded-migrations',
-  setup(build) {
-    build.onResolve({ filter: /\?embedded$/ }, (args) => {
-      const withoutQuery = args.path.replace(/\?embedded$/, '')
-      return {
-        path: path.resolve(args.resolveDir, withoutQuery),
-        namespace: 'embedded-migrations',
-      }
-    })
-
-    build.onLoad({ filter: /.*/, namespace: 'embedded-migrations' }, async (args) => {
-      const migrationsDir = args.path
-      const files = fs
-        .readdirSync(migrationsDir)
-        .filter((f) => f.endsWith('.sql'))
-        .sort()
-
-      const migrations = files.map((filename) => ({
-        name: filename,
-        sql: fs.readFileSync(path.join(migrationsDir, filename), 'utf-8'),
-      }))
-
-      return {
-        contents: `export default ${JSON.stringify(migrations)};`,
-        loader: 'js',
-      }
-    })
-  },
-}
-
 export default defineConfig({
-  // tsup forwards these plugins to its internal esbuild call
-  esbuildPlugins: [rawTsBundledPlugin, embeddedMigrationsPlugin],
+  esbuildPlugins: [rawTsBundledPlugin],
 
   esbuildOptions(options) {
     options.external = options.external || []
