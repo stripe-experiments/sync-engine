@@ -4,22 +4,39 @@ import { getConfig } from '../utils/config'
 import { mockStripe } from './helpers/mockStripe'
 import { logger } from '../logger'
 import Stripe from 'stripe'
+import { ensureTestMerchantConfig } from './helpers/merchantConfig'
 
 let stripeSync: StripeSync | undefined
 const customerId = 'cus_111'
+
+ensureTestMerchantConfig()
 
 beforeAll(async () => {
   process.env.REVALIDATE_ENTITY_VIA_STRIPE_API = 'false'
   process.env.BACKFILL_RELATED_ENTITIES = 'false'
 
   const config = getConfig()
+  const primaryMerchantConfig = Object.values(config.merchantConfigByHost)[0]
+  if (!primaryMerchantConfig) {
+    throw new Error('MERCHANT_CONFIG_JSON must define at least one merchant')
+  }
   await runMigrations({
-    databaseUrl: config.databaseUrl,
+    databaseUrl: primaryMerchantConfig.databaseUrl,
 
     logger,
   })
 
-  stripeSync = new StripeSync(config)
+  stripeSync = new StripeSync({
+    ...primaryMerchantConfig,
+    stripeApiVersion: config.stripeApiVersion,
+    revalidateObjectsViaStripeApi: config.revalidateObjectsViaStripeApi,
+    maxPostgresConnections: config.maxPostgresConnections,
+    ...(config.partnerId ? { partnerId: config.partnerId } : {}),
+    logger,
+    poolConfig: {
+      connectionString: primaryMerchantConfig.databaseUrl,
+    },
+  })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
 })

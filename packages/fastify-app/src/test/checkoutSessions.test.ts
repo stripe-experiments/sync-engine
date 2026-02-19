@@ -4,24 +4,36 @@ import { vitest, beforeAll, describe, test, expect } from 'vitest'
 import { getConfig } from '../utils/config'
 import { mockStripe } from './helpers/mockStripe'
 import { logger } from '../logger'
+import { ensureTestMerchantConfig } from './helpers/merchantConfig'
 
 let stripeSync: StripeSync | undefined
 const TEST_ACCOUNT_ID = 'acct_test_account'
+
+ensureTestMerchantConfig()
 
 beforeAll(async () => {
   process.env.AUTO_EXPAND_LISTS = 'true'
   process.env.BACKFILL_RELATED_ENTITIES = 'false'
 
   const config = getConfig()
+  const primaryMerchantConfig = Object.values(config.merchantConfigByHost)[0]
+  if (!primaryMerchantConfig) {
+    throw new Error('MERCHANT_CONFIG_JSON must define at least one merchant')
+  }
   await runMigrations({
-    databaseUrl: config.databaseUrl,
+    databaseUrl: primaryMerchantConfig.databaseUrl,
     logger,
   })
 
   stripeSync = new StripeSync({
-    ...config,
+    ...primaryMerchantConfig,
+    stripeApiVersion: config.stripeApiVersion,
+    revalidateObjectsViaStripeApi: config.revalidateObjectsViaStripeApi,
+    maxPostgresConnections: config.maxPostgresConnections,
+    ...(config.partnerId ? { partnerId: config.partnerId } : {}),
+    logger,
     poolConfig: {
-      connectionString: config.databaseUrl,
+      connectionString: primaryMerchantConfig.databaseUrl,
     },
   })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
@@ -34,7 +46,7 @@ beforeAll(async () => {
   } as Stripe.Account)
 
   // Ensure test account exists in database with API key hash
-  const apiKeyHash = hashApiKey(config.stripeSecretKey)
+  const apiKeyHash = hashApiKey(primaryMerchantConfig.stripeSecretKey)
   await stripeSync.postgresClient.upsertAccount(
     {
       id: TEST_ACCOUNT_ID,
