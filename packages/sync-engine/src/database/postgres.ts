@@ -961,7 +961,8 @@ export class PostgresClient {
    */
   async claimNextTask(
     accountId: string,
-    runStartedAt: Date
+    runStartedAt: Date,
+    rateLimit: number = 100
   ): Promise<{
     object: string
     cursor: string | null
@@ -971,6 +972,12 @@ export class PostgresClient {
   } | null> {
     const run = await this.getSyncRun(accountId, runStartedAt)
     if (!run) return null
+
+    await this.query(`SELECT "${this.config.schema}".check_rate_limit($1, $2, $3)`, [
+      'claimNextTask',
+      rateLimit,
+      1,
+    ])
 
     const result = await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"

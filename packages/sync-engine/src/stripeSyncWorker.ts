@@ -32,7 +32,8 @@ export class StripeSyncWorker {
       accountId: string,
       backfillRelated?: boolean
     ) => Promise<unknown[] | void>,
-    private readonly taskLimit: number = Infinity
+    private readonly taskLimit: number = Infinity,
+    private readonly rateLimit: number = 100
   ) {}
 
   start(): void {
@@ -62,8 +63,18 @@ export class StripeSyncWorker {
         await this.processSingleTask(task)
         this.tasksCompleted++
       } catch (err) {
-        this.config.logger?.error({ err }, 'Task processing failed; sleeping 5s before retry')
-        await new Promise((r) => setTimeout(r, 5000))
+        const isRateLimit = err instanceof Error && err.message.includes('Rate limit exceeded')
+        if (isRateLimit) {
+          const randomWait = Math.random() * 200 // 0 - 200ms random wait
+          this.config.logger?.warn(
+            `Rate limited on claimNextTask, backing off ${Math.round(randomWait)}ms`
+          )
+
+          await new Promise((r) => setTimeout(r, randomWait))
+        } else {
+          this.config.logger?.error({ err }, 'Task processing failed; sleeping 5s before retry')
+          await new Promise((r) => setTimeout(r, 1000))
+        }
       }
     }
   }
@@ -111,7 +122,7 @@ export class StripeSyncWorker {
     const { accountId, runStartedAt } = this.runKey
 
     // Atomically claim the next pending task (FOR UPDATE SKIP LOCKED).
-    const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt)
+    const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt, this.rateLimit)
     if (!claimed) return null
 
     const object = claimed.object

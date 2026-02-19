@@ -487,7 +487,8 @@ export class SupabaseSetupClient {
     stripeKey: string,
     packageVersion?: string,
     workerIntervalSeconds?: number,
-    enableSigma?: boolean
+    enableSigma?: boolean,
+    rateLimit?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -533,6 +534,9 @@ export class SupabaseSetupClient {
       // Set ENABLE_SIGMA for edge functions to read
       if (enableSigma) {
         secrets.push({ name: 'ENABLE_SIGMA', value: 'true' })
+      }
+      if (rateLimit != null) {
+        secrets.push({ name: 'RATE_LIMIT', value: String(rateLimit) })
       }
       await this.setSecrets(secrets)
 
@@ -580,6 +584,7 @@ export async function install(params: {
   baseProjectUrl?: string
   supabaseManagementUrl?: string
   enableSigma?: boolean
+  rateLimit?: number
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -588,6 +593,7 @@ export async function install(params: {
     packageVersion,
     workerIntervalSeconds,
     enableSigma,
+    rateLimit,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -597,7 +603,7 @@ export async function install(params: {
     supabaseManagementUrl: params.supabaseManagementUrl,
   })
 
-  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma)
+  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma, rateLimit)
 }
 
 export async function uninstall(params: {
