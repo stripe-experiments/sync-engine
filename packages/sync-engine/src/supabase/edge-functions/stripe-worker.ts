@@ -24,6 +24,7 @@ const stripeSync = await StripeSync.create({
 const objects = stripeSync.getSupportedSyncObjects()
 const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
 const interval = Deno.env.get('INTERVAL') | (60 * 60 * 24)
+const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 100
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
@@ -81,7 +82,9 @@ Deno.serve(async (req) => {
         stripeSync.accountId,
         stripeSync.resourceRegistry,
         runKey,
-        stripeSync.upsertAny.bind(stripeSync)
+        stripeSync.upsertAny.bind(stripeSync),
+        Infinity,
+        rateLimit
       )
   )
   const MAX_EXECUTION_MS = 50_000 // stop before edge function limit

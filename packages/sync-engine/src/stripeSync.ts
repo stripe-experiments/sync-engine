@@ -277,7 +277,8 @@ export class StripeSync {
   async fullSync(
     tables?: StripeObject[],
     segmentedSync: boolean = false,
-    workerCount: number = 20
+    workerCount: number = 100,
+    rateLimit: number = 100
   ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -286,7 +287,6 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
-    // const objects = ["customer" as StripeObject]
     const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
     let runKey: RunKey
     if (segmentedSync) {
@@ -322,7 +322,9 @@ export class StripeSync {
           this.accountId,
           this.resourceRegistry,
           runKey,
-          this.upsertAny.bind(this)
+          this.upsertAny.bind(this),
+          Infinity,
+          rateLimit
         )
     )
     workers.forEach((worker) => worker.start())
