@@ -239,9 +239,56 @@ export class StripeSync {
     return best // earliest second where at least one customer exists
   }
 
+  async startSegmentedSync(objects: StripeObject[]): Promise<RunKey> {
+    const cursors = await Promise.all(
+      objects
+        .filter((obj) => this.resourceRegistry[obj]?.supportsCreatedFilter)
+        .map(async (obj) => {
+          const config = this.resourceRegistry[obj]
+          if (!config.listFn) return null
+          const oldest = await this.findOldestItem(config.listFn)
+          if (oldest === null) return null
+          return { object: obj, oldest }
+        })
+    )
+
+    const chunkCount = 20
+    const validCursors = cursors.filter(
+      (c): c is { object: StripeObject; oldest: number } => c !== null
+    )
+    const chunkCursors: Record<string, number[]> = {}
+    const nonChunkCursors = objects.filter((obj) => !validCursors.some((c) => c.object === obj))
+    const nonChunkTables = nonChunkCursors.map((obj) => getTableName(obj, this.resourceRegistry))
+    const now = Math.floor(Date.now() / 1000)
+    for (const { object: obj, oldest } of validCursors) {
+      const tableName = getTableName(obj, this.resourceRegistry)
+      const range = now - oldest
+      const interval = Math.max(Math.floor(range / chunkCount), 1)
+      const timestamps: number[] = []
+      for (let i = 0; i < chunkCount; i++) {
+        timestamps.push(oldest + i * interval)
+      }
+
+      chunkCursors[tableName] = timestamps
+    }
+
+    const runKey = await this.postgresClient.joinOrCreateSyncRun(
+      this.accountId,
+      'fullSync',
+      nonChunkTables
+    )
+    await this.postgresClient.createChunkedObjectRuns(
+      runKey.accountId,
+      runKey.runStartedAt,
+      chunkCursors
+    )
+    return runKey
+  }
+
   async fullSync(
     tables?: StripeObject[],
-    parallel: boolean = true
+    segmentedSync: boolean = false,
+    workerCount: number = 20
   ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -252,65 +299,15 @@ export class StripeSync {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
     // const objects = ["customer" as StripeObject]
     const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
-    if (parallel) {
-      const cursors = await Promise.all(
-        objects
-          .filter((obj) => this.resourceRegistry[obj]?.supportsCreatedFilter)
-          .map(async (obj) => {
-            const config = this.resourceRegistry[obj]
-            if (!config.listFn) return null
-            const oldest = await this.findOldestItem(config.listFn)
-            if (oldest === null) return null
-            return { object: obj, oldest }
-          })
-      )
-      this.config.logger?.info(
-        {
-          cursors: cursors.filter(Boolean).map((c) => ({
-            object: c!.object,
-            oldest: new Date(c!.oldest * 1000).toISOString(),
-          })),
-        },
-        'Fetched oldest timestamps for parallel sync'
-      )
-      const chunkCount = 20
-      const validCursors = cursors.filter(
-        (c): c is { object: StripeObject; oldest: number } => c !== null
-      )
-      const chunkCursors: Record<string, number[]> = {}
-
-      const now = Math.floor(Date.now() / 1000)
-      for (const { object: obj, oldest } of validCursors) {
-        const tableName = getTableName(obj, this.resourceRegistry)
-        const range = now - oldest
-        const interval = Math.max(Math.floor(range / chunkCount), 1)
-        const timestamps: number[] = []
-        for (let i = 0; i < chunkCount; i++) {
-          timestamps.push(oldest + i * interval)
-        }
-        this.config.logger?.info(
-          {
-            table: tableName,
-            chunks: timestamps.map(ts => new Date(ts * 1000).toISOString()),
-          },
-          'Prepared time-based chunks for parallel sync'
-        )
-        chunkCursors[tableName] = timestamps
-      }
-
-      const nonChunkedTableNames = tableNames.filter(
-        (_, i) => !this.resourceRegistry[objects[i]]?.supportsCreatedFilter
-      )
-      const runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', [])
-      await this.postgresClient.createChunkedObjectRuns(
-        runKey.accountId,
-        runKey.runStartedAt,
-        chunkCursors
-      )
-      this.config.logger?.info({ chunkCursors }, 'Created chunked object runs for parallel sync')
+    let runKey: RunKey
+    if (segmentedSync) {
+      this.config.logger?.info('starting segmented sync')
+      runKey = await this.startSegmentedSync(objects)
+    } else {
+      this.config.logger?.info('starting non-segmented sync')
+      runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', tableNames)
     }
 
-    const runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', [])
     // Reset any orphaned 'running' objects back to 'pending' (crash recovery).
     // If the previous process was killed mid-sync, object runs may be stuck in
     // 'running' with no active worker. Resetting lets new workers re-claim them.
@@ -325,7 +322,6 @@ export class StripeSync {
       )
     }
 
-    const workerCount = 20
     const workers = Array.from(
       { length: workerCount },
       () =>
@@ -342,7 +338,24 @@ export class StripeSync {
         )
     )
     workers.forEach((worker) => worker.start())
+
+    // const monitorInterval = setInterval(async () => {
+    //   try {
+    //     const { rows } = await this.postgresClient.query(
+    //       `SELECT schemaname, relname AS table_name, n_live_tup AS row_count
+    //        FROM pg_stat_user_tables ORDER BY n_live_tup DESC`
+    //     )
+    //     process.stdout.write('\x1B[2K\x1B[0G') // clear current line
+    //     process.stdout.write('\x1B[1A'.repeat(rows.length + 1)) // move cursor up past the last table
+    //     process.stdout.write('\x1B[2K\x1B[0G') // clear each line
+    //     console.table(rows)
+    //   } catch {
+    //     // ignore monitoring errors
+    //   }
+    // }, 2000)
+
     await Promise.all(workers.map((worker) => worker.waitUntilDone()))
+    // clearInterval(monitorInterval)
 
     const totals = await this.postgresClient.getObjectSyncedCounts(
       this.accountId,
