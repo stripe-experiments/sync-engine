@@ -7,6 +7,7 @@ type PostgresConfig = {
   poolConfig: PoolConfig
 }
 
+const DAY = 60 * 60 * 24
 /**
  * All Stripe tables that store account-related data.
  * Ordered for safe cascade deletion: dependencies first, then parent tables last.
@@ -738,6 +739,54 @@ export class PostgresClient {
   }
 
   /**
+   * Find a run that completed successfully (closed with no object errors)
+   * within the given time window.
+   *
+   * @param intervalSeconds - How far back to look, in seconds.
+   */
+  async getCompletedRun(
+    accountId: string,
+    intervalSeconds: number
+  ): Promise<{ accountId: string; runStartedAt: Date } | null> {
+    const result = await this.query(
+      `SELECT r."_account_id", r.started_at
+       FROM "${this.config.schema}"."_sync_runs" r
+       WHERE r."_account_id" = $1
+         AND r.closed_at IS NOT NULL
+         AND r.closed_at >= now() - make_interval(secs => $2)
+         AND NOT EXISTS (
+           SELECT 1 FROM "${this.config.schema}"."_sync_obj_runs" o
+           WHERE o."_account_id" = r."_account_id"
+             AND o.run_started_at = r.started_at
+             AND o.status = 'error'
+         )
+       LIMIT 1`,
+      [accountId, intervalSeconds]
+    )
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return { accountId: row._account_id, runStartedAt: row.started_at }
+  }
+
+  /**
+   * Start a reconciliation run only if no run completed successfully in the last 24 hours.
+   *
+   * @returns Run key if a new run was created, or null if a recent successful run exists.
+   */
+  async reconciliationRun(
+    accountId: string,
+    triggeredBy: string,
+    resourceNames: string[],
+    interval: number = DAY
+  ): Promise<{ accountId: string; runStartedAt: Date } | null> {
+    const completedRun = await this.getCompletedRun(accountId, interval)
+    if (completedRun) return null
+
+    return this.joinOrCreateSyncRun(accountId, triggeredBy, resourceNames)
+  }
+
+  /**
    * Get the active sync run for an account (if any).
    * @param triggeredBy - If provided, only returns run matching this triggeredBy value
    */
@@ -1230,13 +1279,24 @@ export class PostgresClient {
    * is left in 'running' state with no active worker. Resetting to 'pending'
    * allows new workers to re-claim and finish the work.
    */
-  async resetStuckRunningObjects(accountId: string, runStartedAt: Date): Promise<number> {
-    const result = await this.query(
-      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+  async resetStuckRunningObjects(
+    accountId: string,
+    runStartedAt: Date,
+    stuckThresholdSeconds?: number
+  ): Promise<number> {
+    const baseQuery = `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET status = 'pending', updated_at = now()
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = 'running'`,
-      [accountId, runStartedAt]
-    )
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND status = 'running'`
+
+    if (stuckThresholdSeconds !== undefined) {
+      const result = await this.query(
+        `${baseQuery} AND updated_at < now() - interval '1 second' * $3`,
+        [accountId, runStartedAt, stuckThresholdSeconds]
+      )
+      return result.rowCount ?? 0
+    }
+
+    const result = await this.query(baseQuery, [accountId, runStartedAt])
     return result.rowCount ?? 0
   }
 

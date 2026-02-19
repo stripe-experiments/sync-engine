@@ -569,16 +569,17 @@ export async function syncCommand(options: CliOptions): Promise<void> {
 }
 
 /**
- * Full resync command - clears all sync cursors and re-syncs everything from Stripe.
- * Unlike backfill (which is incremental), this performs a complete resync from scratch.
+ * Full resync command - uses reconciliation to skip if a successful run
+ * completed within the given interval, otherwise re-syncs everything from Stripe.
  */
-export async function fullSyncCommand(options: CliOptions): Promise<void> {
+export async function fullSyncCommand(options: CliOptions & { interval?: number }): Promise<void> {
   let stripeSync: StripeSync | null = null
 
   try {
     dotenv.config()
 
     const enableSigma = options.enableSigma ?? process.env.ENABLE_SIGMA === 'true'
+    const intervalSeconds = options.interval ?? 86400
 
     let stripeApiKey =
       options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
@@ -639,9 +640,7 @@ export async function fullSyncCommand(options: CliOptions): Promise<void> {
 
     console.log(chalk.blue('\nPerforming full resync of all Stripe data...'))
     console.log(chalk.gray(`Database: ${config.databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
-    console.log(
-      chalk.yellow('⚠ This will clear all sync cursors and re-sync everything from scratch.\n')
-    )
+    console.log(chalk.gray(`Reconciliation interval: ${intervalSeconds}s`))
 
     // Run migrations first
     try {
@@ -673,6 +672,21 @@ export async function fullSyncCommand(options: CliOptions): Promise<void> {
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
       poolConfig,
     })
+
+    const completedRun = await stripeSync.postgresClient.getCompletedRun(
+      stripeSync.accountId,
+      intervalSeconds
+    )
+
+    if (completedRun) {
+      console.log(
+        chalk.green(
+          `✓ Skipping resync — a successful run completed at ${completedRun.runStartedAt.toISOString()} (within ${intervalSeconds}s window)`
+        )
+      )
+      await stripeSync.close()
+      return
+    }
 
     // Run full resync
     const result = await stripeSync.fullSync()

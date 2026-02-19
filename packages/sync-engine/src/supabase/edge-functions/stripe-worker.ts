@@ -22,7 +22,8 @@ const stripeSync = await StripeSync.create({
   partnerId: 'pp_supabase',
 })
 const objects = stripeSync.getSupportedSyncObjects()
-const tableNames = objects.map((obj) => getTableName(obj, stripeSync.resourceRegistry))
+const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
+const interval = Deno.env.get('INTERVAL') | (60 * 60 * 24)
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
@@ -47,24 +48,44 @@ Deno.serve(async (req) => {
     return new Response('Forbidden: Invalid worker secret', { status: 403 })
   }
 
-  const runKey = await stripeSync.postgresClient.joinOrCreateSyncRun(
+  const runKey = await stripeSync.postgresClient.reconciliationRun(
     stripeSync.accountId,
     'stripe-worker',
-    tableNames
+    tableNames,
+    interval
   )
+  if (runKey === null) {
+    const completedRun = await stripeSync.postgresClient.getCompletedRun(
+      stripeSync.accountId,
+      interval
+    )
+    const response = `✓ Skipping resync — a successful run completed at ${completedRun?.runStartedAt.toISOString()} (within ${interval}s window)`
+    console.log(response)
+    return new Response(response, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  console.log('accountId: ', runKey.accountId)
+  await stripeSync.postgresClient.resetStuckRunningObjects(runKey.accountId, runKey.runStartedAt, 1)
 
-  const worker = new StripeSyncWorker(
-    stripeSync.stripe,
-    stripeSync.config,
-    stripeSync.sigma,
-    stripeSync.postgresClient,
-    stripeSync.accountId,
-    stripeSync.resourceRegistry,
-    runKey,
-    1
+  const workerCount = 10
+  const workers = Array.from(
+    { length: workerCount },
+    () =>
+      new StripeSyncWorker(
+        stripeSync.stripe,
+        stripeSync.config,
+        stripeSync.sigma,
+        stripeSync.postgresClient,
+        stripeSync.accountId,
+        stripeSync.resourceRegistry,
+        runKey,
+        stripeSync.upsertAny.bind(stripeSync)
+      )
   )
-  worker.start()
-  await worker.waitUntilDone()
+  workers.forEach((worker) => worker.start())
+  await Promise.all(workers.map((worker) => worker.waitUntilDone()))
 
   const totals = await stripeSync.postgresClient.getObjectSyncedCounts(
     stripeSync.accountId,

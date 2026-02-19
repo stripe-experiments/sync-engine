@@ -316,14 +316,6 @@ export class StripeSync {
       await this.syncSubscriptionItems(items as Stripe.Subscription[], accountId, syncTimestamp)
     }
 
-    if (syncObjectName === 'checkout_sessions') {
-      await this.syncCheckoutSessionLineItems(
-        items as Stripe.Checkout.Session[],
-        accountId,
-        syncTimestamp
-      )
-    }
-
     return rows
   }
 
@@ -366,37 +358,6 @@ export class StripeSync {
         const subItemIds = subscription.items.data.map((x: Stripe.SubscriptionItem) => x.id)
         return this.markDeletedSubscriptionItems(subscription.id, subItemIds)
       })
-    )
-  }
-
-  /**
-   * Upsert checkout session line items into a separate table.
-   * Skips sessions that have no line items data.
-   */
-  private async syncCheckoutSessionLineItems(
-    sessions: Stripe.Checkout.Session[],
-    accountId: string,
-    syncTimestamp?: string
-  ) {
-    const sessionsWithLines = sessions.filter(
-      (s) => (s as unknown as { lines?: { data?: unknown[] } }).lines?.data
-    )
-    if (sessionsWithLines.length === 0) return
-
-    const allLineItems = sessionsWithLines.flatMap((session) => {
-      const lines = (session as unknown as { lines: { data: Record<string, unknown>[] } }).lines
-      return lines.data.map((item) => ({
-        ...item,
-        checkout_session: session.id,
-        price: typeof item.price === 'string' ? item.price : (item.price as { id: string })?.id,
-      }))
-    })
-
-    await this.postgresClient.upsertManyWithTimestampProtection(
-      allLineItems,
-      'checkout_session_line_items',
-      accountId,
-      syncTimestamp
     )
   }
 
