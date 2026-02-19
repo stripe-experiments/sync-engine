@@ -887,8 +887,37 @@ export class PostgresClient {
     await this.query(
       `INSERT INTO "${this.config.schema}"."_sync_obj_runs" ("_account_id", run_started_at, object)
        VALUES ${values}
-       ON CONFLICT ("_account_id", run_started_at, object) DO NOTHING`,
+       ON CONFLICT ("_account_id", run_started_at, object, created_gte, created_lte) DO NOTHING`,
       [accountId, runStartedAt, ...resourceNames]
+    )
+  }
+
+  async createChunkedObjectRuns(
+    accountId: string,
+    runStartedAt: Date,
+    chunkCursors: Record<string, number[]>
+  ): Promise<void> {
+    const params: (string | Date | number | null)[] = [accountId, runStartedAt]
+    const valueClauses: string[] = []
+
+    for (const [tableName, timestamps] of Object.entries(chunkCursors)) {
+      for (let i = 0; i < timestamps.length; i++) {
+        const gte = timestamps[i]
+        const lte = i < timestamps.length - 1 ? timestamps[i + 1] : Math.floor(Date.now() / 1000)
+        const baseIdx = params.length + 1
+        valueClauses.push(`($1, $2, $${baseIdx}, $${baseIdx + 1}, $${baseIdx + 2})`)
+        params.push(tableName, gte, lte)
+      }
+    }
+
+    if (valueClauses.length === 0) return
+
+    await this.query(
+      `INSERT INTO "${this.config.schema}"."_sync_obj_runs"
+         ("_account_id", run_started_at, object, created_gte, created_lte)
+       VALUES ${valueClauses.join(', ')}
+       ON CONFLICT ("_account_id", run_started_at, object, created_gte, created_lte) DO NOTHING`,
+      params
     )
   }
 
@@ -933,28 +962,30 @@ export class PostgresClient {
   async claimNextTask(
     accountId: string,
     runStartedAt: Date
-  ): Promise<{ object: string; cursor: string | null; pageCursor: string | null } | null> {
+  ): Promise<{
+    object: string
+    cursor: string | null
+    pageCursor: string | null
+    created_gte: number | null
+    created_lte: number | null
+  } | null> {
     const run = await this.getSyncRun(accountId, runStartedAt)
     if (!run) return null
-
-    const runningCount = await this.countRunningObjects(accountId, runStartedAt)
-    if (runningCount >= run.maxConcurrent) return null
 
     const result = await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET status = 'running', started_at = now(), updated_at = now()
-       WHERE "_account_id" = $1
-         AND run_started_at = $2
-         AND object = (
-           SELECT object FROM "${this.config.schema}"."_sync_obj_runs"
+       WHERE ("_account_id", run_started_at, object, created_gte, created_lte) = (
+           SELECT "_account_id", run_started_at, object, created_gte, created_lte
+           FROM "${this.config.schema}"."_sync_obj_runs"
            WHERE "_account_id" = $1
              AND run_started_at = $2
              AND status = 'pending'
-           ORDER BY object
+           ORDER BY object, created_gte
            LIMIT 1
            FOR UPDATE SKIP LOCKED
          )
-       RETURNING object, cursor, page_cursor`,
+       RETURNING object, cursor, page_cursor, created_gte, created_lte`,
       [accountId, runStartedAt]
     )
 
@@ -964,6 +995,8 @@ export class PostgresClient {
       object: row.object,
       cursor: row.cursor,
       pageCursor: row.page_cursor,
+      created_gte: row.created_gte ?? null,
+      created_lte: row.created_lte ?? null,
     }
   }
 
@@ -1007,16 +1040,78 @@ export class PostgresClient {
     accountId: string,
     runStartedAt: Date,
     object: string,
-    count: number
+    count: number,
+    createdGte: number = 0,
+    createdLte: number = 0
   ): Promise<number> {
     const result = await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET processed_count = processed_count + $4, updated_at = now()
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND created_gte = $5 AND created_lte = $6
        RETURNING processed_count`,
-      [accountId, runStartedAt, object, count]
+      [accountId, runStartedAt, object, count, createdGte, createdLte]
     )
     return result.rows[0]?.processed_count ?? 0
+  }
+
+  /**
+   * Atomically update an object sync row in a single round-trip.
+   * Only the fields present in `updates` are written; omitted fields are left unchanged.
+   * Auto-closes the sync run when all objects reach 'complete'.
+   */
+  async updateSyncObject(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    createdGte: number,
+    createdLte: number,
+    updates: {
+      processedCount?: number
+      cursor?: string | null
+      status?: 'pending' | 'complete' | 'error'
+      pageCursor?: string | null
+      errorMessage?: string
+    }
+  ): Promise<number> {
+    const terminal = updates.status === 'complete' || updates.status === 'error'
+
+    const sets: string[] = ['updated_at = now()']
+    const params: unknown[] = [accountId, runStartedAt, object, createdGte, createdLte]
+
+    const param = (value: unknown) => {
+      params.push(value)
+      return `$${params.length}`
+    }
+
+    if (updates.processedCount != null)
+      sets.push(`processed_count = processed_count + ${param(updates.processedCount)}`)
+    if (updates.cursor !== undefined) sets.push(`cursor = ${param(updates.cursor)}`)
+    if (updates.status != null) sets.push(`status = ${param(updates.status)}`)
+    if (updates.errorMessage != null) sets.push(`error_message = ${param(updates.errorMessage)}`)
+
+    if (terminal) {
+      sets.push('completed_at = now()', 'page_cursor = NULL')
+    } else if (updates.pageCursor !== undefined) {
+      sets.push(`page_cursor = ${param(updates.pageCursor)}`)
+    }
+
+    const result = await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET ${sets.join(', ')}
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3
+         AND created_gte = $4 AND created_lte = $5
+       RETURNING processed_count`,
+      params
+    )
+
+    const total = result.rows[0]?.processed_count ?? 0
+
+    if (terminal) {
+      const allDone = await this.areAllObjectsComplete(accountId, runStartedAt)
+      if (allDone) await this.closeSyncRun(accountId, runStartedAt)
+    }
+
+    return total
   }
 
   /**
@@ -1044,13 +1139,15 @@ export class PostgresClient {
     accountId: string,
     runStartedAt: Date,
     object: string,
-    pageCursor: string
+    pageCursor: string,
+    createdGte: number = 0,
+    createdLte: number = 0
   ): Promise<void> {
     await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET status = 'pending', page_cursor = $4, updated_at = now()
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-      [accountId, runStartedAt, object, pageCursor]
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND created_gte = $5 AND created_lte = $6`,
+      [accountId, runStartedAt, object, pageCursor, createdGte, createdLte]
     )
   }
 
@@ -1084,41 +1181,20 @@ export class PostgresClient {
     )
   }
 
-  /**
-   * Update the cursor for an object sync.
-   * Only updates if the new cursor is higher than the existing one (cursors should never decrease).
-   * For numeric cursors (timestamps), uses GREATEST to ensure monotonic increase.
-   * For non-numeric cursors, just sets the value directly.
-   */
   async updateObjectCursor(
     accountId: string,
     runStartedAt: Date,
     object: string,
-    cursor: string | null
+    cursor: string | null,
+    createdGte: number = 0,
+    createdLte: number = 0
   ): Promise<void> {
-    // Check if cursor is numeric (for incremental sync timestamps)
-    const isNumeric = cursor !== null && /^\d+$/.test(cursor)
-    if (isNumeric) {
-      await this.query(
-        `UPDATE "${this.config.schema}"."_sync_obj_runs"
-         SET cursor = GREATEST(COALESCE(cursor::bigint, 0), $4::bigint)::text,
-             updated_at = now()
-         WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-        [accountId, runStartedAt, object, cursor]
-      )
-    } else {
-      await this.query(
-        `UPDATE "${this.config.schema}"."_sync_obj_runs"
-         SET cursor = CASE
-           WHEN cursor IS NULL THEN $4
-           WHEN (cursor COLLATE "C") < ($4::text COLLATE "C") THEN $4
-           ELSE cursor
-         END,
-         updated_at = now()
-         WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-        [accountId, runStartedAt, object, cursor]
-      )
-    }
+    await this.query(
+      `UPDATE "${this.config.schema}"."_sync_obj_runs"
+       SET cursor = $4, updated_at = now()
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND created_gte = $5 AND created_lte = $6`,
+      [accountId, runStartedAt, object, cursor, createdGte, createdLte]
+    )
   }
 
   async setObjectCursor(
@@ -1169,9 +1245,10 @@ export class PostgresClient {
     runStartedAt: Date
   ): Promise<Record<string, number>> {
     const result = await this.query(
-      `SELECT object, processed_count
+      `SELECT object, SUM(processed_count)::int AS processed_count
        FROM "${this.config.schema}"."_sync_obj_runs"
-       WHERE "_account_id" = $1 AND run_started_at = $2`,
+       WHERE "_account_id" = $1 AND run_started_at = $2
+       GROUP BY object`,
       [accountId, runStartedAt]
     )
     const counts: Record<string, number> = {}
@@ -1304,12 +1381,18 @@ export class PostgresClient {
    * Mark an object sync as complete.
    * Auto-closes the run when all objects are done.
    */
-  async completeObjectSync(accountId: string, runStartedAt: Date, object: string): Promise<void> {
+  async completeObjectSync(
+    accountId: string,
+    runStartedAt: Date,
+    object: string,
+    createdGte: number = 0,
+    createdLte: number = 0
+  ): Promise<void> {
     await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
        SET status = 'complete', completed_at = now(), page_cursor = NULL
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-      [accountId, runStartedAt, object]
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND created_gte = $4 AND created_lte = $5`,
+      [accountId, runStartedAt, object, createdGte, createdLte]
     )
 
     // Auto-close sync run if all objects finished (status derived from objects)
@@ -1327,13 +1410,15 @@ export class PostgresClient {
     accountId: string,
     runStartedAt: Date,
     object: string,
-    errorMessage: string
+    errorMessage: string,
+    createdGte: number = 0,
+    createdLte: number = 0
   ): Promise<void> {
     await this.query(
       `UPDATE "${this.config.schema}"."_sync_obj_runs"
-       SET status = 'error', error_message = $4, completed_at = now(), page_cursor = NULL
-       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-      [accountId, runStartedAt, object, errorMessage]
+       SET status = 'error', error_message = $6, completed_at = now(), page_cursor = NULL
+       WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3 AND created_gte = $4 AND created_lte = $5`,
+      [accountId, runStartedAt, object, createdGte, createdLte, errorMessage]
     )
 
     // Auto-close sync run if all objects finished (status derived from objects)

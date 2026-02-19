@@ -259,4 +259,16 @@ export const embeddedMigrations: EmbeddedMigration[] = [
     name: '0062_sigma_query_runs.sql',
     sql: '-- Allow parallel sync runs per triggered_by (sigma-worker vs stripe-worker)\nALTER TABLE "stripe"."_sync_runs" DROP CONSTRAINT IF EXISTS one_active_run_per_account;\nALTER TABLE "stripe"."_sync_runs"\nADD CONSTRAINT one_active_run_per_account_triggered_by\nEXCLUDE (\n  "_account_id" WITH =,\n  COALESCE(triggered_by, \'default\') WITH =\n) WHERE (closed_at IS NULL);\n',
   },
+  {
+    name: '0063_drop_sigma_subscription_item_and_exchange_rate_tables.sql',
+    sql: '-- Drop unused sigma beta tables if they exist.\nDROP TABLE IF EXISTS "stripe"."subscription_item_change_events_v2_beta";\nDROP TABLE IF EXISTS "stripe"."exchange_rates_from_usd";\n',
+  },
+  {
+    name: '0064_add_created_gte_lte.sql',
+    sql: '-- Add created_gte / created_lte columns for time-range partitioned parallel sync.\n-- Workers use these to scope their Stripe list calls to a specific created window.\n-- Stored as Unix epoch seconds (INTEGER) to match Stripe\'s created filter format.\n-- created_gte defaults to 0 for non-chunked rows (required by PK).\nALTER TABLE "stripe"."_sync_obj_runs" ADD COLUMN IF NOT EXISTS created_gte INTEGER NOT NULL DEFAULT 0;\nALTER TABLE "stripe"."_sync_obj_runs" ADD COLUMN IF NOT EXISTS created_lte INTEGER;\n\n-- Expand PK to include created_gte so multiple time-range chunks of the same object can coexist.\n-- PK constraint kept original name from 0053 (_sync_obj_run_pkey) after table rename in 0057.\nALTER TABLE "stripe"."_sync_obj_runs" DROP CONSTRAINT IF EXISTS "_sync_obj_runs_pkey";\nALTER TABLE "stripe"."_sync_obj_runs" DROP CONSTRAINT IF EXISTS "_sync_obj_run_pkey";\nALTER TABLE "stripe"."_sync_obj_runs"\n  ADD CONSTRAINT "_sync_obj_runs_pkey" PRIMARY KEY ("_account_id", run_started_at, object, created_gte);\n',
+  },
+  {
+    name: '0065_add_created_lte_to_pk.sql',
+    sql: '-- Include created_lte in the PK so chunks with the same created_gte but\n-- different created_lte can coexist.  Requires a NOT NULL default first.\nALTER TABLE "stripe"."_sync_obj_runs"\n  ALTER COLUMN created_lte SET DEFAULT 0;\n\nUPDATE "stripe"."_sync_obj_runs"\n   SET created_lte = 0\n WHERE created_lte IS NULL;\n\nALTER TABLE "stripe"."_sync_obj_runs"\n  ALTER COLUMN created_lte SET NOT NULL;\n\nALTER TABLE "stripe"."_sync_obj_runs" DROP CONSTRAINT IF EXISTS "_sync_obj_runs_pkey";\nALTER TABLE "stripe"."_sync_obj_runs"\n  ADD CONSTRAINT "_sync_obj_runs_pkey" PRIMARY KEY ("_account_id", run_started_at, object, created_gte, created_lte);\n',
+  },
 ]

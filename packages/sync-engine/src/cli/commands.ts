@@ -689,11 +689,13 @@ export async function fullSyncCommand(options: CliOptions & { interval?: number 
     }
 
     // Run full resync
+    const startTime = Date.now()
     const result = await stripeSync.fullSync()
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
     const objectCount = Object.keys(result.totals).length
     console.log(
       chalk.green(
-        `✓ Full resync complete: ${result.totalSynced} rows synced across ${objectCount} objects`
+        `✓ Full resync complete: ${result.totalSynced} rows synced across ${objectCount} objects in ${elapsed}s`
       )
     )
     if (result.skipped.length > 0) {

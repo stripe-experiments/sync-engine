@@ -213,7 +213,36 @@ export class StripeSync {
     return this.resourceRegistry
   }
 
-  async fullSync(tables?: StripeObject[]): Promise<{
+  async findOldestItem(listfn: NonNullable<ResourceConfig['listFn']>) {
+    let lo = 0 // 1970
+    let hi = Math.floor(Date.now() / 1000) // now
+    let best: number | null = null
+
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2)
+
+      const page = await listfn({
+        limit: 1,
+        created: { lte: mid },
+      })
+
+      if (page.data.length > 0) {
+        // There exists a customer at/before mid; try earlier
+        best = mid
+        hi = mid - 1
+      } else {
+        // No customers that early; try later
+        lo = mid + 1
+      }
+    }
+
+    return best // earliest second where at least one customer exists
+  }
+
+  async fullSync(
+    tables?: StripeObject[],
+    parallel: boolean = true
+  ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
     totalSynced: number
@@ -221,13 +250,67 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
-    const tableNames = objects.map((obj) => getTableName(obj, this.getRegistryForObject(obj)))
-    const runKey = await this.postgresClient.joinOrCreateSyncRun(
-      this.accountId,
-      'fullSync',
-      tableNames
-    )
+    // const objects = ["customer" as StripeObject]
+    const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
+    if (parallel) {
+      const cursors = await Promise.all(
+        objects
+          .filter((obj) => this.resourceRegistry[obj]?.supportsCreatedFilter)
+          .map(async (obj) => {
+            const config = this.resourceRegistry[obj]
+            if (!config.listFn) return null
+            const oldest = await this.findOldestItem(config.listFn)
+            if (oldest === null) return null
+            return { object: obj, oldest }
+          })
+      )
+      this.config.logger?.info(
+        {
+          cursors: cursors.filter(Boolean).map((c) => ({
+            object: c!.object,
+            oldest: new Date(c!.oldest * 1000).toISOString(),
+          })),
+        },
+        'Fetched oldest timestamps for parallel sync'
+      )
+      const chunkCount = 20
+      const validCursors = cursors.filter(
+        (c): c is { object: StripeObject; oldest: number } => c !== null
+      )
+      const chunkCursors: Record<string, number[]> = {}
 
+      const now = Math.floor(Date.now() / 1000)
+      for (const { object: obj, oldest } of validCursors) {
+        const tableName = getTableName(obj, this.resourceRegistry)
+        const range = now - oldest
+        const interval = Math.max(Math.floor(range / chunkCount), 1)
+        const timestamps: number[] = []
+        for (let i = 0; i < chunkCount; i++) {
+          timestamps.push(oldest + i * interval)
+        }
+        this.config.logger?.info(
+          {
+            table: tableName,
+            chunks: timestamps.map(ts => new Date(ts * 1000).toISOString()),
+          },
+          'Prepared time-based chunks for parallel sync'
+        )
+        chunkCursors[tableName] = timestamps
+      }
+
+      const nonChunkedTableNames = tableNames.filter(
+        (_, i) => !this.resourceRegistry[objects[i]]?.supportsCreatedFilter
+      )
+      const runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', [])
+      await this.postgresClient.createChunkedObjectRuns(
+        runKey.accountId,
+        runKey.runStartedAt,
+        chunkCursors
+      )
+      this.config.logger?.info({ chunkCursors }, 'Created chunked object runs for parallel sync')
+    }
+
+    const runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', [])
     // Reset any orphaned 'running' objects back to 'pending' (crash recovery).
     // If the previous process was killed mid-sync, object runs may be stuck in
     // 'running' with no active worker. Resetting lets new workers re-claim them.
@@ -242,7 +325,7 @@ export class StripeSync {
       )
     }
 
-    const workerCount = 10
+    const workerCount = 20
     const workers = Array.from(
       { length: workerCount },
       () =>
