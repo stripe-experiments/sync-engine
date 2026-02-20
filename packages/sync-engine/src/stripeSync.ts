@@ -24,6 +24,7 @@ import {
   sigmaCursorFromEntry,
   type SigmaIngestionConfig,
 } from './sigma/sigmaIngestion'
+import { getResourceNameForSyncObject, isCoreSyncObject } from './syncObjects'
 
 /**
  * Identifies a specific sync run.
@@ -202,14 +203,20 @@ export class StripeSync {
           this.upsertEarlyFraudWarning(items as Stripe.Radar.EarlyFraudWarning[], id),
         supportsCreatedFilter: true,
       },
+      review: {
+        order: 16, // Depends on charge / payment_intent
+        listFn: (p) => this.stripe.reviews.list(p),
+        upsertFn: (items, id, bf) => this.upsertReviews(items as Stripe.Review[], id, bf),
+        supportsCreatedFilter: true,
+      },
       refund: {
-        order: 16, // Depends on charge
+        order: 17, // Depends on charge
         listFn: (p) => this.stripe.refunds.list(p),
         upsertFn: (items, id, bf) => this.upsertRefunds(items as Stripe.Refund[], id, bf),
         supportsCreatedFilter: true,
       },
       checkout_sessions: {
-        order: 17, // Depends on customer (optional)
+        order: 18, // Depends on customer (optional)
         listFn: (p) => this.stripe.checkout.sessions.list(p),
         upsertFn: (items, id) =>
           this.upsertCheckoutSessions(items as Stripe.Checkout.Session[], id),
@@ -1170,27 +1177,15 @@ export class StripeSync {
   /**
    * Get the database resource name for a SyncObject type
    */
-  getResourceName(object: SyncObject): string {
-    const mapping: Record<string, string> = {
-      customer: 'customers',
-      invoice: 'invoices',
-      price: 'prices',
-      product: 'products',
-      subscription: 'subscriptions',
-      subscription_schedules: 'subscription_schedules',
-      setup_intent: 'setup_intents',
-      payment_method: 'payment_methods',
-      dispute: 'disputes',
-      charge: 'charges',
-      payment_intent: 'payment_intents',
-      plan: 'plans',
-      tax_id: 'tax_ids',
-      credit_note: 'credit_notes',
-      early_fraud_warning: 'early_fraud_warnings',
-      refund: 'refunds',
-      checkout_sessions: 'checkout_sessions',
+  private getResourceName(object: SyncObject): string {
+    if (object === 'all' || object === 'customer_with_entitlements') {
+      return object
     }
-    return mapping[object] || object
+    if (isCoreSyncObject(object)) {
+      return getResourceNameForSyncObject(object)
+    }
+    // Sigma resource names are already the destination table names.
+    return object
   }
 
   /**
@@ -1598,6 +1593,9 @@ export class StripeSync {
         break
       case 'early_fraud_warning':
         results.earlyFraudWarnings = result
+        break
+      case 'review':
+        results.reviews = result
         break
       case 'refund':
         results.refunds = result
