@@ -116,7 +116,7 @@ describe('SupabaseDeployClient', () => {
       })
       global.fetch = mockFetch
 
-      await client.invokeFunction('test-function', 'test-service-role-key')
+      await client.invokeFunction('test-function', 'POST', 'test-service-role-key')
 
       expect(mockFetch).toHaveBeenCalledWith(
         `https://${mockProjectRef}.test-domain.com/functions/v1/test-function`,
@@ -362,7 +362,6 @@ describe('SupabaseDeployClient', () => {
 
       // Mock runSQL to return schema doesn't exist
       const mockRunSQL = vi.fn().mockResolvedValueOnce([{ rows: [{ schema_exists: false }] }])
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled()
@@ -381,7 +380,6 @@ describe('SupabaseDeployClient', () => {
         .fn()
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: false }] }]) // migrations table doesn't exist
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled()
@@ -401,7 +399,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
         .mockResolvedValueOnce([{ rows: [{ comment: null }] }]) // no comment
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       await expect(client.isInstalled()).rejects.toThrow(/Legacy installation detected/)
@@ -419,7 +416,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
         .mockResolvedValueOnce([{ rows: [{ comment: 'some other tool' }] }]) // wrong comment
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       await expect(client.isInstalled()).rejects.toThrow(/Legacy installation detected/)
@@ -437,7 +433,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
         .mockResolvedValueOnce([{ rows: [{ comment: 'stripe-sync v1.0.0 installation:started' }] }]) // in progress
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled()
@@ -461,7 +456,6 @@ describe('SupabaseDeployClient', () => {
             rows: [{ comment: 'stripe-sync v1.0.0 installation:error - Something went wrong' }],
           },
         ]) // failed
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       try {
@@ -488,7 +482,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([
           { rows: [{ comment: 'stripe-sync v1.0.0 uninstallation:started' }] },
         ]) // in progress
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled()
@@ -512,7 +505,6 @@ describe('SupabaseDeployClient', () => {
             rows: [{ comment: 'stripe-sync v1.0.0 uninstallation:error - Cleanup failed' }],
           },
         ]) // failed
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       try {
@@ -537,7 +529,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
         .mockResolvedValueOnce([{ rows: [{ comment: 'stripe-sync v1.0.0 installed' }] }]) // installed
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled()
@@ -557,7 +548,6 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([{ rows: [{ schema_exists: true }] }]) // schema exists
         .mockResolvedValueOnce([{ rows: [{ table_exists: true }] }]) // migrations table exists
         .mockResolvedValueOnce([{ rows: [{ comment: 'stripe-sync v1.0.0 installed' }] }]) // installed
-      // @ts-expect-error - accessing private method for testing
       client.runSQL = mockRunSQL
 
       const installed = await client.isInstalled('custom_schema')
@@ -591,23 +581,15 @@ describe('SupabaseDeployClient', () => {
       })
 
       // Mock only what we need to test
-      // @ts-expect-error - mocking for test
       client.validateProject = vi
         .fn()
         .mockResolvedValue({ id: mockProjectRef, name: 'test', region: 'us-east-1' })
-      // @ts-expect-error - mocking for test
       client.runSQL = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.deployFunction = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.setSecrets = mockSetSecrets
-      // @ts-expect-error - mocking for test
       client.invokeFunction = vi.fn().mockResolvedValue({ success: true })
-      // @ts-expect-error - mocking for test
       client.setupPgCronJob = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.setupSigmaPgCronJob = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.updateInstallationComment = vi.fn().mockResolvedValue(null)
 
       await client.install('sk_test_key')
@@ -628,23 +610,15 @@ describe('SupabaseDeployClient', () => {
       })
 
       // Mock only what we need to test
-      // @ts-expect-error - mocking for test
       client.validateProject = vi
         .fn()
         .mockResolvedValue({ id: mockProjectRef, name: 'test', region: 'us-east-1' })
-      // @ts-expect-error - mocking for test
       client.runSQL = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.deployFunction = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.setSecrets = mockSetSecrets
-      // @ts-expect-error - mocking for test
       client.invokeFunction = vi.fn().mockResolvedValue({ success: true })
-      // @ts-expect-error - mocking for test
       client.setupPgCronJob = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.setupSigmaPgCronJob = vi.fn().mockResolvedValue(null)
-      // @ts-expect-error - mocking for test
       client.updateInstallationComment = vi.fn().mockResolvedValue(null)
 
       await client.install('sk_test_key')

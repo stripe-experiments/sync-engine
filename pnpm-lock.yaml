@@ -11,9 +11,6 @@ importers:
       pino:
         specifier: ^10.0.0
         version: 10.1.0
-      supabase-management-js:
-        specifier: file:/Users/raminder.singh/src/js/supabase-management-js/supabase-management-js-2.0.0.tgz
-        version: file:../supabase-management-js/supabase-management-js-2.0.0.tgz
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.3.1
@@ -156,8 +153,8 @@ importers:
         specifier: ^17.7.0
         version: 17.7.0
       supabase-management-js:
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^2.0.2
+        version: 2.0.2
       ws:
         specifier: ^8.18.0
         version: 8.18.3
@@ -2337,9 +2334,6 @@ packages:
     resolution: {integrity: sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==}
     engines: {node: '>= 0.8'}
 
-  openapi-fetch@0.6.2:
-    resolution: {integrity: sha512-Faj29Kzh7oCbt1bz6vAGNKtRJlV/GolOQTx87eYUnfCK7eVXdN9jQVojroc7tcJ5OQgyhbeOqD7LS/8UtGBnMQ==}
-
   openapi-types@12.1.3:
     resolution: {integrity: sha512-N4YtSYJqghVu4iek2ZUvcN/0aqH1kRDuNqzcycDxhOUpg7GdvLa2F3DgS6yBNhInhv2r/6I0Flkn7CqL8+nIcw==}
 
@@ -2785,13 +2779,8 @@ packages:
     engines: {node: '>=16 || 14 >=14.17'}
     hasBin: true
 
-  supabase-management-js@1.0.0:
-    resolution: {integrity: sha512-CjtUcT1i3lsIyRwS3/HG6BUB8EaJTEdAPP0GQu8dRDi61HvJeBrswCfG/GRxebC0ZZFov+oHqFIWPe1ztyUqYA==}
-    engines: {node: '>=18.0.0'}
-
-  supabase-management-js@file:../supabase-management-js/supabase-management-js-2.0.0.tgz:
-    resolution: {integrity: sha512-j2er82AGtadQeAhqf4M264uot41fOCkpTa6tmJxPNuU/lJihR4XDq7dTVNb8a5GfKKEZD7Y6eAnT5JXvI61nkw==, tarball: file:../supabase-management-js/supabase-management-js-2.0.0.tgz}
-    version: 2.0.0
+  supabase-management-js@2.0.2:
+    resolution: {integrity: sha512-CWGAczaNXTUDExaxi+hUEPqlPtCiZ4r3a74NXOx7+Sf+P75foCuX/aXL9MztosWwRnZZAI8VGUXpdNe6K3xTtA==}
     engines: {node: '>=18.0.0'}
 
   supports-color@7.2.0:
@@ -4096,13 +4085,13 @@ snapshots:
       chai: 5.2.0
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@3.2.4(vite@7.2.2(@types/node@24.10.1)(tsx@4.20.6)(yaml@2.8.1))':
+  '@vitest/mocker@3.2.4(vite@7.2.2(@types/node@24.10.0)(tsx@4.20.6)(yaml@2.8.1))':
     dependencies:
       '@vitest/spy': 3.2.4
       estree-walker: 3.0.3
       magic-string: 0.30.19
     optionalDependencies:
-      vite: 7.2.2(@types/node@24.10.1)(tsx@4.20.6)(yaml@2.8.1)
+      vite: 7.2.2(@types/node@24.10.0)(tsx@4.20.6)(yaml@2.8.1)
 
   '@vitest/mocker@3.2.4(vite@7.2.2(@types/node@24.10.1)(tsx@4.21.0)(yaml@2.8.1))':
     dependencies:
@@ -5031,8 +5020,6 @@ snapshots:
     dependencies:
       ee-first: 1.1.1
 
-  openapi-fetch@0.6.2: {}
-
   openapi-types@12.1.3: {}
 
   optionator@0.9.4:
@@ -5520,11 +5507,7 @@ snapshots:
       pirates: 4.0.7
       ts-interface-checker: 0.1.13
 
-  supabase-management-js@1.0.0:
-    dependencies:
-      openapi-fetch: 0.6.2
-
-  supabase-management-js@file:../supabase-management-js/supabase-management-js-2.0.0.tgz:
+  supabase-management-js@2.0.2:
     dependencies:
       axios: 1.13.5
       zod: 4.3.6
@@ -5749,7 +5732,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.2
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.2.2(@types/node@24.10.1)(tsx@4.21.0)(yaml@2.8.1))
+      '@vitest/mocker': 3.2.4(vite@7.2.2(@types/node@24.10.0)(tsx@4.20.6)(yaml@2.8.1))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
@@ -5790,7 +5773,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.2
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.2.2(@types/node@24.10.1)(tsx@4.20.6)(yaml@2.8.1))
+      '@vitest/mocker': 3.2.4(vite@7.2.2(@types/node@24.10.1)(tsx@4.21.0)(yaml@2.8.1))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
