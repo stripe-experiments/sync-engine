@@ -254,7 +254,7 @@ export class StripeSync {
         })
     )
 
-    const chunkCount = 20
+    const chunkCount = 100
     const validCursors = cursors.filter(
       (c): c is { object: StripeObject; oldest: number } => c !== null
     )
@@ -277,12 +277,29 @@ export class StripeSync {
     return { chunkCursors, nonChunkTables }
   }
 
+  /**
+   * Build a map of table name → priority (order from resourceRegistry).
+   * Used when creating sync object runs so workers process parents before children.
+   */
+  private buildPriorityMap(objects: StripeObject[]): Record<string, number> {
+    const priorities: Record<string, number> = {}
+    for (const obj of objects) {
+      const config = this.resourceRegistry[obj]
+      if (config) {
+        priorities[config.tableName] = config.order
+      }
+    }
+    return priorities
+  }
+
   async initializeSegment(runKey: RunKey, objects: StripeObject[]): Promise<RunKey> {
     const { chunkCursors } = await this.createChunks(objects)
+    const priorities = this.buildPriorityMap(objects)
     await this.postgresClient.createChunkedObjectRuns(
       runKey.accountId,
       runKey.runStartedAt,
-      chunkCursors
+      chunkCursors,
+      priorities
     )
     return runKey
   }
@@ -293,13 +310,26 @@ export class StripeSync {
     segmentedSync: boolean,
     triggeredBy: string = 'fullSync'
   ): Promise<RunKey | null> {
+    const priorities = this.buildPriorityMap(objects)
     let runKey: RunKey | null
     if (segmentedSync) {
       this.config.logger?.info('starting segmented sync')
-      runKey = await this.postgresClient.reconciliationRun(this.accountId, triggeredBy, [])
+      runKey = await this.postgresClient.reconciliationRun(
+        this.accountId,
+        triggeredBy,
+        [],
+        undefined,
+        priorities
+      )
     } else {
       this.config.logger?.info('starting non-segmented sync')
-      runKey = await this.postgresClient.reconciliationRun(this.accountId, triggeredBy, tableNames)
+      runKey = await this.postgresClient.reconciliationRun(
+        this.accountId,
+        triggeredBy,
+        tableNames,
+        undefined,
+        priorities
+      )
     }
     if (runKey == null) {
       this.config.logger?.info('reconciliation run returned null, skipping sync')
