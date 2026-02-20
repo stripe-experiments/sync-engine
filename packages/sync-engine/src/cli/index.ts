@@ -7,6 +7,7 @@ import {
   migrateCommand,
   backfillCommand,
   fullSyncCommand,
+  monitorCommand,
   installCommand,
   uninstallCommand,
 } from './commands'
@@ -83,12 +84,33 @@ program
     'Skip resync if a successful run completed within this many seconds (default: 86400)',
     (val) => parseInt(val, 10)
   )
+  .option('--worker-count <count>', 'Number of parallel sync workers (default: 100)', (val) =>
+    parseInt(val, 10)
+  )
+  .option('--rate-limit <limit>', 'Max requests per second (default: 50)', (val) =>
+    parseInt(val, 10)
+  )
   .action(async (options) => {
     await fullSyncCommand({
       stripeKey: options.stripeKey,
       databaseUrl: options.databaseUrl,
       enableSigma: options.sigma,
       interval: options.interval,
+      workerCount: options.workerCount,
+      rateLimit: options.rateLimit,
+    })
+  })
+
+// Monitor command
+program
+  .command('monitor')
+  .description('Live display of table row counts in the stripe schema')
+  .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
+  .action(async (options) => {
+    await monitorCommand({
+      databaseUrl: options.databaseUrl,
+      stripeKey: options.stripeKey,
     })
   })
 

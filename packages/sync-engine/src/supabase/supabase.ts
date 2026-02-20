@@ -26,7 +26,7 @@ export interface ProjectInfo {
 }
 
 export class SupabaseSetupClient {
-  private api: SupabaseManagementAPI
+  api: SupabaseManagementAPI
   private projectRef: string
   private projectBaseUrl: string
   private supabaseManagementUrl?: string
@@ -44,14 +44,22 @@ export class SupabaseSetupClient {
   }
 
   /**
-   * Validate that the project exists and we have access
+   * Validate that the project exists and we have access.
+   * Fetches the project directly by ref instead of listing all projects,
+   * because some org-level tokens lack the list-all permission.
    */
   async validateProject(): Promise<ProjectInfo> {
-    const projects = await this.api.getProjects()
-    const project = projects?.find((p) => p.id === this.projectRef)
-    if (!project) {
-      throw new Error(`Project ${this.projectRef} not found or you don't have access`)
+    const baseUrl = this.supabaseManagementUrl || 'https://api.supabase.com'
+    const response = await fetch(`${baseUrl}/v1/projects/${this.projectRef}`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(
+        `Project ${this.projectRef} not found or you don't have access (${response.status}: ${body})`
+      )
     }
+    const project = (await response.json()) as { id: string; name: string; region: string }
     return {
       id: project.id,
       name: project.name,
@@ -490,28 +498,11 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
       )
 
-      // Deploy Edge Functions with specified package version
-      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
-      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
-      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
-
-      await this.deployFunction('stripe-setup', versionedSetup, false)
-      await this.deployFunction('stripe-webhook', versionedWebhook, false)
-      await this.deployFunction('stripe-worker', versionedWorker, false)
-
-      // Deploy sigma worker only if enabled
-      if (enableSigma) {
-        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
-        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
-      }
-
-      // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
+      // Set secrets first -- stripe-setup needs STRIPE_SECRET_KEY to run
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]
-      // Add MANAGEMENT_API_URL if custom URL provided (for localhost/staging testing)
       if (this.supabaseManagementUrl) {
         secrets.push({ name: 'MANAGEMENT_API_URL', value: this.supabaseManagementUrl })
       }
-      // Set ENABLE_SIGMA for edge functions to read
       if (enableSigma) {
         secrets.push({ name: 'ENABLE_SIGMA', value: 'true' })
       }
@@ -520,12 +511,27 @@ export class SupabaseSetupClient {
       }
       await this.setSecrets(secrets)
 
-      // Run setup (migrations + webhook creation)
-      // Use accessToken for Management API validation
-      const setupResult = await this.invokeFunction('stripe-setup', this.accessToken)
+      // Deploy and invoke stripe-setup first -- it runs migrations that create
+      // the stripe schema tables. Other edge functions (stripe-worker, etc.)
+      // initialize StripeSync at module scope, which requires the schema to exist.
+      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
+      await this.deployFunction('stripe-setup', versionedSetup, false)
 
+      const setupResult = await this.invokeFunction('stripe-setup', this.accessToken)
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)
+      }
+
+      // Now deploy the remaining edge functions -- schema is ready
+      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
+      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
+
+      await this.deployFunction('stripe-webhook', versionedWebhook, false)
+      await this.deployFunction('stripe-worker', versionedWorker, false)
+
+      if (enableSigma) {
+        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
+        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
       }
 
       // Setup pg_cron - this is required for automatic syncing
@@ -541,11 +547,15 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_INSTALLED_SUFFIX}`
       )
     } catch (error) {
-      await this.updateInstallationComment(
-        `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_ERROR_SUFFIX} - ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
+      try {
+        await this.updateInstallationComment(
+          `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_ERROR_SUFFIX} - ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      } catch {
+        // Schema may not exist if early steps failed -- don't mask the original error
+      }
       throw error
     }
   }

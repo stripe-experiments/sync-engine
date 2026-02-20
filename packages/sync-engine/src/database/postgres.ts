@@ -962,7 +962,7 @@ export class PostgresClient {
   async claimNextTask(
     accountId: string,
     runStartedAt: Date,
-    rateLimit: number = 100
+    rateLimit: number = 50
   ): Promise<{
     object: string
     cursor: string | null
@@ -1492,6 +1492,15 @@ export class PostgresClient {
       [accountId, runStartedAt]
     )
     return parseInt(result.rows[0].count) === 0
+  }
+
+  async countObjectRuns(accountId: string, runStartedAt: Date): Promise<number> {
+    const result = await this.query(
+      `SELECT COUNT(*) as count FROM "${this.config.schema}"."_sync_obj_runs"
+       WHERE "_account_id" = $1 AND run_started_at = $2`,
+      [accountId, runStartedAt]
+    )
+    return parseInt(result.rows[0].count)
   }
 
   /**
