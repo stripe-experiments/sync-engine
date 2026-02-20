@@ -108,6 +108,6 @@ export default defineConfig({
 
   esbuildOptions(options) {
     options.external = options.external || []
-    options.external.push('npm:*', 'chalk', 'inquirer')
+    options.external.push('npm:*', 'chalk', 'inquirer', 'esbuild')
   },
 })

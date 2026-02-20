@@ -8,8 +8,11 @@ describe('Manual Pagination with Rate Limit Handling', () => {
   let mockCustomersList: ReturnType<typeof vi.fn>
   let mockPaymentMethodsList: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers()
+    vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
+      id: 'acct_test',
+    } as Stripe.Account)
 
     // Create minimal config
     const config: StripeSyncConfig = {
@@ -17,14 +20,10 @@ describe('Manual Pagination with Rate Limit Handling', () => {
       poolConfig: {
         connectionString: 'postgresql://test',
       },
-      maxRetries: 3,
-      initialRetryDelayMs: 100,
-      maxRetryDelayMs: 1000,
-      retryJitterMs: 0,
     }
 
     // Create StripeSync instance
-    sync = new StripeSync(config)
+    sync = await StripeSync.create(config)
 
     // Create mock functions
     mockCustomersList = vi.fn()

@@ -23,17 +23,22 @@ describe('POST /webhooks', () => {
 
   beforeAll(async () => {
     const config = getConfig()
+    await postgresClient.query('DROP SCHEMA IF EXISTS stripe CASCADE')
     await runMigrations({
       databaseUrl: config.databaseUrl,
       logger,
     })
 
     process.env.AUTO_EXPAND_LISTS = 'false'
+    process.env.STRIPE_ACCOUNT_ID = process.env.STRIPE_ACCOUNT_ID || 'acct_test_account'
+
     server = await createServer()
 
     const stripeSync = server.getDecorator<StripeSync>('stripeSync')
     const stripe = Object.assign(stripeSync.stripe, mockStripe)
     vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
+
+    await stripeSync.getCurrentAccount()
   })
 
   afterAll(async () => {
@@ -213,8 +218,9 @@ describe('POST /webhooks', () => {
     // Clean up any existing test data
     await deleteTestData(entityType, entityId)
 
-    // First, send a webhook with current timestamp (newer data)
-    const newerTimestamp = unixtime
+    // Use a fresh timestamp to avoid Stripe's signature tolerance window (300s)
+    // expiring when earlier tests take a long time to run
+    const newerTimestamp = Math.floor(Date.now() / 1000)
     const newerEventBody = { ...eventBody, created: newerTimestamp }
     const newerSignature = createHmac('sha256', stripeWebhookSecret)
       .update(`${newerTimestamp}.${JSON.stringify(newerEventBody)}`, 'utf8')

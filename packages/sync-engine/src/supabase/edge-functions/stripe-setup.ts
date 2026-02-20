@@ -194,13 +194,13 @@ Deno.serve(async (req) => {
       }
 
       // Step 1: Delete Stripe webhooks and clean up database
-      stripeSync = new StripeSync({
+      stripeSync = await StripeSync.create({
         poolConfig: { connectionString: dbUrl, max: 2 },
         stripeSecretKey: stripeKey,
       })
 
       // Delete all managed webhooks
-      const webhooks = await stripeSync.listManagedWebhooks()
+      const webhooks = await stripeSync.webhook.listManagedWebhooks()
       for (const webhook of webhooks) {
         try {
           await stripeSync.deleteManagedWebhook(webhook.id)
@@ -355,7 +355,7 @@ Deno.serve(async (req) => {
       embeddedMigrations
     )
 
-    stripeSync = new StripeSync({
+    stripeSync = await StripeSync.create({
       poolConfig: { connectionString: dbUrl, max: 2 }, // Need 2 for advisory lock + queries
       stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY'),
     })
@@ -370,7 +370,7 @@ Deno.serve(async (req) => {
     }
     const webhookUrl = supabaseUrl + '/functions/v1/stripe-webhook'
 
-    const webhook = await stripeSync.findOrCreateManagedWebhook(webhookUrl)
+    const webhook = await stripeSync.webhook.findOrCreateManagedWebhook(webhookUrl)
 
     await stripeSync.postgresClient.pool.end()
 

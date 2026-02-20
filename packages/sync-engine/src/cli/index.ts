@@ -6,6 +6,7 @@ import {
   syncCommand,
   migrateCommand,
   backfillCommand,
+  fullSyncCommand,
   installCommand,
   uninstallCommand,
 } from './commands'
@@ -66,6 +67,29 @@ program
       },
       entityName
     )
+  })
+
+// Full sync command
+program
+  .command('full-sync')
+  .description(
+    'Re-sync everything from Stripe, skipping if a successful run completed within --interval'
+  )
+  .option('--stripe-key <key>', 'Stripe API key (or STRIPE_API_KEY env)')
+  .option('--database-url <url>', 'Postgres DATABASE_URL (or DATABASE_URL env)')
+  .option('--sigma', 'Enable Sigma tables')
+  .option(
+    '--interval <seconds>',
+    'Skip resync if a successful run completed within this many seconds (default: 86400)',
+    (val) => parseInt(val, 10)
+  )
+  .action(async (options) => {
+    await fullSyncCommand({
+      stripeKey: options.stripeKey,
+      databaseUrl: options.databaseUrl,
+      enableSigma: options.sigma,
+      interval: options.interval,
+    })
   })
 
 // Supabase commands

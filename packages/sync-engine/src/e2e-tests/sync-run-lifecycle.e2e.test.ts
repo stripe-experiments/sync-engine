@@ -9,7 +9,7 @@ import pg from 'pg'
 import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
 import { checkEnvVars } from './helpers/stripe-client.js'
 import { buildCli } from './helpers/cli-process.js'
-import { StripeSync } from '../index.js'
+import { StripeSync, getTableName } from '../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-lifecycle-test'
 const DB_NAME = 'app_db'
@@ -37,7 +37,7 @@ describe('Sync Run Lifecycle E2E', () => {
     })
 
     // Create StripeSync instance
-    sync = new StripeSync({
+    sync = await StripeSync.create({
       databaseUrl: getDatabaseUrl(PORT, DB_NAME),
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })
@@ -52,10 +52,21 @@ describe('Sync Run Lifecycle E2E', () => {
     await stopPostgres(CONTAINER_NAME)
   }, 30000)
 
+  /** Helper: get resource (table) names for all supported sync objects */
+  function getResourceNames(): string[] {
+    const objects = sync.getSupportedSyncObjects()
+    return objects.map((obj) => getTableName(obj, sync.resourceRegistry))
+  }
+
   it('should create object runs upfront (prevents premature close)', async () => {
-    // Create sync run
-    const { runKey, objects } = await sync.joinOrCreateSyncRun('test')
-    expect(objects.length).toBeGreaterThan(0)
+    const resourceNames = getResourceNames()
+
+    // Create sync run via postgresClient
+    const runKey = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test',
+      resourceNames
+    )
 
     // Check object runs were created upfront
     const result = await sync.postgresClient.pool.query(
@@ -65,11 +76,16 @@ describe('Sync Run Lifecycle E2E', () => {
     )
     const objectRunCount = parseInt(result.rows[0].count, 10)
 
-    expect(objectRunCount).toBe(objects.length)
+    expect(objectRunCount).toBe(resourceNames.length)
   })
 
   it('should match sync_runs view with _sync_runs table', async () => {
-    const { runKey } = await sync.joinOrCreateSyncRun('test-view-sync')
+    const resourceNames = getResourceNames()
+    const runKey = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test-view-sync',
+      resourceNames
+    )
 
     // Get active run via StripeSync method
     const activeRun = await sync.postgresClient.getActiveSyncRun(runKey.accountId)
@@ -98,15 +114,26 @@ describe('Sync Run Lifecycle E2E', () => {
   })
 
   it('should keep run open after first object completes (no premature close)', async () => {
-    const { runKey, objects } = await sync.joinOrCreateSyncRun('test-premature-close')
-    expect(objects.length).toBeGreaterThan(1)
+    const resourceNames = getResourceNames()
+    expect(resourceNames.length).toBeGreaterThan(1)
 
-    // Process first object
-    let hasMore = true
-    while (hasMore) {
-      const result = await sync.processNext(objects[0], { runStartedAt: runKey.runStartedAt })
-      hasMore = result.hasMore
-    }
+    const runKey = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test-premature-close',
+      resourceNames
+    )
+
+    // Complete the first object directly via postgresClient
+    await sync.postgresClient.tryStartObjectSync(
+      runKey.accountId,
+      runKey.runStartedAt,
+      resourceNames[0]
+    )
+    await sync.postgresClient.completeObjectSync(
+      runKey.accountId,
+      runKey.runStartedAt,
+      resourceNames[0]
+    )
 
     // Check state after first object
     const afterFirstResult = await sync.postgresClient.pool.query(
@@ -120,20 +147,22 @@ describe('Sync Run Lifecycle E2E', () => {
     const totalObjects = parseInt(afterFirst.total_objects, 10)
 
     expect(completeCount).toBe(1)
-    expect(totalObjects).toBe(objects.length)
+    expect(totalObjects).toBe(resourceNames.length)
     expect(afterFirst.closed_at).toBeNull() // Run should NOT close prematurely
   })
 
   it('should close run properly after all objects complete', async () => {
-    const { runKey, objects } = await sync.joinOrCreateSyncRun('test-complete')
+    const resourceNames = getResourceNames()
+    const runKey = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test-complete',
+      resourceNames
+    )
 
-    // Process all objects
-    for (const obj of objects) {
-      let hasMore = true
-      while (hasMore) {
-        const result = await sync.processNext(obj, { runStartedAt: runKey.runStartedAt })
-        hasMore = result.hasMore
-      }
+    // Complete all objects via postgresClient
+    for (const obj of resourceNames) {
+      await sync.postgresClient.tryStartObjectSync(runKey.accountId, runKey.runStartedAt, obj)
+      await sync.postgresClient.completeObjectSync(runKey.accountId, runKey.runStartedAt, obj)
     }
 
     // Check final state
@@ -149,7 +178,7 @@ describe('Sync Run Lifecycle E2E', () => {
 
     expect(finalState.closed_at).not.toBeNull()
     expect(finalState.status).toBe('complete')
-    expect(finalCompleteCount).toBe(objects.length)
+    expect(finalCompleteCount).toBe(resourceNames.length)
     expect(finalPendingCount).toBe(0)
 
     // Verify table is in sync
@@ -162,21 +191,26 @@ describe('Sync Run Lifecycle E2E', () => {
   })
 
   it('should isolate multiple runs without interference', async () => {
-    // Create first run and complete it
-    const { runKey: runKey1, objects: objects1 } =
-      await sync.joinOrCreateSyncRun('test-isolation-1')
+    const resourceNames = getResourceNames()
 
-    for (const obj of objects1) {
-      let hasMore = true
-      while (hasMore) {
-        const result = await sync.processNext(obj, { runStartedAt: runKey1.runStartedAt })
-        hasMore = result.hasMore
-      }
+    // Create first run and complete it
+    const runKey1 = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test-isolation-1',
+      resourceNames
+    )
+
+    for (const obj of resourceNames) {
+      await sync.postgresClient.tryStartObjectSync(runKey1.accountId, runKey1.runStartedAt, obj)
+      await sync.postgresClient.completeObjectSync(runKey1.accountId, runKey1.runStartedAt, obj)
     }
 
     // Create second run
-    const { runKey: runKey2, objects: objects2 } =
-      await sync.joinOrCreateSyncRun('test-isolation-2')
+    const runKey2 = await sync.postgresClient.joinOrCreateSyncRun(
+      sync.accountId,
+      'test-isolation-2',
+      resourceNames
+    )
 
     // Verify different timestamps
     expect(runKey2.runStartedAt.getTime()).not.toBe(runKey1.runStartedAt.getTime())
@@ -187,7 +221,7 @@ describe('Sync Run Lifecycle E2E', () => {
        WHERE "_account_id" = $1 AND run_started_at = $2`,
       [runKey2.accountId, runKey2.runStartedAt]
     )
-    expect(parseInt(run2ObjectsResult.rows[0].count, 10)).toBe(objects2.length)
+    expect(parseInt(run2ObjectsResult.rows[0].count, 10)).toBe(resourceNames.length)
 
     // Verify first run still shows as complete
     const run1Check = await sync.postgresClient.pool.query(
