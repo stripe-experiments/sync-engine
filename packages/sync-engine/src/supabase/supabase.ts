@@ -62,32 +62,13 @@ export class SupabaseSetupClient {
   }
 
   /**
-   * Finds an existing edge function by its name and returns its slug.
-   * Returns undefined if the function is not found
-   */
-  async findFunctionSlugByName(name: string): Promise<string | undefined> {
-    const { data: functions } = await this.api.listAllFunctions(this.projectRef)
-    const f = functions?.find((f) => f.name === name)
-    return f?.slug
-  }
-
-  /**
    * Deploy an Edge Function
    */
-  async deployFunction(name: string, code: string, verifyJwt = false): Promise<string> {
-    const slug = await this.findFunctionSlugByName(name)
-
-    if (slug) {
-      // Update existing function
-      await this.api.updateAFunctionWithJson(this.projectRef, slug, {
-        name,
-        body: code,
-        verify_jwt: verifyJwt,
-      })
-      return slug
-    } else {
-      // Create new function
-      const { data } = await this.api.deployAFunction(this.projectRef, {
+  async deployFunction(name: string, code: string, verifyJwt = false): Promise<void> {
+    // Create or update function
+    await this.api.deployAFunction(
+      this.projectRef,
+      {
         file: [
           new File([code], 'index.ts', { type: 'application/typescript' }),
         ] as unknown as string[],
@@ -96,9 +77,11 @@ export class SupabaseSetupClient {
           verify_jwt: verifyJwt,
           name,
         },
-      })
-      return data.slug
-    }
+      },
+      {
+        slug: name,
+      }
+    )
   }
 
   /**
@@ -460,29 +443,6 @@ export class SupabaseSetupClient {
   }
 
   /**
-   * Delete an Edge Function
-   */
-  async deleteFunction(name: string): Promise<void> {
-    try {
-      await this.api.deleteAFunction(this.projectRef, name)
-    } catch (err) {
-      // Silently ignore if function doesn't exist
-      console.warn(`Could not delete function ${name}:`, err)
-    }
-  }
-
-  /**
-   * Delete a secret
-   */
-  async deleteSecret(name: string): Promise<void> {
-    try {
-      await this.api.bulkDeleteSecrets(this.projectRef, [name])
-    } catch (err) {
-      console.warn(`Could not delete secret ${name}:`, err)
-    }
-  }
-
-  /**
    * Uninstall stripe-sync from a Supabase project
    * Invokes the stripe-setup edge function's DELETE endpoint which handles cleanup
    * Tracks uninstallation progress via schema comments
@@ -497,15 +457,9 @@ export class SupabaseSetupClient {
         )
       }
 
-      const stripeSetupSlug = await this.findFunctionSlugByName('stripe-setup')
-
-      if (!stripeSetupSlug) {
-        throw new Error('Uninstall failed: stripe-setup function not found')
-      }
-
       // Invoke the DELETE endpoint on stripe-setup function
       // Use accessToken in Authorization header for Management API validation
-      const setupResult = await this.invokeFunction(stripeSetupSlug, 'DELETE', this.accessToken)
+      const setupResult = await this.invokeFunction('stripe-setup', 'DELETE', this.accessToken)
 
       if (!setupResult.success) {
         throw new Error(`Uninstall failed: ${setupResult.error}`)
@@ -562,7 +516,7 @@ export class SupabaseSetupClient {
       const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
       const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
 
-      const stripeSetupSlug = await this.deployFunction('stripe-setup', versionedSetup, false)
+      await this.deployFunction('stripe-setup', versionedSetup, false)
       await this.deployFunction('stripe-webhook', versionedWebhook, false)
       await this.deployFunction('stripe-worker', versionedWorker, false)
 
@@ -586,7 +540,7 @@ export class SupabaseSetupClient {
 
       // Run setup (migrations + webhook creation)
       // Use accessToken for Management API validation
-      const setupResult = await this.invokeFunction(stripeSetupSlug, 'POST', this.accessToken)
+      const setupResult = await this.invokeFunction('stripe-setup', 'POST', this.accessToken)
 
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)
