@@ -47,6 +47,9 @@ export type StripeSyncServerConfig = {
 
   revalidateObjectsViaStripeApi: Array<RevalidateEntity>
 
+  /** Optional Stripe partner ID (e.g. "pp_supabase"). */
+  partnerId?: string
+
   port: number
   disableMigrations: boolean
   sslConnectionOptions?: ConnectionOptions
@@ -70,6 +73,7 @@ export function getConfig(): StripeSyncServerConfig {
       .split(',')
       .map((it) => it.trim())
       .filter((it) => it.length > 0) as Array<RevalidateEntity>,
+    partnerId: process.env.STRIPE_PARTNER_ID || undefined,
     disableMigrations: getConfigFromEnv('DISABLE_MIGRATIONS', 'false') === 'true',
     sslConnectionOptions: sslConnnectionOptionsFromEnv(),
   }

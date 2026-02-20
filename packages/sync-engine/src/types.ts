@@ -44,6 +44,9 @@ export type StripeSyncConfig = {
   /** Stripe account ID. If not provided, will be retrieved from Stripe API. Used as fallback option. */
   stripeAccountId?: string
 
+  /** Optional Stripe partner ID embedded in appInfo for telemetry (e.g. "pp_supabase"). */
+  partnerId?: string
+
   /** Stripe webhook signing secret for validating webhook signatures. Required if not using managed webhooks. */
   stripeWebhookSecret?: string
 

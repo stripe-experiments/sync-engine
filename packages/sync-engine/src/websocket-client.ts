@@ -4,7 +4,7 @@ const CLI_VERSION = '1.33.0'
 
 // Timing constants (matching Stripe CLI)
 const PONG_WAIT = 10 * 1000 // 10 seconds - max time to wait for pong
-const PING_PERIOD = (PONG_WAIT * 9) / 10 // 9 seconds - send ping before pong timeout
+const PING_PERIOD = (PONG_WAIT * 2) / 10 // 2 seconds - send ping before pong timeout
 const CONNECT_ATTEMPT_WAIT = 10 * 1000 // 10 seconds - retry interval on connection failure
 const DEFAULT_RECONNECT_INTERVAL = 60 * 1000 // 60 seconds - proactive reconnect interval
 
