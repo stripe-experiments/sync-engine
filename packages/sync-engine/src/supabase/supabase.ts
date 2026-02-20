@@ -49,40 +49,55 @@ export class SupabaseSetupClient {
    * Validate that the project exists and we have access
    */
   async validateProject(): Promise<ProjectInfo> {
-    const projects = await this.api.getProjects()
-    const project = projects?.find((p) => p.id === this.projectRef)
+    const { data: projects } = await this.api.listAllProjects()
+    const project = projects?.find((p) => p.ref === this.projectRef)
     if (!project) {
       throw new Error(`Project ${this.projectRef} not found or you don't have access`)
     }
     return {
-      id: project.id,
+      id: project.ref,
       name: project.name,
       region: project.region,
     }
   }
 
   /**
+   * Finds an existing edge function by its name and returns its slug.
+   * Returns undefined if the function is not found
+   */
+  async findFunctionSlugByName(name: string): Promise<string | undefined> {
+    const { data: functions } = await this.api.listAllFunctions(this.projectRef)
+    const f = functions?.find((f) => f.name === name)
+    return f?.slug
+  }
+
+  /**
    * Deploy an Edge Function
    */
-  async deployFunction(name: string, code: string, verifyJwt = false): Promise<void> {
-    // Check if function exists
-    const functions = await this.api.listFunctions(this.projectRef)
-    const exists = functions?.some((f) => f.slug === name)
+  async deployFunction(name: string, code: string, verifyJwt = false): Promise<string> {
+    const slug = await this.findFunctionSlugByName(name)
 
-    if (exists) {
+    if (slug) {
       // Update existing function
-      await this.api.updateFunction(this.projectRef, name, {
+      await this.api.updateAFunctionWithJson(this.projectRef, slug, {
+        name,
         body: code,
         verify_jwt: verifyJwt,
       })
+      return slug
     } else {
       // Create new function
-      await this.api.createFunction(this.projectRef, {
-        slug: name,
-        name: name,
-        body: code,
-        verify_jwt: verifyJwt,
+      const { data } = await this.api.deployAFunction(this.projectRef, {
+        file: [
+          new File([code], 'index.ts', { type: 'application/typescript' }),
+        ] as unknown as string[],
+        metadata: {
+          entrypoint_path: 'index.ts',
+          verify_jwt: verifyJwt,
+          name,
+        },
       })
+      return data.slug
     }
   }
 
@@ -104,14 +119,17 @@ export class SupabaseSetupClient {
    * Set secrets for Edge Functions
    */
   async setSecrets(secrets: { name: string; value: string }[]): Promise<void> {
-    await this.api.createSecrets(this.projectRef, secrets)
+    await this.api.bulkCreateSecrets(this.projectRef, secrets)
   }
 
   /**
    * Run SQL against the database
    */
   async runSQL(sql: string): Promise<unknown> {
-    return await this.api.runQuery(this.projectRef, sql)
+    const { data } = await this.api.runAQuery(this.projectRef, {
+      query: sql,
+    })
+    return data
   }
 
   /**
@@ -267,8 +285,8 @@ export class SupabaseSetupClient {
   /**
    * Get the anon key for this project (needed for Realtime subscriptions)
    */
-  async getAnonKey(): Promise<string> {
-    const apiKeys = await this.api.getProjectApiKeys(this.projectRef)
+  async getAnonKey(): Promise<string | null | undefined> {
+    const { data: apiKeys } = await this.api.getProjectApiKeys(this.projectRef)
     const anonKey = apiKeys?.find((k) => k.name === 'anon')
     if (!anonKey) {
       throw new Error('Could not find anon API key')
@@ -287,12 +305,13 @@ export class SupabaseSetupClient {
    * Invoke an Edge Function
    */
   async invokeFunction(
-    name: string,
+    slug: string,
+    method: string,
     bearerToken: string
   ): Promise<{ success: boolean; error?: string }> {
-    const url = `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/${name}`
+    const url = `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/${slug}`
     const response = await fetch(url, {
-      method: 'POST',
+      method,
       headers: {
         Authorization: `Bearer ${bearerToken}`,
         'Content-Type': 'application/json',
@@ -445,7 +464,7 @@ export class SupabaseSetupClient {
    */
   async deleteFunction(name: string): Promise<void> {
     try {
-      await this.api.deleteFunction(this.projectRef, name)
+      await this.api.deleteAFunction(this.projectRef, name)
     } catch (err) {
       // Silently ignore if function doesn't exist
       console.warn(`Could not delete function ${name}:`, err)
@@ -457,7 +476,7 @@ export class SupabaseSetupClient {
    */
   async deleteSecret(name: string): Promise<void> {
     try {
-      await this.api.deleteSecrets(this.projectRef, [name])
+      await this.api.bulkDeleteSecrets(this.projectRef, [name])
     } catch (err) {
       console.warn(`Could not delete secret ${name}:`, err)
     }
@@ -478,25 +497,18 @@ export class SupabaseSetupClient {
         )
       }
 
-      // Invoke the DELETE endpoint on stripe-setup function
-      // Use accessToken in Authorization header for Management API validation
-      const url = `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-setup`
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      const stripeSetupSlug = await this.findFunctionSlugByName('stripe-setup')
 
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`Uninstall failed: ${response.status} ${text}`)
+      if (!stripeSetupSlug) {
+        throw new Error('Uninstall failed: stripe-setup function not found')
       }
 
-      const result = (await response.json()) as { success?: boolean; error?: string }
-      if (result.success === false) {
-        throw new Error(`Uninstall failed: ${result.error}`)
+      // Invoke the DELETE endpoint on stripe-setup function
+      // Use accessToken in Authorization header for Management API validation
+      const setupResult = await this.invokeFunction(stripeSetupSlug, 'DELETE', this.accessToken)
+
+      if (!setupResult.success) {
+        throw new Error(`Uninstall failed: ${setupResult.error}`)
       }
       // On success, schema is dropped by edge function (no comment update needed)
     } catch (error) {
@@ -550,7 +562,7 @@ export class SupabaseSetupClient {
       const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
       const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
 
-      await this.deployFunction('stripe-setup', versionedSetup, false)
+      const stripeSetupSlug = await this.deployFunction('stripe-setup', versionedSetup, false)
       await this.deployFunction('stripe-webhook', versionedWebhook, false)
       await this.deployFunction('stripe-worker', versionedWorker, false)
 
@@ -574,7 +586,7 @@ export class SupabaseSetupClient {
 
       // Run setup (migrations + webhook creation)
       // Use accessToken for Management API validation
-      const setupResult = await this.invokeFunction('stripe-setup', this.accessToken)
+      const setupResult = await this.invokeFunction(stripeSetupSlug, 'POST', this.accessToken)
 
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)

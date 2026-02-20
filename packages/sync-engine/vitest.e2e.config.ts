@@ -1,5 +1,10 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
+import dotenv from 'dotenv'
+import path from 'path'
+
+// Load .env file
+dotenv.config({ path: path.resolve(__dirname, '.env') })
 
 // Separate config for E2E tests
 // These tests require STRIPE_API_KEY and run via `test:e2e`

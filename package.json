@@ -15,7 +15,8 @@
     "dashboard": "pnpm --filter @supabase/stripe-sync-dashboard dev"
   },
   "dependencies": {
-    "pino": "^10.0.0"
+    "pino": "^10.0.0",
+    "supabase-management-js": "file:/Users/raminder.singh/src/js/supabase-management-js/supabase-management-js-2.0.0.tgz"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
