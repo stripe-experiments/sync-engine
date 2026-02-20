@@ -33,7 +33,7 @@ export class StripeSyncWorker {
       backfillRelated?: boolean
     ) => Promise<unknown[] | void>,
     private readonly taskLimit: number = Infinity,
-    private readonly rateLimit: number = 100
+    private readonly rateLimit: number = 50
   ) {}
 
   start(): void {
@@ -72,7 +72,7 @@ export class StripeSyncWorker {
 
           await new Promise((r) => setTimeout(r, randomWait))
         } else {
-          this.config.logger?.error({ err }, 'Task processing failed; sleeping 5s before retry')
+          this.config.logger?.error({ err }, 'Task processing failed; sleeping 1s before retry')
           await new Promise((r) => setTimeout(r, 1000))
         }
       }

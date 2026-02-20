@@ -239,7 +239,9 @@ export class StripeSync {
     return best // earliest second where at least one customer exists
   }
 
-  async startSegmentedSync(objects: StripeObject[]): Promise<RunKey> {
+  async createChunks(
+    objects: StripeObject[]
+  ): Promise<{ chunkCursors: Record<string, number[]>; nonChunkTables: string[] }> {
     const cursors = await Promise.all(
       objects
         .filter((obj) => this.resourceRegistry[obj]?.supportsCreatedFilter)
@@ -272,11 +274,11 @@ export class StripeSync {
       chunkCursors[tableName] = timestamps
     }
 
-    const runKey = await this.postgresClient.joinOrCreateSyncRun(
-      this.accountId,
-      'fullSync',
-      nonChunkTables
-    )
+    return { chunkCursors, nonChunkTables }
+  }
+
+  async initializeSegment(runKey: RunKey, objects: StripeObject[]): Promise<RunKey> {
+    const { chunkCursors } = await this.createChunks(objects)
     await this.postgresClient.createChunkedObjectRuns(
       runKey.accountId,
       runKey.runStartedAt,
@@ -285,11 +287,46 @@ export class StripeSync {
     return runKey
   }
 
+  async reconciliationSync(
+    objects: StripeObject[],
+    tableNames: string[],
+    segmentedSync: boolean,
+    triggeredBy: string = 'fullSync'
+  ): Promise<RunKey | null> {
+    let runKey: RunKey | null
+    if (segmentedSync) {
+      this.config.logger?.info('starting segmented sync')
+      runKey = await this.postgresClient.reconciliationRun(this.accountId, triggeredBy, [])
+    } else {
+      this.config.logger?.info('starting non-segmented sync')
+      runKey = await this.postgresClient.reconciliationRun(this.accountId, triggeredBy, tableNames)
+    }
+    if (runKey == null) {
+      this.config.logger?.info('reconciliation run returned null, skipping sync')
+      return null
+    }
+    if (segmentedSync) {
+      const existingCount = await this.postgresClient.countObjectRuns(
+        runKey.accountId,
+        runKey.runStartedAt
+      )
+      if (existingCount === 0) {
+        await this.initializeSegment(runKey, objects)
+      } else {
+        this.config.logger?.info(
+          { existingCount },
+          `Skipping segment initialization — ${existingCount} object run(s) already exist`
+        )
+      }
+    }
+    return runKey
+  }
+
   async fullSync(
     tables?: StripeObject[],
-    segmentedSync: boolean = false,
+    segmentedSync: boolean = true,
     workerCount: number = 100,
-    rateLimit: number = 100
+    rateLimit: number = 50
   ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -299,13 +336,9 @@ export class StripeSync {
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
     const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
-    let runKey: RunKey
-    if (segmentedSync) {
-      this.config.logger?.info('starting segmented sync')
-      runKey = await this.startSegmentedSync(objects)
-    } else {
-      this.config.logger?.info('starting non-segmented sync')
-      runKey = await this.postgresClient.joinOrCreateSyncRun(this.accountId, 'fullSync', tableNames)
+    const runKey = await this.reconciliationSync(objects, tableNames, segmentedSync)
+    if (runKey == null) {
+      return { results: {}, totals: {}, totalSynced: 0, skipped: [], errors: [] }
     }
 
     // Reset any orphaned 'running' objects back to 'pending' (crash recovery).
@@ -341,23 +374,7 @@ export class StripeSync {
     )
     workers.forEach((worker) => worker.start())
 
-    // const monitorInterval = setInterval(async () => {
-    //   try {
-    //     const { rows } = await this.postgresClient.query(
-    //       `SELECT schemaname, relname AS table_name, n_live_tup AS row_count
-    //        FROM pg_stat_user_tables ORDER BY n_live_tup DESC`
-    //     )
-    //     process.stdout.write('\x1B[2K\x1B[0G') // clear current line
-    //     process.stdout.write('\x1B[1A'.repeat(rows.length + 1)) // move cursor up past the last table
-    //     process.stdout.write('\x1B[2K\x1B[0G') // clear each line
-    //     console.table(rows)
-    //   } catch {
-    //     // ignore monitoring errors
-    //   }
-    // }, 2000)
-
     await Promise.all(workers.map((worker) => worker.waitUntilDone()))
-    // clearInterval(monitorInterval)
 
     const totals = await this.postgresClient.getObjectSyncedCounts(
       this.accountId,
@@ -552,5 +569,26 @@ export class StripeSync {
    */
   async close(): Promise<void> {
     await this.postgresClient.pool.end()
+  }
+
+  /**
+   * Periodically logs row counts for all tables, refreshing in place.
+   * Returns the interval handle so the caller can clear it.
+   */
+  startTableMonitor(intervalMs = 2000): ReturnType<typeof setInterval> {
+    return setInterval(async () => {
+      try {
+        const { rows } = await this.postgresClient.query(
+          `SELECT schemaname, relname AS table_name, n_live_tup AS row_count
+           FROM pg_stat_user_tables ORDER BY n_live_tup DESC`
+        )
+        process.stdout.write('\x1B[2K\x1B[0G')
+        process.stdout.write('\x1B[1A'.repeat(rows.length + 1))
+        process.stdout.write('\x1B[2K\x1B[0G')
+        console.table(rows)
+      } catch {
+        // ignore monitoring errors
+      }
+    }, intervalMs)
   }
 }
