@@ -20,7 +20,7 @@
  *   processing on timeout/crash is safe.
  */
 
-import { StripeSync } from 'npm:stripe-experiment-sync'
+import { StripeSync } from '../../index'
 import postgres from 'npm:postgres'
 
 const QUEUE_NAME = 'stripe_sync_work'
@@ -35,18 +35,17 @@ Deno.serve(async (req) => {
 
   const token = authHeader.substring(7) // Remove 'Bearer '
 
-  const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')
-  if (!rawDbUrl) {
+  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+  if (!dbUrl) {
     return new Response(JSON.stringify({ error: 'SUPABASE_DB_URL not set' }), { status: 500 })
   }
-  const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
   let sql
   let stripeSync
-
   try {
-    sql = postgres(dbUrl, { max: 1, prepare: false })
+    sql = postgres(dbUrl.split('?')[0], { max: 1, prepare: false, ssl: false })
   } catch (error) {
+    console.error(error)
     return new Response(
       JSON.stringify({
         error: 'Failed to create postgres connection',
@@ -75,7 +74,6 @@ Deno.serve(async (req) => {
       await sql.end()
       return new Response('Forbidden: Invalid worker secret', { status: 403 })
     }
-
     stripeSync = new StripeSync({
       poolConfig: { connectionString: dbUrl, max: 1 },
       stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
@@ -83,6 +81,7 @@ Deno.serve(async (req) => {
       partnerId: 'pp_supabase',
     })
   } catch (error) {
+    console.error(error)
     await sql.end()
     return new Response(
       JSON.stringify({
