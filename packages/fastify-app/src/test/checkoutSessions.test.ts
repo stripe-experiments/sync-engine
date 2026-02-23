@@ -177,7 +177,7 @@ describe('checkout sessions', () => {
       `select id, object, amount_discount, amount_subtotal, amount_tax, amount_total, currency, description, price, quantity from stripe.checkout_session_line_items where checkout_session = 'cs_live_9RBjcHiy2i5p99Tf1MYM90c3SHK1grU0E6Ae6pKWR2KPA4ZiuKiB2X1Y3X'`
     )
 
-    // Money columns are bigint (returned as strings by node-postgres)
+    // Generated numeric columns are bigint (returned as strings by node-postgres)
     expect(lineItems.rows).toContainEqual({
       id: 'li_123',
       object: 'item',
@@ -188,7 +188,7 @@ describe('checkout sessions', () => {
       currency: 'usd',
       description: 'T-shirt',
       price: 'price_1IDQm5JDPojXS6LNM31hxKzp',
-      quantity: 1,
+      quantity: '1',
     })
 
     expect(lineItems.rows).toContainEqual({
@@ -201,7 +201,7 @@ describe('checkout sessions', () => {
       currency: 'usd',
       description: 'Hoodie',
       price: 'price_1IDQm5JDPojXS6LNM31hxKzp',
-      quantity: 2,
+      quantity: '2',
     })
   })
 })

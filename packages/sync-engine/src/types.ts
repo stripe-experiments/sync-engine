@@ -1,6 +1,8 @@
 import { type PoolConfig } from 'pg'
-import Stripe from 'stripe'
+import type Stripe from 'stripe'
 import type { SigmaIngestionConfig } from './sigma/sigmaIngestion'
+import type { RevalidateEntityName, SyncObjectName } from './syncObjects'
+export { CORE_SYNC_OBJECTS, REVALIDATE_ENTITIES, SYNC_OBJECTS } from './syncObjects'
 
 /**
  * Simple logger interface compatible with both pino and console
@@ -11,25 +13,7 @@ export interface Logger {
   error(message?: unknown, ...optionalParams: unknown[]): void
 }
 
-export type RevalidateEntity =
-  | 'charge'
-  | 'credit_note'
-  | 'customer'
-  | 'dispute'
-  | 'invoice'
-  | 'payment_intent'
-  | 'payment_method'
-  | 'plan'
-  | 'price'
-  | 'product'
-  | 'refund'
-  | 'review'
-  | 'radar.early_fraud_warning'
-  | 'setup_intent'
-  | 'subscription'
-  | 'subscription_schedule'
-  | 'tax_id'
-  | 'entitlements'
+export type RevalidateEntity = RevalidateEntityName
 
 export type StripeSyncConfig = {
   /** @deprecated Use `poolConfig` with a connection string instead. */
@@ -128,26 +112,7 @@ export type StripeSyncConfig = {
   maxConcurrentCustomers?: number
 }
 
-export type SyncObject =
-  | 'all'
-  | 'customer'
-  | 'customer_with_entitlements'
-  | 'invoice'
-  | 'price'
-  | 'product'
-  | 'subscription'
-  | 'subscription_schedules'
-  | 'setup_intent'
-  | 'payment_method'
-  | 'dispute'
-  | 'charge'
-  | 'payment_intent'
-  | 'plan'
-  | 'tax_id'
-  | 'credit_note'
-  | 'early_fraud_warning'
-  | 'refund'
-  | 'checkout_sessions'
+export type SyncObject = SyncObjectName
 export interface Sync {
   synced: number
 }
@@ -168,6 +133,7 @@ export interface SyncBackfill {
   taxIds?: Sync
   creditNotes?: Sync
   earlyFraudWarnings?: Sync
+  reviews?: Sync
   refunds?: Sync
   checkoutSessions?: Sync
   subscriptionItemChangeEventsV2Beta?: Sync
