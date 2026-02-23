@@ -135,6 +135,9 @@ supabase
     'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
   .option('--sigma', 'Enable Sigma sync (deploy sigma worker and cron job)')
+  .option('--rate-limit <limit>', 'Max Stripe API requests per second (default: 60)', (val) =>
+    parseInt(val, 10)
+  )
   .action(async (options) => {
     await installCommand({
       supabaseAccessToken: options.token,
@@ -144,6 +147,7 @@ supabase
       workerInterval: options.workerInterval,
       supabaseManagementUrl: options.managementUrl,
       enableSigma: options.sigma,
+      rateLimit: options.rateLimit,
     })
   })
 

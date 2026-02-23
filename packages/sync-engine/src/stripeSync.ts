@@ -672,7 +672,7 @@ export class StripeSync {
    * Periodically logs row counts for all tables, refreshing in place.
    * Returns the interval handle so the caller can clear it.
    */
-  startTableMonitor(intervalMs = 2000, runKey?: RunKey): ReturnType<typeof setInterval> {
+  startTableMonitor(intervalMs = 2000, runKey: RunKey): ReturnType<typeof setInterval> {
     return setInterval(async () => {
       try {
         await this.printProgress(runKey)

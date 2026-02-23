@@ -62,7 +62,25 @@ export async function monitorCommand(options: CliOptions): Promise<void> {
     })
 
     console.log(chalk.blue('Monitoring table row counts (Ctrl-C to stop)...\n'))
-    const interval = stripeSync.startTableMonitor(2000)
+    const activeRun = await stripeSync.postgresClient.getActiveSyncRun(stripeSync.accountId)
+    if (!activeRun) {
+      const lastCompleted = await stripeSync.postgresClient.getCompletedRun(
+        stripeSync.accountId,
+        Infinity
+      )
+      if (lastCompleted) {
+        console.log(
+          chalk.green(
+            `No active sync run. Last completed at ${lastCompleted.runStartedAt.toISOString()}`
+          )
+        )
+      } else {
+        console.log(chalk.yellow('No active or completed sync runs found.'))
+      }
+      await stripeSync.close()
+      return
+    }
+    const interval = stripeSync.startTableMonitor(2000, activeRun)
 
     const cleanup = () => {
       clearInterval(interval)
@@ -88,6 +106,7 @@ export interface DeployOptions {
   workerInterval?: number
   supabaseManagementUrl?: string
   enableSigma?: boolean
+  rateLimit?: number
 }
 
 export type { CliOptions }
@@ -899,6 +918,7 @@ export async function installCommand(options: DeployOptions): Promise<void> {
       workerIntervalSeconds: options.workerInterval,
       supabaseManagementUrl,
       enableSigma: options.enableSigma,
+      rateLimit: options.rateLimit,
     })
 
     // Print summary
