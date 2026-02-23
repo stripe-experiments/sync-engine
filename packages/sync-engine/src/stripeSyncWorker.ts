@@ -22,6 +22,7 @@ export class StripeSyncWorker {
     private readonly postgresClient: PostgresClient,
     private readonly accountId: string,
     private readonly resourceRegistry: Record<string, ResourceConfig>,
+    private readonly sigmaRegistry: Record<string, ResourceConfig>,
     private readonly runKey: RunKey,
     private readonly upsertAny: (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,7 +186,7 @@ export class StripeSyncWorker {
           this.accountId,
           this.runKey.runStartedAt,
           task.object,
-          ''
+          task.cursor ?? ''
         )
       }
 
@@ -216,17 +217,11 @@ export class StripeSyncWorker {
   }
 
   private getConfigForTaskObject(taskObject: string): ResourceConfig | undefined {
-    const matches = Object.values(this.resourceRegistry).filter(
+    const coreMatch = Object.values(this.resourceRegistry).find(
       (cfg) => cfg.tableName === taskObject
     )
-    if (matches.length === 0) {
-      return undefined
-    }
+    if (coreMatch) return coreMatch
 
-    // Prefer core Stripe resources when table names overlap with Sigma resources.
-    // This preserves registry precedence and avoids accidental Sigma processing
-    // when sync tasks are keyed by destination table name.
-    const coreMatch = matches.find((cfg) => !cfg.sigma)
-    return coreMatch ?? matches[0]
+    return Object.values(this.sigmaRegistry).find((cfg) => cfg.tableName === taskObject)
   }
 }

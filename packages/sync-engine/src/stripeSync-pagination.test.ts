@@ -48,12 +48,7 @@ describe('Pagination regression tests', () => {
       const coreObjectsExpectedFalse = ['payment_method', 'tax_id']
 
       for (const [objectName, config] of Object.entries(registry)) {
-        const resourceConfig = config as { supportsCreatedFilter: boolean; sigma?: unknown }
-
-        // Skip sigma-backed tables - they use cursor-based pagination, not created filter
-        if (resourceConfig.sigma) {
-          continue
-        }
+        const resourceConfig = config as { supportsCreatedFilter: boolean }
 
         if (coreObjectsExpectedFalse.includes(objectName)) {
           expect(
@@ -101,7 +96,9 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        { accountId: 'acct_test', runStartedAt: new Date() }
+        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        { accountId: 'acct_test', runStartedAt: new Date() },
+        vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
       await worker.fetchOnePage('credit_notes', '1700000000', null, creditNotesConfig)
@@ -123,7 +120,9 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        { accountId: 'acct_test', runStartedAt: new Date() }
+        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        { accountId: 'acct_test', runStartedAt: new Date() },
+        vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
       await worker.fetchOnePage('credit_notes', '1700000000', null, creditNotesConfig)
@@ -140,7 +139,9 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        { accountId: 'acct_test', runStartedAt: new Date() }
+        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        { accountId: 'acct_test', runStartedAt: new Date() },
+        vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
       await worker.fetchOnePage('credit_notes', '1700000000', 'cn_existing_123', creditNotesConfig)
@@ -161,7 +162,9 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        { accountId: 'acct_test', runStartedAt: new Date() }
+        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        { accountId: 'acct_test', runStartedAt: new Date() },
+        vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
       await worker.fetchOnePage('credit_notes', null, null, creditNotesConfig)
@@ -184,7 +187,9 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        { accountId: 'acct_test', runStartedAt: new Date() }
+        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        { accountId: 'acct_test', runStartedAt: new Date() },
+        vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
       await worker.fetchOnePage('credit_notes', '1700000000', null, noCreatedFilterConfig)

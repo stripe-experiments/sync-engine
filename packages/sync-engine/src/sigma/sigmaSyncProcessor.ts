@@ -72,23 +72,22 @@ export class SigmaSyncProcessor {
   }
 
   /**
-   * Check whether a resource is backed by Sigma (has a `sigma` config in the registry).
+   * Check whether a resource exists in the sigma registry.
    */
-  isSigmaResource(resourceRegistry: Record<string, ResourceConfig>, object: string): boolean {
-    return Boolean(resourceRegistry[object]?.sigma)
+  isSigmaResource(sigmaRegistry: Record<string, ResourceConfig>, object: string): boolean {
+    return object in sigmaRegistry
   }
 
   /**
    * Get the list of Sigma-backed object types that can be synced.
    * Only returns sigma objects when enableSigma is true.
    */
-  getSupportedSigmaObjects(resourceRegistry: Record<string, ResourceConfig>): string[] {
+  getSupportedSigmaObjects(sigmaRegistry: Record<string, ResourceConfig>): string[] {
     if (!this.config.enableSigma) {
       return []
     }
 
-    return Object.entries(resourceRegistry)
-      .filter(([, config]) => Boolean(config.sigma))
+    return Object.entries(sigmaRegistry)
       .sort(([, a], [, b]) => a.order - b.order)
       .map(([key]) => key)
   }
@@ -209,7 +208,6 @@ export class SigmaSyncProcessor {
       entries.length
     )
 
-    // Cursor: advance to the last row in the page (matches the ORDER BY in buildSigmaQuery()).
     const newCursor = sigmaCursorFromEntry(sigmaConfig, entries[entries.length - 1]!)
     await this.postgresClient.updateObjectCursor(accountId, runStartedAt, resourceName, newCursor)
 

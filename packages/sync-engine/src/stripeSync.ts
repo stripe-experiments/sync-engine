@@ -10,6 +10,7 @@ import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 import { StripeSyncWebhook } from './stripeSyncWebhook'
 import {
   buildResourceRegistry,
+  buildSigmaRegistry,
   getResourceConfigFromId,
   getTableName,
   normalizeStripeObjectName,
@@ -47,6 +48,7 @@ export class StripeSync {
   postgresClient: PostgresClient
   config: StripeSyncConfig
   readonly resourceRegistry: Record<StripeObject, ResourceConfig>
+  readonly sigmaRegistry: Record<string, ResourceConfig>
   webhook!: StripeSyncWebhook
   readonly sigma: SigmaSyncProcessor
   accountId!: string
@@ -91,10 +93,8 @@ export class StripeSync {
       logger: this.config.logger,
     })
 
-    this.resourceRegistry = buildResourceRegistry({
-      stripe: this.stripe,
-      sigma: this.sigma,
-    })
+    this.resourceRegistry = buildResourceRegistry(this.stripe)
+    this.sigmaRegistry = buildSigmaRegistry(this.sigma, this.resourceRegistry)
   }
 
   /**
@@ -176,20 +176,25 @@ export class StripeSync {
    * Order is determined by the `order` field in resourceRegistry.
    */
   public getSupportedSyncObjects(): Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[] {
-    const all = Object.entries(this.resourceRegistry)
+    const coreObjects = Object.entries(this.resourceRegistry)
       .filter(([, cfg]) => cfg.sync !== false)
       .sort(([, a], [, b]) => a.order - b.order)
       .map(([key]) => key) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
 
-    // Only advertise Sigma-backed objects when explicitly enabled (opt-in).
     if (!this.config.enableSigma) {
-      return all.filter((o) => !this.sigma.isSigmaResource(this.resourceRegistry, o)) as Exclude<
-        SyncObject,
-        'all' | 'customer_with_entitlements'
-      >[]
+      return coreObjects
     }
 
-    return all
+    const sigmaObjects = Object.entries(this.sigmaRegistry)
+      .filter(([, cfg]) => cfg.sync !== false)
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([key]) => key) as Exclude<SyncObject, 'all' | 'customer_with_entitlements'>[]
+
+    return [...coreObjects, ...sigmaObjects]
+  }
+
+  public getSupportedSigmaObjects(): string[] {
+    return this.sigma.getSupportedSigmaObjects(this.sigmaRegistry)
   }
 
   async syncSingleEntity(stripeId: string) {
@@ -202,6 +207,12 @@ export class StripeSync {
     await this.upsertAny([item], accountId, false)
   }
 
+  private getRegistryForObject(object: string): Record<string, ResourceConfig> {
+    if (object in this.resourceRegistry) return this.resourceRegistry
+    if (object in this.sigmaRegistry) return this.sigmaRegistry
+    return this.resourceRegistry
+  }
+
   async fullSync(tables?: StripeObject[]): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -210,7 +221,7 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
-    const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
+    const tableNames = objects.map((obj) => getTableName(obj, this.getRegistryForObject(obj)))
     const runKey = await this.postgresClient.joinOrCreateSyncRun(
       this.accountId,
       'fullSync',
@@ -242,6 +253,7 @@ export class StripeSync {
           this.postgresClient,
           this.accountId,
           this.resourceRegistry,
+          this.sigmaRegistry,
           runKey,
           this.upsertAny.bind(this)
         )
@@ -276,7 +288,8 @@ export class StripeSync {
     const stripeObjectName = items[0].object
 
     const syncObjectName = normalizeStripeObjectName(stripeObjectName)
-    const dependencies = this.resourceRegistry[syncObjectName]?.dependencies ?? []
+    const registry = this.getRegistryForObject(syncObjectName)
+    const dependencies = registry[syncObjectName]?.dependencies ?? []
     if (backfillRelatedEntities ?? this.config.backfillRelatedEntities) {
       await Promise.all(
         dependencies.map((dependency) =>
@@ -290,7 +303,7 @@ export class StripeSync {
       )
     }
 
-    const config = this.resourceRegistry[syncObjectName]
+    const config = registry[syncObjectName]
     const autoExpandLists = this.config.autoExpandLists ?? false
     if (autoExpandLists && config?.listExpands) {
       for (const expandEntry of config.listExpands) {
@@ -300,7 +313,7 @@ export class StripeSync {
       }
     }
 
-    const tableName = getTableName(syncObjectName, this.resourceRegistry)
+    const tableName = getTableName(syncObjectName, registry)
     const rows = await this.postgresClient.upsertManyWithTimestampProtection(
       items,
       tableName,
@@ -321,7 +334,7 @@ export class StripeSync {
     accountId: string,
     syncTimestamp?: string
   ) {
-    const config = this.resourceRegistry[objectName]
+    const config = this.getRegistryForObject(objectName)[objectName]
     const tableName = config?.tableName ?? objectName
     if (!config?.retrieveFn) {
       throw new Error(`No retrieveFn registered for resource: ${objectName}`)

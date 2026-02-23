@@ -246,7 +246,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
     it('should paginate sigma results using cursor across multiple pages', async () => {
       // Force a small page size so we exercise multi-page cursor paging.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sigmaConfig = (sync as any).resourceRegistry?.subscription_item_change_events_v2_beta
+      const sigmaConfig = (sync as any).sigmaRegistry?.subscription_item_change_events_v2_beta
         ?.sigma
       if (!sigmaConfig) {
         throw new Error('Missing sigma config for subscription_item_change_events_v2_beta')

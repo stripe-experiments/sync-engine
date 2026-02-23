@@ -2,15 +2,6 @@ import Stripe from 'stripe'
 import type { ResourceConfig } from './types'
 import type { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
 
-/**
- * Dependencies injected into buildResourceRegistry so the registry
- * can be constructed without coupling to the StripeSync class.
- */
-export type ResourceRegistryDeps = {
-  stripe: Stripe
-  sigma: SigmaSyncProcessor
-}
-
 export type StripeObject =
   | 'product'
   | 'price'
@@ -32,13 +23,10 @@ export type StripeObject =
   | 'active_entitlements'
   | 'review'
 
-// Resource registry - maps SyncObject → list/retrieve operations for processNext()
-// Complements eventHandlers which maps event types → handlers for webhooks
+// Resource registry - maps SyncObject → list/retrieve operations
 // Upsert is handled universally via StripeSync.upsertAny()
-// Order field determines backfill sequence - parents before children for FK dependencies
-export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string, ResourceConfig> {
-  const { stripe, sigma } = deps
-
+// Order field determines sync sequence - parents before children for FK dependencies
+export function buildResourceRegistry(stripe: Stripe): Record<StripeObject, ResourceConfig> {
   const core: Record<StripeObject, ResourceConfig> = {
     product: {
       order: 1,
@@ -239,11 +227,19 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
     },
   }
 
-  const maxOrder = Math.max(...Object.values(core).map((cfg) => cfg.order))
-  const sigmaEntries = sigma.buildSigmaRegistryEntries(maxOrder)
+  return core
+}
 
-  // Core configs take precedence over sigma to preserve supportsCreatedFilter and other settings
-  return { ...sigmaEntries, ...core }
+/**
+ * Build a separate registry for Sigma-backed resources.
+ * Order values start after the highest core order so backfill sequencing is preserved.
+ */
+export function buildSigmaRegistry(
+  sigma: SigmaSyncProcessor,
+  coreRegistry: Record<string, ResourceConfig>
+): Record<string, ResourceConfig> {
+  const maxOrder = Math.max(...Object.values(coreRegistry).map((cfg) => cfg.order))
+  return sigma.buildSigmaRegistryEntries(maxOrder)
 }
 
 /**
