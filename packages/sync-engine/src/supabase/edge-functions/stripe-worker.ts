@@ -23,7 +23,7 @@ const stripeSync = await StripeSync.create({
 })
 const objects = stripeSync.getSupportedSyncObjects()
 const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
-const interval = Deno.env.get('INTERVAL') ?? (60 * 60 * 24)
+const interval = Deno.env.get('INTERVAL') ?? 60 * 60 * 24
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
