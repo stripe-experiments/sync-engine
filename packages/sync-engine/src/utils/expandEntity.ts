@@ -11,11 +11,8 @@ export async function expandEntity<
 >(
   entities: T[],
   property: P,
-  listFn: (id: string, params?: { starting_after?: string }) => Promise<Stripe.ApiList<K>>,
-  autoExpandLists: boolean
+  listFn: (id: string, params?: { starting_after?: string }) => Promise<Stripe.ApiList<K>>
 ) {
-  if (!autoExpandLists) return
-
   for (const entity of entities) {
     const existingList = entity[property]
     if (!existingList || existingList.has_more) {

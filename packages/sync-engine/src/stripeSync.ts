@@ -291,15 +291,11 @@ export class StripeSync {
     }
 
     const config = this.resourceRegistry[syncObjectName]
-    if (config?.listExpands) {
+    const autoExpandLists = this.config.autoExpandLists ?? false
+    if (autoExpandLists && config?.listExpands) {
       for (const expandEntry of config.listExpands) {
         for (const [property, expandFn] of Object.entries(expandEntry)) {
-          await expandEntity(
-            items,
-            property,
-            (id) => expandFn(id),
-            this.config.autoExpandLists ?? false
-          )
+          await expandEntity(items, property, (id) => expandFn(id))
         }
       }
     }

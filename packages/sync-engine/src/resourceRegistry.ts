@@ -172,9 +172,7 @@ export function buildResourceRegistry(deps: ResourceRegistryDeps): Record<string
       dependencies: ['customer', 'invoice'],
       listFn: (p) => stripe.creditNotes.list(p),
       retrieveFn: (id) => stripe.creditNotes.retrieve(id),
-      listExpands: [
-        { listLineItems: (id) => stripe.creditNotes.listLineItems(id, { limit: 100 }) },
-      ],
+      listExpands: [{ lines: (id) => stripe.creditNotes.listLineItems(id, { limit: 100 }) }],
       supportsCreatedFilter: true,
       sync: true,
       isFinalState: (creditNote: Stripe.CreditNote) => creditNote.status === 'void',
