@@ -144,20 +144,20 @@ describe('SupabaseDeployClient', () => {
       const mockGetProjectApiKeys = vi
         .fn()
         .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
-      const mockRunQuery = vi.fn().mockResolvedValue(null)
+      const mockRunQuery = vi.fn().mockResolvedValue({ data: null })
 
       // @ts-expect-error - accessing private api for testing
       client.api.getProjectApiKeys = mockGetProjectApiKeys
       // @ts-expect-error - accessing private api for testing
-      client.api.runQuery = mockRunQuery
+      client.api.runAQuery = mockRunQuery
 
       await client.setupPgCronJob()
 
-      // Verify runQuery was called
+      // Verify runAQuery was called
       expect(mockRunQuery).toHaveBeenCalled()
 
-      // Get the SQL that was executed
-      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+      // Get the SQL that was executed (runAQuery(projectRef, { query }))
+      const executedSQL = (mockRunQuery.mock.calls[0][1] as { query: string }).query
 
       // Verify it contains the custom base URL
       expect(executedSQL).toContain(
@@ -175,17 +175,17 @@ describe('SupabaseDeployClient', () => {
       const mockGetProjectApiKeys = vi
         .fn()
         .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
-      const mockRunQuery = vi.fn().mockResolvedValue(null)
+      const mockRunQuery = vi.fn().mockResolvedValue({ data: null })
 
       // @ts-expect-error - accessing private api for testing
       client.api.getProjectApiKeys = mockGetProjectApiKeys
       // @ts-expect-error - accessing private api for testing
-      client.api.runQuery = mockRunQuery
+      client.api.runAQuery = mockRunQuery
 
       await client.setupPgCronJob()
 
-      // Get the SQL that was executed
-      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+      // Get the SQL that was executed (runAQuery(projectRef, { query }))
+      const executedSQL = (mockRunQuery.mock.calls[0][1] as { query: string }).query
 
       // Verify it contains the default base URL
       expect(executedSQL).toContain(
@@ -203,17 +203,17 @@ describe('SupabaseDeployClient', () => {
       const mockGetProjectApiKeys = vi
         .fn()
         .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
-      const mockRunQuery = vi.fn().mockResolvedValue(null)
+      const mockRunQuery = vi.fn().mockResolvedValue({ data: null })
 
       // @ts-expect-error - accessing private api for testing
       client.api.getProjectApiKeys = mockGetProjectApiKeys
       // @ts-expect-error - accessing private api for testing
-      client.api.runQuery = mockRunQuery
+      client.api.runAQuery = mockRunQuery
 
       await client.setupPgCronJob(30)
 
-      // Get the SQL that was executed
-      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+      // Get the SQL that was executed (runAQuery(projectRef, { query }))
+      const executedSQL = (mockRunQuery.mock.calls[0][1] as { query: string }).query
 
       // Verify it uses interval format for seconds
       expect(executedSQL).toContain("'30 seconds'")
@@ -229,17 +229,17 @@ describe('SupabaseDeployClient', () => {
       const mockGetProjectApiKeys = vi
         .fn()
         .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
-      const mockRunQuery = vi.fn().mockResolvedValue(null)
+      const mockRunQuery = vi.fn().mockResolvedValue({ data: null })
 
       // @ts-expect-error - accessing private api for testing
       client.api.getProjectApiKeys = mockGetProjectApiKeys
       // @ts-expect-error - accessing private api for testing
-      client.api.runQuery = mockRunQuery
+      client.api.runAQuery = mockRunQuery
 
       await client.setupPgCronJob(120)
 
-      // Get the SQL that was executed
-      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+      // Get the SQL that was executed (runAQuery(projectRef, { query }))
+      const executedSQL = (mockRunQuery.mock.calls[0][1] as { query: string }).query
 
       // Verify it uses cron format for 2 minutes
       expect(executedSQL).toContain("'*/2 * * * *'")
@@ -255,17 +255,17 @@ describe('SupabaseDeployClient', () => {
       const mockGetProjectApiKeys = vi
         .fn()
         .mockResolvedValue([{ name: 'service_role', api_key: 'test-service-key' }])
-      const mockRunQuery = vi.fn().mockResolvedValue(null)
+      const mockRunQuery = vi.fn().mockResolvedValue({ data: null })
 
       // @ts-expect-error - accessing private api for testing
       client.api.getProjectApiKeys = mockGetProjectApiKeys
       // @ts-expect-error - accessing private api for testing
-      client.api.runQuery = mockRunQuery
+      client.api.runAQuery = mockRunQuery
 
       await client.setupPgCronJob()
 
-      // Get the SQL that was executed
-      const executedSQL = mockRunQuery.mock.calls[0][1] as string
+      // Get the SQL that was executed (runAQuery(projectRef, { query }))
+      const executedSQL = (mockRunQuery.mock.calls[0][1] as { query: string }).query
 
       // Verify it uses cron format for 1 minute
       expect(executedSQL).toContain("'*/1 * * * *'")
