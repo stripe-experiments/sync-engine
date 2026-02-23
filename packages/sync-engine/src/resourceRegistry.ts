@@ -213,7 +213,7 @@ export function buildResourceRegistry(stripe: Stripe): Record<StripeObject, Reso
           p as unknown as Stripe.Entitlements.ActiveEntitlementListParams
         ),
       retrieveFn: (id) => stripe.entitlements.activeEntitlements.retrieve(id),
-      supportsCreatedFilter: true,
+      supportsCreatedFilter: false,
       sync: false,
     },
     review: {

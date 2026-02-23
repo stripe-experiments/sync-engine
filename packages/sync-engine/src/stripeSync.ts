@@ -2,7 +2,7 @@ import Stripe from 'stripe'
 import { pg as sql } from 'yesql'
 import pkg from '../package.json' with { type: 'json' }
 import { PostgresClient } from './database/postgres'
-import { StripeSyncConfig, Sync, SyncObject, type ResourceConfig } from './types'
+import { type Logger, StripeSyncConfig, Sync, SyncObject, type ResourceConfig } from './types'
 import { type PoolConfig } from 'pg'
 import { hashApiKey } from './utils/hashApiKey'
 import { expandEntity } from './utils/expandEntity'
@@ -35,6 +35,11 @@ function buildPoolConfig(config: StripeSyncConfig): PoolConfig {
   return poolConfig
 }
 
+function buildProgressBar(pct: number, width: number): string {
+  const filled = Math.round((pct / 100) * width)
+  return '[' + '█'.repeat(filled) + '░'.repeat(width - filled) + ']'
+}
+
 function getUniqueIds<T>(entries: T[], key: keyof T & string): string[] {
   const set = new Set(
     entries.map((entry) => entry?.[key]?.toString()).filter((it): it is string => Boolean(it))
@@ -52,9 +57,23 @@ export class StripeSync {
   webhook!: StripeSyncWebhook
   readonly sigma: SigmaSyncProcessor
   accountId!: string
+  private savedLogger: Logger | null = null
+  private previousLineCount = 0
 
   get sigmaSchemaName(): string {
     return this.sigma.sigmaSchemaName
+  }
+
+  private disableLogger() {
+    this.savedLogger = this.config.logger ?? null
+    this.config.logger = { info() {}, warn() {}, error() {} }
+  }
+
+  private enableLogger() {
+    if (this.savedLogger) {
+      this.config.logger = this.savedLogger
+      this.savedLogger = null
+    }
   }
 
   private constructor(config: StripeSyncConfig) {
@@ -63,7 +82,8 @@ export class StripeSync {
       // https://github.com/stripe/stripe-node#configuration
       // @ts-ignore
       apiVersion: config.stripeApiVersion,
-      maxNetworkRetries: 5,
+      telemetry: false,
+      maxNetworkRetries: 1,
       appInfo: {
         name: 'Stripe Sync Engine',
         version: pkg.version,
@@ -356,7 +376,8 @@ export class StripeSync {
     tables?: StripeObject[],
     segmentedSync: boolean = true,
     workerCount: number = 100,
-    rateLimit: number = 50
+    rateLimit: number = 50,
+    monitorProgress: boolean = true
   ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -404,7 +425,16 @@ export class StripeSync {
     )
     workers.forEach((worker) => worker.start())
 
+    let monitorInterval: ReturnType<typeof setInterval> | undefined
+    if (monitorProgress) {
+      this.disableLogger()
+      monitorInterval = this.startTableMonitor(1000, runKey)
+    }
+
     await Promise.all(workers.map((worker) => worker.waitUntilDone()))
+    clearInterval(monitorInterval)
+    this.enableLogger()
+    await this.printProgress(runKey)
 
     const totals = await this.postgresClient.getObjectSyncedCounts(
       this.accountId,
@@ -600,22 +630,52 @@ export class StripeSync {
   async close(): Promise<void> {
     await this.postgresClient.pool.end()
   }
+  async printProgress(runKey: RunKey): Promise<void> {
+    const syncQuery = {
+      text: `SELECT * FROM "stripe"."sync_obj_progress"
+                  WHERE account_id = $1 AND run_started_at = $2
+                  ORDER BY object`,
+      values: [runKey.accountId, runKey.runStartedAt],
+    }
+
+    const [syncResult] = await Promise.all([
+      this.postgresClient.query(syncQuery.text, syncQuery.values),
+    ])
+
+    const lines: string[] = []
+
+    if (syncResult.rows.length > 0) {
+      lines.push('')
+      lines.push('--- Sync Progress ---')
+      for (const row of syncResult.rows) {
+        const pct = Number(row.pct_complete ?? 0)
+        const bar = buildProgressBar(pct, 20)
+        lines.push(
+          `  ${row.object.padEnd(24)} ${bar} ${String(pct.toFixed(1)).padStart(5)}%  (${row.processed} rows)`
+        )
+      }
+    }
+
+    if (this.previousLineCount > 0) {
+      process.stdout.write('\x1B[2K\x1B[0G')
+      process.stdout.write('\x1B[1A\x1B[2K'.repeat(this.previousLineCount))
+      process.stdout.write('\x1B[0G')
+    }
+
+    for (const line of lines) {
+      console.log(line)
+    }
+    this.previousLineCount = lines.length
+  }
 
   /**
    * Periodically logs row counts for all tables, refreshing in place.
    * Returns the interval handle so the caller can clear it.
    */
-  startTableMonitor(intervalMs = 2000): ReturnType<typeof setInterval> {
+  startTableMonitor(intervalMs = 2000, runKey?: RunKey): ReturnType<typeof setInterval> {
     return setInterval(async () => {
       try {
-        const { rows } = await this.postgresClient.query(
-          `SELECT schemaname, relname AS table_name, n_live_tup AS row_count
-           FROM pg_stat_user_tables ORDER BY n_live_tup DESC`
-        )
-        process.stdout.write('\x1B[2K\x1B[0G')
-        process.stdout.write('\x1B[1A'.repeat(rows.length + 1))
-        process.stdout.write('\x1B[2K\x1B[0G')
-        console.table(rows)
+        await this.printProgress(runKey)
       } catch {
         // ignore monitoring errors
       }

@@ -54,8 +54,9 @@ export class StripeSyncWorker {
         break
       }
 
+      let task: SyncTask | null = null
       try {
-        const task = await this.getNextTask()
+        task = await this.getNextTask()
         if (!task) {
           this.running = false
           break
@@ -69,9 +70,21 @@ export class StripeSyncWorker {
           this.config.logger?.warn(
             `Rate limited on claimNextTask, backing off ${Math.round(randomWait)}ms`
           )
-
           await new Promise((r) => setTimeout(r, randomWait))
         } else {
+          if (task) {
+            await this.postgresClient.updateSyncObject(
+              this.accountId,
+              this.runKey.runStartedAt,
+              task.object,
+              task.created_gte,
+              task.created_lte,
+              {
+                status: 'error',
+                errorMessage: `Task processing failed: ${String(err)}`,
+              }
+            )
+          }
           this.config.logger?.error({ err }, 'Task processing failed; sleeping 1s before retry')
           await new Promise((r) => setTimeout(r, 1000))
         }
