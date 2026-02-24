@@ -108,7 +108,7 @@ describe('Pagination regression tests', () => {
 
       expect(callArgs).toMatchObject({
         limit: 100,
-        created: { gte: 1700000000 },
+        created: { lte: 1700000000 },
       })
     })
 
@@ -149,7 +149,7 @@ describe('Pagination regression tests', () => {
       const callArgs = mockCreditNotesList.mock.calls[0][0]
       expect(callArgs).toMatchObject({
         limit: 100,
-        created: { gte: 1700000000 },
+        created: { lte: 1700000000 },
         starting_after: 'cn_existing_123',
       })
     })
@@ -192,7 +192,14 @@ describe('Pagination regression tests', () => {
         vi.fn() as any // eslint-disable-line @typescript-eslint/no-explicit-any
       )
 
-      await worker.fetchOnePage('credit_notes', '1700000000', null, noCreatedFilterConfig)
+      await worker.fetchOnePage(
+        'credit_notes',
+        '1700000000',
+        null,
+        noCreatedFilterConfig,
+        null,
+        null
+      )
 
       const callArgs = mockCreditNotesList.mock.calls[0][0]
       expect(callArgs.created).toBeUndefined()

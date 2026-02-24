@@ -110,9 +110,7 @@ export class StripeSyncWorker {
       limit: 100,
     }
     if (config.supportsCreatedFilter) {
-      const lte = cursor
-        ? Number.parseInt(cursor, 10)
-        : (created_lte ?? Math.floor(Date.now() / 1000))
+      const lte = cursor ? Number.parseInt(cursor, 10) : created_lte
       const createdFilter: Stripe.RangeQueryParam = {}
       if (lte != null && lte > 0) createdFilter.lte = lte
       if (created_gte && created_gte > 0) createdFilter.gte = created_gte
