@@ -33,6 +33,7 @@ export class SupabaseSetupClient {
   private projectBaseUrl: string
   private supabaseManagementUrl?: string
   private accessToken: string
+  private workerSecret: string
 
   constructor(options: DeployClientOptions) {
     this.api = new SupabaseManagementAPI({
@@ -43,6 +44,7 @@ export class SupabaseSetupClient {
     this.projectBaseUrl = options.projectBaseUrl || process.env.SUPABASE_BASE_URL || 'supabase.co'
     this.supabaseManagementUrl = options.supabaseManagementUrl
     this.accessToken = options.accessToken
+    this.workerSecret = crypto.randomUUID()
   }
 
   /**
@@ -149,12 +151,8 @@ export class SupabaseSetupClient {
       )
     }
 
-    // Generate a unique secret for stripe-worker authentication
-    // This works even if service_role tokens are disabled
-    const workerSecret = crypto.randomUUID()
-
     // Escape single quotes to prevent SQL injection
-    const escapedWorkerSecret = workerSecret.replace(/'/g, "''")
+    const escapedWorkerSecret = this.workerSecret.replace(/'/g, "''")
 
     const sql = `
       -- Enable extensions
@@ -590,15 +588,7 @@ export class SupabaseSetupClient {
 
       // Invoke stripe-worker immediately to trigger first sync for better UX on Supabase
       // dashboard. We want to see the first sync run immediately after an installation.
-      const sql = `
-          SELECT net.http_post(
-            url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker',
-            headers := jsonb_build_object(
-              'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
-            )
-          )
-        `
-      await this.runSQL(sql)
+      await this.invokeFunction('stripe-worker', 'POST', this.workerSecret)
 
       // Set final version comment
       await this.updateInstallationComment(
