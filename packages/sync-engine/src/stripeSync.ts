@@ -280,10 +280,12 @@ export class StripeSync {
     )
     const chunkCursors: Record<string, number[]> = {}
     const nonChunkCursors = objects.filter((obj) => !validCursors.some((c) => c.object === obj))
-    const nonChunkTables = nonChunkCursors.map((obj) => getTableName(obj, this.resourceRegistry))
+    const nonChunkTables = nonChunkCursors.map((obj) =>
+      getTableName(obj, this.getRegistryForObject(obj))
+    )
     const now = Math.floor(Date.now() / 1000)
     for (const { object: obj, oldest } of validCursors) {
-      const tableName = getTableName(obj, this.resourceRegistry)
+      const tableName = getTableName(obj, this.getRegistryForObject(obj))
       const range = now - oldest
       const interval = Math.max(Math.floor(range / chunkCount), 1)
       const timestamps: number[] = []
@@ -304,7 +306,7 @@ export class StripeSync {
   private buildPriorityMap(objects: StripeObject[]): Record<string, number> {
     const priorities: Record<string, number> = {}
     for (const obj of objects) {
-      const config = this.resourceRegistry[obj]
+      const config = this.getRegistryForObject(obj)[obj]
       if (config) {
         priorities[config.tableName] = config.order
       }
