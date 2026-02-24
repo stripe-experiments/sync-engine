@@ -19,20 +19,15 @@ beforeAll(async () => {
     logger,
   })
 
-  stripeSync = new StripeSync({
+  stripeSync = await StripeSync.create({
     ...config,
+    stripeAccountId: TEST_ACCOUNT_ID,
     poolConfig: {
       connectionString: config.databaseUrl,
     },
   })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
-
-  // Mock getCurrentAccount to avoid API calls
-  vitest.spyOn(stripeSync, 'getCurrentAccount').mockResolvedValue({
-    id: TEST_ACCOUNT_ID,
-    object: 'account',
-  } as Stripe.Account)
 
   // Ensure test account exists in database with API key hash
   const apiKeyHash = hashApiKey(config.stripeSecretKey)
@@ -59,7 +54,7 @@ describe('invoices', () => {
       } as Stripe.Invoice,
     ]
 
-    await stripeSync.upsertInvoices(invoices, TEST_ACCOUNT_ID, false)
+    await stripeSync.upsertAny(invoices, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select lines->'data' as lines from stripe.invoices where id = 'in_xyz' limit 1`
@@ -80,7 +75,7 @@ describe('invoices', () => {
       } as Stripe.Invoice,
     ]
 
-    await stripeSync.upsertInvoices(invoices, TEST_ACCOUNT_ID, false)
+    await stripeSync.upsertAny(invoices, TEST_ACCOUNT_ID, false)
 
     const lineItems = await stripeSync.postgresClient.query(
       `select lines->'data' as lines from stripe.invoices where id = 'in_xyz2' limit 1`

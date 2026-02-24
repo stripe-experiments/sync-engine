@@ -19,7 +19,7 @@ beforeAll(async () => {
     logger,
   })
 
-  stripeSync = new StripeSync(config)
+  stripeSync = await StripeSync.create({ ...config, stripeAccountId: 'acct_test_account' })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
 })
@@ -46,7 +46,7 @@ describe('entitlements', () => {
         name: 'Test Customer 1',
       } as Stripe.Customer,
     ]
-    await stripeSync.upsertCustomers(customer, accountId)
+    await stripeSync.upsertAny(customer, accountId)
 
     const activeEntitlements = [
       {

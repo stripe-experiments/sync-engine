@@ -8,6 +8,7 @@ export class ResourceTracker {
   private customerIds: string[] = []
   private productIds: string[] = []
   private priceIds: string[] = []
+  private planIds: string[] = []
   private webhookIds: string[] = []
 
   trackCustomer(id: string): void {
@@ -22,6 +23,10 @@ export class ResourceTracker {
     this.priceIds.push(id)
   }
 
+  trackPlan(id: string): void {
+    this.planIds.push(id)
+  }
+
   trackWebhook(id: string): void {
     this.webhookIds.push(id)
   }
@@ -33,6 +38,14 @@ export class ResourceTracker {
       try {
         // Prices can't be deleted, only deactivated
         await stripe.prices.update(id, { active: false })
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    for (const id of this.planIds) {
+      try {
+        await stripe.plans.del(id)
       } catch {
         // Ignore errors
       }
@@ -71,6 +84,7 @@ export class ResourceTracker {
     this.customerIds = []
     this.productIds = []
     this.priceIds = []
+    this.planIds = []
     this.webhookIds = []
   }
 }
