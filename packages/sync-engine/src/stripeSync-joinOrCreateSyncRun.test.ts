@@ -73,11 +73,12 @@ describe('joinOrCreateSyncRun', () => {
     await postgresClient.joinOrCreateSyncRun(accountId, 'test', resourceNames)
 
     expect(mockCreateObjectRuns).toHaveBeenCalledTimes(1)
-    expect(mockCreateObjectRuns).toHaveBeenCalledWith('acct_123', mockRun.runStartedAt, [
-      'customers',
-      'products',
-      'prices',
-    ])
+    expect(mockCreateObjectRuns).toHaveBeenCalledWith(
+      'acct_123',
+      mockRun.runStartedAt,
+      ['customers', 'products', 'prices'],
+      undefined
+    )
   })
 
   it('should call createObjectRuns for existing run too', async () => {
@@ -94,7 +95,8 @@ describe('joinOrCreateSyncRun', () => {
     expect(mockCreateObjectRuns).toHaveBeenCalledWith(
       'acct_123',
       existingRun.runStartedAt,
-      resourceNames
+      resourceNames,
+      undefined
     )
   })
 
