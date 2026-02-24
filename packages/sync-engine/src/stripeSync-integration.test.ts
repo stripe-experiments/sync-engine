@@ -74,7 +74,7 @@ export function createMockPlanBatch(count: number, startTimestamp?: number): Moc
 
 export function createPaginatedResponse(
   allItems: MockStripeObject[],
-  params: { limit?: number; starting_after?: string; created?: { gte?: number } } = {}
+  params: { limit?: number; starting_after?: string; created?: { gte?: number; lte?: number } } = {}
 ): { data: MockStripeObject[]; has_more: boolean; object: 'list' } {
   const limit = params.limit ?? 100
 
@@ -83,6 +83,10 @@ export function createPaginatedResponse(
 
   if (params.created?.gte) {
     items = items.filter((item) => item.created >= params.created!.gte!)
+  }
+
+  if (params.created?.lte) {
+    items = items.filter((item) => item.created <= params.created!.lte!)
   }
 
   if (params.starting_after) {
@@ -221,7 +225,7 @@ describeWithDb('StripeSync Integration Tests', () => {
     it('should sync all customers via fullSync', async () => {
       mockCustomers = createMockCustomerBatch(350)
 
-      const result = await sync.fullSync(['customer'])
+      const result = await sync.fullSync(['customer'], true, 1, 50, false)
 
       expect(result.totalSynced).toStrictEqual(350)
 
@@ -234,12 +238,12 @@ describeWithDb('StripeSync Integration Tests', () => {
 
     it('should sync new records for incremental consistency', async () => {
       // First sync with no data
-      await sync.fullSync(['customer'])
+      await sync.fullSync(['customer'], true, 2, 50, false)
 
       // Now add customers
       mockCustomers = createMockCustomerBatch(100)
 
-      const result = await sync.fullSync(['customer'])
+      const result = await sync.fullSync(['customer'], true, 2, 50, false, 0)
 
       expect(result.totalSynced).toStrictEqual(100)
 
@@ -255,32 +259,21 @@ describeWithDb('StripeSync Integration Tests', () => {
       const historicalCustomers = createMockCustomerBatch(200, historicalStartTimestamp)
       mockCustomers = historicalCustomers
 
-      let newCustomers: MockStripeObject[] = []
-      let listCallCount = 0
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(sync.stripe as any).customers.list = vi.fn().mockImplementation((params) => {
-        listCallCount += 1
-        const response = createPaginatedResponse(mockCustomers, params)
-        if (listCallCount === 1) {
-          const newStartTimestamp = Math.floor(Date.now() / 1000)
-          newCustomers = createMockCustomerBatch(5, newStartTimestamp)
-          mockCustomers = [...newCustomers, ...mockCustomers]
-        }
-        return Promise.resolve(response)
-      })
-
-      const result = await sync.fullSync(['customer'])
+      const result = await sync.fullSync(['customer'], true, 2, 50, false, 0)
       expect(result.totalSynced).toStrictEqual(200)
 
       let countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(200)
 
+      const newStartTimestamp = Math.floor(Date.now() / 1000)
+      const newCustomers = createMockCustomerBatch(5, newStartTimestamp)
+      mockCustomers = [...newCustomers, ...mockCustomers]
+
       const customersAfterBackfill = await validator.getCustomerIds(TEST_ACCOUNT_ID)
       expect(customersAfterBackfill).toStrictEqual(historicalCustomers.map((c) => c.id))
 
       // Run again to pick up the new records
-      await sync.fullSync(['customer'])
+      await sync.fullSync(['customer'], true, 2, 50, false, 0)
 
       countInDb = await validator.getCustomerCount(TEST_ACCOUNT_ID)
       expect(countInDb).toStrictEqual(205)

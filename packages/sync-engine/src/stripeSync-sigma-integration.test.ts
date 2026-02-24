@@ -233,7 +233,14 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
     it('should sync subscription item change events from Sigma', async () => {
       mockSigmaApiRuns({ csvs: [SUBSCRIPTION_ITEM_CHANGE_EVENTS_CSV] })
 
-      const result = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+      const result = await sync.fullSync(
+        [SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT],
+        false,
+        2,
+        50,
+        false,
+        0
+      )
 
       expect(result.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
@@ -264,7 +271,14 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
       mockSigmaApiRuns({ csvs, sqlCalls })
 
       try {
-        const result = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+        const result = await sync.fullSync(
+          [SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT],
+          false,
+          2,
+          50,
+          false,
+          1
+        )
 
         expect(sqlCalls.length).toBeGreaterThan(1)
         expect(sqlCalls[0]).not.toContain('WHERE')
@@ -287,7 +301,7 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         },
       })
 
-      const result = await sync.fullSync([EXCHANGE_RATES_OBJECT])
+      const result = await sync.fullSync([EXCHANGE_RATES_OBJECT], false, 2, 50, false, 60)
 
       expect(result.results['exchange_rates_from_usd']?.synced).toStrictEqual(1)
 
@@ -309,12 +323,26 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         },
       })
 
-      const first = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+      const first = await sync.fullSync(
+        [SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT],
+        false,
+        2,
+        50,
+        false,
+        0
+      )
       expect(first.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
-      const second = await sync.fullSync([SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT])
+      const second = await sync.fullSync(
+        [SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT],
+        false,
+        2,
+        50,
+        false,
+        0
+      )
       expect(second.results['subscription_item_change_events_v2_beta']?.synced).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length
       )

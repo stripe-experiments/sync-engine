@@ -260,7 +260,8 @@ export class StripeSync {
   }
 
   async createChunks(
-    objects: StripeObject[]
+    objects: StripeObject[],
+    workerCount: number = 100
   ): Promise<{ chunkCursors: Record<string, number[]>; nonChunkTables: string[] }> {
     const cursors = await Promise.all(
       objects
@@ -274,7 +275,7 @@ export class StripeSync {
         })
     )
 
-    const chunkCount = 100
+    const chunkCount = 2 * workerCount
     const validCursors = cursors.filter(
       (c): c is { object: StripeObject; oldest: number } => c !== null
     )
@@ -287,10 +288,12 @@ export class StripeSync {
     for (const { object: obj, oldest } of validCursors) {
       const tableName = getTableName(obj, this.getRegistryForObject(obj))
       const range = now - oldest
-      const interval = Math.max(Math.floor(range / chunkCount), 1)
+      const interval = Math.max(Math.floor(range / chunkCount), 3600)
       const timestamps: number[] = []
-      for (let i = 0; i < chunkCount; i++) {
-        timestamps.push(oldest + i * interval)
+      let ts = oldest
+      while (ts < now) {
+        timestamps.push(ts)
+        ts += interval
       }
 
       chunkCursors[tableName] = timestamps
@@ -314,8 +317,12 @@ export class StripeSync {
     return priorities
   }
 
-  async initializeSegment(runKey: RunKey, objects: StripeObject[]): Promise<RunKey> {
-    const { chunkCursors } = await this.createChunks(objects)
+  async initializeSegment(
+    runKey: RunKey,
+    objects: StripeObject[],
+    workerCount: number
+  ): Promise<RunKey> {
+    const { chunkCursors } = await this.createChunks(objects, workerCount)
     const priorities = this.buildPriorityMap(objects)
     await this.postgresClient.createChunkedObjectRuns(
       runKey.accountId,
@@ -330,17 +337,25 @@ export class StripeSync {
     objects: StripeObject[],
     tableNames: string[],
     segmentedSync: boolean,
-    triggeredBy: string = 'fullSync'
+    triggeredBy: string = 'fullSync',
+    interval?: number,
+    workerCount: number = 100
   ): Promise<RunKey | null> {
     const priorities = this.buildPriorityMap(objects)
     let runKey: RunKey | null
     if (segmentedSync) {
-      this.config.logger?.info('starting segmented sync')
+      this.config.logger?.info('starting segmented sync', {
+        objects,
+        tableNames,
+        triggeredBy,
+        interval,
+        workerCount,
+      })
       runKey = await this.postgresClient.reconciliationRun(
         this.accountId,
         triggeredBy,
         [],
-        undefined,
+        interval,
         priorities
       )
     } else {
@@ -349,7 +364,7 @@ export class StripeSync {
         this.accountId,
         triggeredBy,
         tableNames,
-        undefined,
+        interval,
         priorities
       )
     }
@@ -363,7 +378,7 @@ export class StripeSync {
         runKey.runStartedAt
       )
       if (existingCount === 0) {
-        await this.initializeSegment(runKey, objects)
+        await this.initializeSegment(runKey, objects, workerCount)
       } else {
         this.config.logger?.info(
           { existingCount },
@@ -379,7 +394,8 @@ export class StripeSync {
     segmentedSync: boolean = true,
     workerCount: number = 100,
     rateLimit: number = 50,
-    monitorProgress: boolean = true
+    monitorProgress: boolean = true,
+    interval?: number
   ): Promise<{
     results: Record<string, Sync>
     totals: Record<string, number>
@@ -389,7 +405,14 @@ export class StripeSync {
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
     const tableNames = objects.map((obj) => getTableName(obj, this.getRegistryForObject(obj)))
-    const runKey = await this.reconciliationSync(objects, tableNames, segmentedSync)
+    const runKey = await this.reconciliationSync(
+      objects,
+      tableNames,
+      segmentedSync,
+      'fullSync',
+      interval,
+      workerCount
+    )
     if (runKey == null) {
       return { results: {}, totals: {}, totalSynced: 0, skipped: [], errors: [] }
     }
