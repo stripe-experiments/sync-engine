@@ -12,8 +12,7 @@ import { StripeSync, StripeSyncWorker } from '../../index'
 import postgres from 'postgres'
 
 // Reuse these between requests
-const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')
-const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
+const dbUrl = Deno.env.get('SUPABASE_DB_URL')
 const sql = postgres(dbUrl, { max: 1, prepare: false })
 const stripeSync = await StripeSync.create({
   poolConfig: { connectionString: dbUrl, max: 1 },

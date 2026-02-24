@@ -24,11 +24,10 @@ Deno.serve(async (req) => {
 
   const token = authHeader.substring(7)
 
-  const rawDbUrl = Deno.env.get('SUPABASE_DB_URL')
-  if (!rawDbUrl) {
+  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+  if (!dbUrl) {
     return jsonResponse({ error: 'SUPABASE_DB_URL not set' }, 500)
   }
-  const dbUrl = rawDbUrl.replace(/[?&]sslmode=[^&]*/g, '').replace(/[?&]$/, '')
 
   let sql: ReturnType<typeof postgres> | undefined
   let stripeSync: StripeSync | undefined
