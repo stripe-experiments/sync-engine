@@ -53,12 +53,17 @@ export class SupabaseSetupClient {
    * because some org-level tokens lack the list-all permission.
    */
   async validateProject(): Promise<ProjectInfo> {
-    const { data: projects } = await this.api.listAllProjects()
-    const project = projects?.find((p) => p.ref === this.projectRef)
-    if (!project) {
-      throw new Error(`Project ${this.projectRef} not found or you don't have access`)
+    const baseUrl = this.supabaseManagementUrl || 'https://api.supabase.com'
+    const response = await fetch(`${baseUrl}/v1/projects/${this.projectRef}`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(
+        `Project ${this.projectRef} not found or you don't have access (${response.status}: ${body})`
+      )
     }
-    const project = (await response.json()) as { id: string; name: string; region: string }
+    const project = await response.json()
     return {
       id: project.ref,
       name: project.name,
