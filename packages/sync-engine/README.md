@@ -271,6 +271,21 @@ The install command will:
 3. Create a managed Stripe webhook pointing to your Supabase project
 4. Set up a pg_cron job for automatic background syncing
 
+### Required Permissions
+
+The Supabase access token must have the following Management API permissions:
+
+| Permission                     | Used For                                                     |
+| ------------------------------ | ------------------------------------------------------------ |
+| `projects_read`                | Validate project access and existence                        |
+| `edge_functions_write`         | Deploy Edge Functions (setup, webhook, worker, sigma-worker) |
+| `edge_functions_secrets_write` | Set Stripe API key and configuration secrets                 |
+| `database_write`               | Execute database migrations and schema setup                 |
+| `database_read`                | Check schema existence and verify installation               |
+| `api_gateway_keys_read`        | Retrieve project's anon API key                              |
+
+**Note:** When generating a personal access token or using OAuth2, ensure these permissions are granted. For OAuth2 tokens, these correspond to the fine-grained token permissions on the Management API.
+
 ## CLI Commands
 
 ```bash
