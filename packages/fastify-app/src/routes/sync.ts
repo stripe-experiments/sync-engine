@@ -1,19 +1,15 @@
 import { FastifyInstance } from 'fastify'
 import { verifyApiKey } from '../utils/verifyApiKey'
-import { SyncParams } from 'stripe-experiment-sync'
 
 export default async function routes(fastify: FastifyInstance) {
   fastify.post('/sync', {
     preHandler: [verifyApiKey],
     handler: async (request, reply) => {
-      const { created, object, backfillRelatedEntities } =
-        (request.body as {
-          created?: SyncParams['created']
-          object?: string
-          backfillRelatedEntities?: boolean
-        }) ?? {}
-      const params = { created, object, backfillRelatedEntities } as SyncParams
-      const result = await fastify.stripeSync.processUntilDone(params)
+      const { object } = (request.body as { object?: string }) ?? {}
+      const tables = (object && object !== 'all' ? [object] : undefined) as Parameters<
+        typeof fastify.stripeSync.fullSync
+      >[0]
+      const result = await fastify.stripeSync.fullSync(tables)
       return reply.send({
         statusCode: 200,
         ts: Date.now(),
