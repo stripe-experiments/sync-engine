@@ -588,6 +588,18 @@ export class SupabaseSetupClient {
         await this.setupSigmaPgCronJob()
       }
 
+      // Invoke stripe-worker immediately to trigger first sync for better UX on Supabase
+      // dashboard. We want to see the first sync run immediately after an installation.
+      const sql = `
+          SELECT net.http_post(
+            url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker',
+            headers := jsonb_build_object(
+              'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
+            )
+          )
+        `
+      await this.runSQL(sql)
+
       // Set final version comment
       await this.updateInstallationComment(
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_INSTALLED_SUFFIX}`
