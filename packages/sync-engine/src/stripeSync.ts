@@ -386,7 +386,7 @@ export class StripeSync {
     errors: Array<{ object: string; message: string }>
   }> {
     const objects = tables && tables.length > 0 ? tables : this.getSupportedSyncObjects()
-    const tableNames = objects.map((obj) => getTableName(obj, this.resourceRegistry))
+    const tableNames = objects.map((obj) => getTableName(obj, this.getRegistryForObject(obj)))
     const runKey = await this.reconciliationSync(objects, tableNames, segmentedSync)
     if (runKey == null) {
       return { results: {}, totals: {}, totalSynced: 0, skipped: [], errors: [] }
