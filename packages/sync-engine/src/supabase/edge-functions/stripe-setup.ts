@@ -290,6 +290,18 @@ Deno.serve(async (req) => {
         console.warn('Could not delete STRIPE_SECRET_KEY secret:', err)
       }
 
+      try {
+        await deleteSecret(projectRef, 'MANAGEMENT_API_URL', accessToken)
+      } catch (err) {
+        console.warn('Could not delete MANAGEMENT_API_URL secret:', err)
+      }
+
+      try {
+        await deleteSecret(projectRef, 'ENABLE_SIGMA', accessToken)
+      } catch (err) {
+        console.warn('Could not delete ENABLE_SIGMA secret:', err)
+      }
+
       // Step 3: Delete Edge Functions
       try {
         await deleteEdgeFunction(projectRef, 'stripe-setup', accessToken)
