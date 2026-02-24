@@ -1,6 +1,5 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
 import {
-  setupFunctionCode,
   webhookFunctionCode,
   workerFunctionCode,
   sigmaWorkerFunctionCode,
