@@ -170,13 +170,6 @@ describe('Backfill E2E', () => {
   })
 
   it('should perform incremental sync on subsequent backfill', async () => {
-    // Get initial cursor
-    const accountRow = await queryDbSingle<{ _account_id: string }>(
-      pool,
-      'SELECT DISTINCT _account_id FROM stripe.products LIMIT 1'
-    )
-    const accountId = accountRow!._account_id
-
     // Create new product after first backfill
     const newProduct = await stripe.products.create({
       name: 'Test Product 4 - Incremental',
@@ -193,17 +186,6 @@ describe('Backfill E2E', () => {
       cwd,
       env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
     })
-
-    // Verify cursor advanced
-    const newCursorRow = await queryDbSingle<{ cursor: string }>(
-      pool,
-      `SELECT cursor FROM stripe._sync_obj_runs o
-       JOIN stripe._sync_runs r ON o._account_id = r._account_id AND o.run_started_at = r.started_at
-       WHERE o._account_id = '${accountId}' AND o.object = 'products' AND o.status = 'complete'
-       ORDER BY o.completed_at DESC LIMIT 1`
-    )
-    const newCursor = parseInt(newCursorRow!.cursor, 10)
-    // expect(newCursor).toBeGreaterThan(initialCursor)
 
     // Verify new product was synced
     const newProductInDb = await queryDbCount(
