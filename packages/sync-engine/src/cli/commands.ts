@@ -104,6 +104,7 @@ export interface DeployOptions {
   stripeKey?: string
   packageVersion?: string
   workerInterval?: number
+  syncInterval?: number
   supabaseManagementUrl?: string
   enableSigma?: boolean
   rateLimit?: number
@@ -916,6 +917,7 @@ export async function installCommand(options: DeployOptions): Promise<void> {
       stripeKey,
       packageVersion: options.packageVersion,
       workerIntervalSeconds: options.workerInterval,
+      syncIntervalSeconds: options.syncInterval,
       supabaseManagementUrl,
       enableSigma: options.enableSigma,
       rateLimit: options.rateLimit,

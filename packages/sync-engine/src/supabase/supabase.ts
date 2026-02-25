@@ -199,6 +199,11 @@ export class SupabaseSetupClient {
             'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
           )
         )
+        WHERE NOT EXISTS (
+          SELECT 1 FROM vault.decrypted_secrets
+          WHERE name = 'stripe_sync_skip_until'
+            AND decrypted_secret::timestamptz > NOW()
+        )
         $$
       );
     `
@@ -495,7 +500,8 @@ export class SupabaseSetupClient {
     packageVersion?: string,
     workerIntervalSeconds?: number,
     enableSigma?: boolean,
-    rateLimit?: number
+    rateLimit?: number,
+    syncIntervalSeconds?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -527,6 +533,9 @@ export class SupabaseSetupClient {
       }
       if (rateLimit != null) {
         secrets.push({ name: 'RATE_LIMIT', value: String(rateLimit) })
+      }
+      if (syncIntervalSeconds != null) {
+        secrets.push({ name: 'SYNC_INTERVAL', value: String(syncIntervalSeconds) })
       }
       await this.setSecrets(secrets)
 
@@ -591,6 +600,7 @@ export async function install(params: {
   supabaseManagementUrl?: string
   enableSigma?: boolean
   rateLimit?: number
+  syncIntervalSeconds?: number
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -600,6 +610,7 @@ export async function install(params: {
     workerIntervalSeconds,
     enableSigma,
     rateLimit,
+    syncIntervalSeconds,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -609,7 +620,14 @@ export async function install(params: {
     supabaseManagementUrl: params.supabaseManagementUrl,
   })
 
-  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma, rateLimit)
+  await client.install(
+    stripeKey,
+    packageVersion,
+    workerIntervalSeconds,
+    enableSigma,
+    rateLimit,
+    syncIntervalSeconds
+  )
 }
 
 export async function uninstall(params: {

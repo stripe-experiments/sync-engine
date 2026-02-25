@@ -344,13 +344,6 @@ export class StripeSync {
     const priorities = this.buildPriorityMap(objects)
     let runKey: RunKey | null
     if (segmentedSync) {
-      this.config.logger?.info('starting segmented sync', {
-        objects,
-        tableNames,
-        triggeredBy,
-        interval,
-        workerCount,
-      })
       runKey = await this.postgresClient.reconciliationRun(
         this.accountId,
         triggeredBy,
@@ -359,7 +352,6 @@ export class StripeSync {
         priorities
       )
     } else {
-      this.config.logger?.info('starting non-segmented sync')
       runKey = await this.postgresClient.reconciliationRun(
         this.accountId,
         triggeredBy,
@@ -369,7 +361,6 @@ export class StripeSync {
       )
     }
     if (runKey == null) {
-      this.config.logger?.info('reconciliation run returned null, skipping sync')
       return null
     }
     if (segmentedSync) {

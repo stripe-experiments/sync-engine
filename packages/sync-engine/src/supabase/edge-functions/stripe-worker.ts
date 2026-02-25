@@ -13,7 +13,7 @@ import postgres from 'postgres'
 
 // Reuse these between requests
 const dbUrl = Deno.env.get('SUPABASE_DB_URL')
-const interval = Deno.env.get('INTERVAL') | (60 * 60 * 24)
+const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7 // Once a week default
 const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 60
 const workerCount = Number(Deno.env.get('WORKER_COUNT')) || 10
 
@@ -49,15 +49,36 @@ Deno.serve(async (req) => {
   if (token !== storedSecret) {
     return new Response('Forbidden: Invalid worker secret', { status: 403 })
   }
-  const runKey = await stripeSync.reconciliationSync(objects, tableNames, true, 'edge-worker')
+  const runKey = await stripeSync.reconciliationSync(
+    objects,
+    tableNames,
+    true,
+    'edge-worker',
+    SYNC_INTERVAL
+  )
   if (runKey === null) {
+    const activeSkipResult = await sql`SELECT decrypted_secret::timestamptz::text AS skip_until
+      FROM vault.decrypted_secrets
+      WHERE name = 'stripe_sync_skip_until'
+        AND decrypted_secret::timestamptz >= NOW()
+      LIMIT 1`
+
+    let skipUntil = activeSkipResult[0]?.skip_until
+    if (!skipUntil) {
+      skipUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      await sql`DELETE FROM vault.secrets WHERE name = 'stripe_sync_skip_until'`
+      await sql`SELECT vault.create_secret(
+        ${skipUntil},
+        'stripe_sync_skip_until'
+      )`
+    }
     const completedRun = await stripeSync.postgresClient.getCompletedRun(
       stripeSync.accountId,
-      interval
+      SYNC_INTERVAL
     )
-    const response = `✓ Skipping resync — a successful run completed at ${completedRun?.runStartedAt.toISOString()} (within ${interval}s window)`
-    console.log(response)
-    return new Response(response, {
+    const message = `Skipping resync — a successful run completed at ${completedRun?.runStartedAt.toISOString()} (within ${SYNC_INTERVAL}s window). Cron paused until ${skipUntil}.`
+    console.log(message)
+    return new Response(JSON.stringify({ skipped: true, message }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })

@@ -127,16 +127,28 @@ supabase
     '--package-version <version>',
     'Package version to install (e.g., 1.0.8-beta.1, defaults to latest)'
   )
-  .option('--worker-interval <seconds>', 'Worker interval in seconds (defaults to 60)', (val) =>
-    parseInt(val, 10)
+  .option(
+    '--worker-interval <seconds>',
+    'Worker interval in seconds (defaults to 60)',
+    (val) => parseInt(val, 10),
+    60
   )
   .option(
     '--management-url <url>',
     'Supabase management API URL with protocol (e.g., http://localhost:54323, defaults to https://api.supabase.com or SUPABASE_MANAGEMENT_URL env)'
   )
   .option('--sigma', 'Enable Sigma sync (deploy sigma worker and cron job)')
-  .option('--rate-limit <limit>', 'Max Stripe API requests per second (default: 60)', (val) =>
-    parseInt(val, 10)
+  .option(
+    '--rate-limit <limit>',
+    'Max Stripe API requests per second (default: 60)',
+    (val) => parseInt(val, 10),
+    60
+  )
+  .option(
+    '--sync-interval <seconds>',
+    'How often to run a full resync in seconds (default: 604800 = 1 week)',
+    (val) => parseInt(val, 10),
+    604800
   )
   .action(async (options) => {
     await installCommand({
@@ -145,6 +157,7 @@ supabase
       stripeKey: options.stripeKey,
       packageVersion: options.packageVersion,
       workerInterval: options.workerInterval,
+      syncInterval: options.syncInterval,
       supabaseManagementUrl: options.managementUrl,
       enableSigma: options.sigma,
       rateLimit: options.rateLimit,
