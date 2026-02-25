@@ -212,13 +212,11 @@ export class StripeSyncWorker {
       // fetchOneSigmaPage handles progress, cursor advancement, and completion internally.
       // If there are more pages, release the task back to pending for re-claiming.
       if (result.hasMore) {
-        await this.postgresClient.updateSyncObject(
+        await this.postgresClient.releaseObjectSync(
           this.accountId,
           this.runKey.runStartedAt,
           task.object,
-          task.created_gte,
-          task.created_lte,
-          { status: 'pending', pageCursor: '' }
+          task.cursor ?? ''
         )
       }
 
