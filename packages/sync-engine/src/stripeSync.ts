@@ -83,7 +83,7 @@ export class StripeSync {
       // @ts-ignore
       apiVersion: config.stripeApiVersion,
       telemetry: false,
-      maxNetworkRetries: 1,
+      maxNetworkRetries: 3,
       appInfo: {
         name: 'Stripe Sync Engine',
         version: pkg.version,
@@ -383,8 +383,8 @@ export class StripeSync {
   async fullSync(
     tables?: StripeObject[],
     segmentedSync: boolean = true,
-    workerCount: number = 100,
-    rateLimit: number = 50,
+    workerCount: number = 20,
+    rateLimit: number = 10,
     monitorProgress: boolean = true,
     interval?: number
   ): Promise<{
