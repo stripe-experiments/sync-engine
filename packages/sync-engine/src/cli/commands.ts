@@ -17,14 +17,97 @@ import { type StripeObject } from '../resourceRegistry'
 import { install, uninstall } from '../supabase'
 import { SIGMA_INGESTION_CONFIGS } from '../sigma/sigmaIngestionConfigs'
 
+/**
+ * Monitor command - live display of table row counts.
+ */
+export async function monitorCommand(options: CliOptions): Promise<void> {
+  try {
+    dotenv.config()
+
+    let databaseUrl = options.databaseUrl || process.env.DATABASE_URL || ''
+
+    if (!databaseUrl) {
+      const inquirer = (await import('inquirer')).default
+      const answers = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'databaseUrl',
+          message: 'Enter your Postgres DATABASE_URL:',
+          mask: '*',
+          validate: (input: string) => {
+            if (!input || input.trim() === '') return 'DATABASE_URL is required'
+            if (!input.startsWith('postgres://') && !input.startsWith('postgresql://'))
+              return 'DATABASE_URL should start with "postgres://" or "postgresql://"'
+            return true
+          },
+        },
+      ])
+      databaseUrl = answers.databaseUrl
+    }
+
+    const poolConfig: PoolConfig = {
+      max: 1,
+      connectionString: databaseUrl,
+      keepAlive: true,
+    }
+
+    const stripeSync = await StripeSync.create({
+      databaseUrl,
+      stripeSecretKey:
+        options.stripeKey ||
+        process.env.STRIPE_API_KEY ||
+        process.env.STRIPE_SECRET_KEY ||
+        'sk_placeholder',
+      poolConfig,
+    })
+
+    console.log(chalk.blue('Monitoring table row counts (Ctrl-C to stop)...\n'))
+    const activeRun = await stripeSync.postgresClient.getActiveSyncRun(stripeSync.accountId)
+    if (!activeRun) {
+      const lastCompleted = await stripeSync.postgresClient.getCompletedRun(
+        stripeSync.accountId,
+        Infinity
+      )
+      if (lastCompleted) {
+        console.log(
+          chalk.green(
+            `No active sync run. Last completed at ${lastCompleted.runStartedAt.toISOString()}`
+          )
+        )
+      } else {
+        console.log(chalk.yellow('No active or completed sync runs found.'))
+      }
+      await stripeSync.close()
+      return
+    }
+    const interval = stripeSync.startTableMonitor(2000, activeRun)
+
+    const cleanup = () => {
+      clearInterval(interval)
+      stripeSync.close().finally(() => process.exit(0))
+    }
+    process.on('SIGINT', cleanup)
+    process.on('SIGTERM', cleanup)
+
+    await new Promise(() => {})
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(chalk.red(error.message))
+    }
+    process.exit(1)
+  }
+}
+
 export interface DeployOptions {
   supabaseAccessToken?: string
   supabaseProjectRef?: string
   stripeKey?: string
   packageVersion?: string
   workerInterval?: number
+  syncInterval?: number
   supabaseManagementUrl?: string
   enableSigma?: boolean
+  rateLimit?: number
 }
 
 export type { CliOptions }
@@ -197,7 +280,14 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     } else {
       // Use fullSync for specific objects (including sigma tables)
       // Cast to allow sigma table names which aren't in SyncObject type
-      const result = await stripeSync.fullSync([entityName] as StripeObject[])
+      const result = await stripeSync.fullSync(
+        [entityName] as StripeObject[],
+        true,
+        20,
+        10,
+        true,
+        0
+      )
       const tableType = isSigmaTable ? '(sigma)' : ''
       console.log(
         chalk.green(
@@ -572,7 +662,9 @@ export async function syncCommand(options: CliOptions): Promise<void> {
  * Full resync command - uses reconciliation to skip if a successful run
  * completed within the given interval, otherwise re-syncs everything from Stripe.
  */
-export async function fullSyncCommand(options: CliOptions & { interval?: number }): Promise<void> {
+export async function fullSyncCommand(
+  options: CliOptions & { interval?: number; workerCount?: number; rateLimit?: number }
+): Promise<void> {
   let stripeSync: StripeSync | null = null
 
   try {
@@ -689,11 +781,18 @@ export async function fullSyncCommand(options: CliOptions & { interval?: number 
     }
 
     // Run full resync
-    const result = await stripeSync.fullSync()
+    const startTime = Date.now()
+    const result = await stripeSync.fullSync(
+      undefined,
+      undefined,
+      options.workerCount,
+      options.rateLimit
+    )
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
     const objectCount = Object.keys(result.totals).length
     console.log(
       chalk.green(
-        `✓ Full resync complete: ${result.totalSynced} rows synced across ${objectCount} objects`
+        `✓ Full resync complete: ${result.totalSynced} rows synced across ${objectCount} objects in ${elapsed}s`
       )
     )
     if (result.skipped.length > 0) {
@@ -796,6 +895,23 @@ export async function installCommand(options: DeployOptions): Promise<void> {
 
     console.log(chalk.blue('\n🚀 Installing Stripe Sync to Supabase Edge Functions...\n'))
 
+    const tokenSource = options.supabaseAccessToken
+      ? 'CLI'
+      : process.env.SUPABASE_ACCESS_TOKEN
+        ? 'env'
+        : 'prompt'
+    const projectSource = options.supabaseProjectRef
+      ? 'CLI'
+      : process.env.SUPABASE_PROJECT_REF
+        ? 'env'
+        : 'prompt'
+    console.log(
+      chalk.gray(
+        `Access token source: ${tokenSource} (${accessToken.slice(0, 8)}...${accessToken.slice(-4)})`
+      )
+    )
+    console.log(chalk.gray(`Project ref source: ${projectSource} (${projectRef})`))
+
     // Get management URL from options or environment variable
     const supabaseManagementUrl =
       options.supabaseManagementUrl || process.env.SUPABASE_MANAGEMENT_URL
@@ -808,8 +924,10 @@ export async function installCommand(options: DeployOptions): Promise<void> {
       stripeKey,
       packageVersion: options.packageVersion,
       workerIntervalSeconds: options.workerInterval,
+      syncIntervalSeconds: options.syncInterval,
       supabaseManagementUrl,
       enableSigma: options.enableSigma,
+      rateLimit: options.rateLimit,
     })
 
     // Print summary

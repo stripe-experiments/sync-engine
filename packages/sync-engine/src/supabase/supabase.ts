@@ -1,6 +1,5 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
 import {
-  setupFunctionCode,
   webhookFunctionCode,
   workerFunctionCode,
   sigmaWorkerFunctionCode,
@@ -28,7 +27,7 @@ export interface ProjectInfo {
 }
 
 export class SupabaseSetupClient {
-  private api: SupabaseManagementAPI
+  api: SupabaseManagementAPI
   private projectRef: string
   private projectBaseUrl: string
   private supabaseManagementUrl?: string
@@ -48,14 +47,22 @@ export class SupabaseSetupClient {
   }
 
   /**
-   * Validate that the project exists and we have access
+   * Validate that the project exists and we have access.
+   * Fetches the project directly by ref instead of listing all projects,
+   * because some org-level tokens lack the list-all permission.
    */
   async validateProject(): Promise<ProjectInfo> {
-    const { data: projects } = await this.api.listAllProjects()
-    const project = projects?.find((p) => p.ref === this.projectRef)
-    if (!project) {
-      throw new Error(`Project ${this.projectRef} not found or you don't have access`)
+    const baseUrl = this.supabaseManagementUrl || 'https://api.supabase.com'
+    const response = await fetch(`${baseUrl}/v1/projects/${this.projectRef}`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(
+        `Project ${this.projectRef} not found or you don't have access (${response.status}: ${body})`
+      )
     }
+    const project = await response.json()
     return {
       id: project.ref,
       name: project.name,
@@ -191,6 +198,11 @@ export class SupabaseSetupClient {
           headers := jsonb_build_object(
             'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
           )
+        )
+        WHERE NOT EXISTS (
+          SELECT 1 FROM vault.decrypted_secrets
+          WHERE name = 'stripe_sync_skip_until'
+            AND decrypted_secret::timestamptz > NOW()
         )
         $$
       );
@@ -487,7 +499,9 @@ export class SupabaseSetupClient {
     stripeKey: string,
     packageVersion?: string,
     workerIntervalSeconds?: number,
-    enableSigma?: boolean
+    enableSigma?: boolean,
+    rateLimit?: number,
+    syncIntervalSeconds?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -509,30 +523,19 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
       )
 
-      // Deploy Edge Functions with specified package version
-      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
-      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
-      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
-
-      await this.deployFunction('stripe-setup', versionedSetup, false)
-      await this.deployFunction('stripe-webhook', versionedWebhook, false)
-      await this.deployFunction('stripe-worker', versionedWorker, false)
-
-      // Deploy sigma worker only if enabled
-      if (enableSigma) {
-        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
-        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
-      }
-
-      // Set secrets (Note: "secrets" is Supabase's mechanism for passing environment variables to edge functions)
+      // Set secrets first -- stripe-setup needs STRIPE_SECRET_KEY to run
       const secrets = [{ name: 'STRIPE_SECRET_KEY', value: trimmedStripeKey }]
-      // Add MANAGEMENT_API_URL if custom URL provided (for localhost/staging testing)
       if (this.supabaseManagementUrl) {
         secrets.push({ name: 'MANAGEMENT_API_URL', value: this.supabaseManagementUrl })
       }
-      // Set ENABLE_SIGMA for edge functions to read
       if (enableSigma) {
         secrets.push({ name: 'ENABLE_SIGMA', value: 'true' })
+      }
+      if (rateLimit != null) {
+        secrets.push({ name: 'RATE_LIMIT', value: String(rateLimit) })
+      }
+      if (syncIntervalSeconds != null) {
+        secrets.push({ name: 'SYNC_INTERVAL', value: String(syncIntervalSeconds) })
       }
       await this.setSecrets(secrets)
 
@@ -542,6 +545,18 @@ export class SupabaseSetupClient {
 
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)
+      }
+
+      // Now deploy the remaining edge functions -- schema is ready
+      const versionedWebhook = this.injectPackageVersion(webhookFunctionCode, version)
+      const versionedWorker = this.injectPackageVersion(workerFunctionCode, version)
+
+      await this.deployFunction('stripe-webhook', versionedWebhook, false)
+      await this.deployFunction('stripe-worker', versionedWorker, false)
+
+      if (enableSigma) {
+        const versionedSigmaWorker = this.injectPackageVersion(sigmaWorkerFunctionCode, version)
+        await this.deployFunction('sigma-data-worker', versionedSigmaWorker, false)
       }
 
       // Setup pg_cron - this is required for automatic syncing
@@ -561,11 +576,15 @@ export class SupabaseSetupClient {
         `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_INSTALLED_SUFFIX}`
       )
     } catch (error) {
-      await this.updateInstallationComment(
-        `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_ERROR_SUFFIX} - ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
+      try {
+        await this.updateInstallationComment(
+          `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_ERROR_SUFFIX} - ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      } catch {
+        // Schema may not exist if early steps failed -- don't mask the original error
+      }
       throw error
     }
   }
@@ -580,6 +599,8 @@ export async function install(params: {
   baseProjectUrl?: string
   supabaseManagementUrl?: string
   enableSigma?: boolean
+  rateLimit?: number
+  syncIntervalSeconds?: number
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -588,6 +609,8 @@ export async function install(params: {
     packageVersion,
     workerIntervalSeconds,
     enableSigma,
+    rateLimit,
+    syncIntervalSeconds,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -597,7 +620,14 @@ export async function install(params: {
     supabaseManagementUrl: params.supabaseManagementUrl,
   })
 
-  await client.install(stripeKey, packageVersion, workerIntervalSeconds, enableSigma)
+  await client.install(
+    stripeKey,
+    packageVersion,
+    workerIntervalSeconds,
+    enableSigma,
+    rateLimit,
+    syncIntervalSeconds
+  )
 }
 
 export async function uninstall(params: {

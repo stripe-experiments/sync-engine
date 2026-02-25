@@ -13,6 +13,10 @@ import postgres from 'postgres'
 
 // Reuse these between requests
 const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7 // Once a week default
+const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 60
+const workerCount = Number(Deno.env.get('WORKER_COUNT')) || 10
+
 const sql = postgres(dbUrl, { max: 1, prepare: false })
 const stripeSync = await StripeSync.create({
   poolConfig: { connectionString: dbUrl, max: 1 },
@@ -21,10 +25,7 @@ const stripeSync = await StripeSync.create({
   partnerId: 'pp_supabase',
 })
 const objects = stripeSync.getSupportedSyncObjects()
-const tableNames = objects.map(
-  (obj) => (stripeSync.resourceRegistry[obj] ?? stripeSync.sigmaRegistry[obj]).tableName
-)
-const interval = Deno.env.get('INTERVAL') ?? 60 * 60 * 24
+const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
@@ -48,29 +49,42 @@ Deno.serve(async (req) => {
   if (token !== storedSecret) {
     return new Response('Forbidden: Invalid worker secret', { status: 403 })
   }
-
-  const runKey = await stripeSync.postgresClient.reconciliationRun(
-    stripeSync.accountId,
-    'stripe-worker',
+  const runKey = await stripeSync.reconciliationSync(
+    objects,
     tableNames,
-    interval
+    true,
+    'edge-worker',
+    SYNC_INTERVAL
   )
   if (runKey === null) {
+    const activeSkipResult = await sql`SELECT decrypted_secret::timestamptz::text AS skip_until
+      FROM vault.decrypted_secrets
+      WHERE name = 'stripe_sync_skip_until'
+        AND decrypted_secret::timestamptz >= NOW()
+      LIMIT 1`
+
+    let skipUntil = activeSkipResult[0]?.skip_until
+    if (!skipUntil) {
+      skipUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      await sql`DELETE FROM vault.secrets WHERE name = 'stripe_sync_skip_until'`
+      await sql`SELECT vault.create_secret(
+        ${skipUntil},
+        'stripe_sync_skip_until'
+      )`
+    }
     const completedRun = await stripeSync.postgresClient.getCompletedRun(
       stripeSync.accountId,
-      interval
+      SYNC_INTERVAL
     )
-    const response = `✓ Skipping resync — a successful run completed at ${completedRun?.runStartedAt.toISOString()} (within ${interval}s window)`
-    console.log(response)
-    return new Response(response, {
+    const message = `Skipping resync — a successful run completed at ${completedRun?.runStartedAt.toISOString()} (within ${SYNC_INTERVAL}s window). Cron paused until ${skipUntil}.`
+    console.log(message)
+    return new Response(JSON.stringify({ skipped: true, message }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  console.log('accountId: ', runKey.accountId)
   await stripeSync.postgresClient.resetStuckRunningObjects(runKey.accountId, runKey.runStartedAt, 1)
 
-  const workerCount = 10
   const workers = Array.from(
     { length: workerCount },
     () =>
@@ -83,21 +97,24 @@ Deno.serve(async (req) => {
         stripeSync.resourceRegistry,
         stripeSync.sigmaRegistry,
         runKey,
-        stripeSync.upsertAny.bind(stripeSync)
+        stripeSync.upsertAny.bind(stripeSync),
+        Infinity,
+        rateLimit
       )
   )
-  const MAX_EXECUTION_MS = 50_000 // stop before edge function limit
+  const MAX_EXECUTION_MS = 20_000 // stop before edge function limit
   workers.forEach((worker) => worker.start())
   await Promise.race([
     Promise.all(workers.map((w) => w.waitUntilDone())),
     new Promise((resolve) => setTimeout(resolve, MAX_EXECUTION_MS)),
   ])
   workers.forEach((w) => w.shutdown())
-  console.log('Finished after 50s')
   const totals = await stripeSync.postgresClient.getObjectSyncedCounts(
     stripeSync.accountId,
     runKey.runStartedAt
   )
+  const totalSynced = Object.values(totals).reduce((sum, n) => sum + n, 0)
+  console.log(`Finished: ${totalSynced} objects synced`, totals)
 
   return new Response(JSON.stringify({ totals }), {
     status: 200,

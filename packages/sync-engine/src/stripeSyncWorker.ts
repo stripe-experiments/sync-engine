@@ -8,6 +8,8 @@ export type SyncTask = {
   object: string
   cursor: string | null
   pageCursor: string | null
+  created_gte: number
+  created_lte: number
 }
 
 export class StripeSyncWorker {
@@ -30,7 +32,8 @@ export class StripeSyncWorker {
       accountId: string,
       backfillRelated?: boolean
     ) => Promise<unknown[] | void>,
-    private readonly taskLimit: number = Infinity
+    private readonly taskLimit: number = Infinity,
+    private readonly rateLimit: number = 50
   ) {}
 
   start(): void {
@@ -51,13 +54,41 @@ export class StripeSyncWorker {
         break
       }
 
-      const task = await this.getNextTask()
-      if (!task) {
-        this.running = false
-        break
+      let task: SyncTask | null = null
+      try {
+        task = await this.getNextTask()
+        if (!task) {
+          this.running = false
+          break
+        }
+        await this.processSingleTask(task)
+        this.tasksCompleted++
+      } catch (err) {
+        const isRateLimit = err instanceof Error && err.message.includes('Rate limit exceeded')
+        if (isRateLimit) {
+          const randomWait = Math.random() * 200 // 0 - 200ms random wait
+          this.config.logger?.warn(
+            `Rate limited on claimNextTask, backing off ${Math.round(randomWait)}ms`
+          )
+          await new Promise((r) => setTimeout(r, randomWait))
+        } else {
+          if (task) {
+            await this.postgresClient.updateSyncObject(
+              this.accountId,
+              this.runKey.runStartedAt,
+              task.object,
+              task.created_gte,
+              task.created_lte,
+              {
+                status: 'error',
+                errorMessage: `Task processing failed: ${String(err)}`,
+              }
+            )
+          }
+          this.config.logger?.error({ err }, 'Task processing failed; sleeping 1s before retry')
+          await new Promise((r) => setTimeout(r, 1000))
+        }
       }
-      await this.processSingleTask(task)
-      this.tasksCompleted++
     }
   }
 
@@ -69,7 +100,9 @@ export class StripeSyncWorker {
     object: string,
     cursor: string | null,
     pageCursor: string | null,
-    config: ResourceConfig
+    config: ResourceConfig,
+    created_gte?: number | null,
+    created_lte?: number | null
   ) {
     if (config.sigma)
       throw new Error(`Sigma sync not supported in worker (config: ${JSON.stringify(config)})`)
@@ -77,10 +110,12 @@ export class StripeSyncWorker {
       limit: 100,
     }
     if (config.supportsCreatedFilter) {
-      const created =
-        cursor && /^\d+$/.test(cursor) ? ({ gte: Number.parseInt(cursor, 10) } as const) : undefined
-      if (created) {
-        listParams.created = created
+      const lte = cursor ? Number.parseInt(cursor, 10) : created_lte
+      const createdFilter: Stripe.RangeQueryParam = {}
+      if (lte != null && lte > 0) createdFilter.lte = lte
+      if (created_gte && created_gte > 0) createdFilter.gte = created_gte
+      if (Object.keys(createdFilter).length > 0) {
+        listParams.created = createdFilter
       }
     }
 
@@ -98,20 +133,29 @@ export class StripeSyncWorker {
     const { accountId, runStartedAt } = this.runKey
 
     // Atomically claim the next pending task (FOR UPDATE SKIP LOCKED).
-    const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt)
+    const claimed = await this.postgresClient.claimNextTask(accountId, runStartedAt, this.rateLimit)
     if (!claimed) return null
 
     const object = claimed.object
 
-    // Sigma resources use the obj_run cursor to advance page-by-page within a run.
-    // Core Stripe resources use the cursor from the last completed run (incremental sync).
     const config = this.getConfigForTaskObject(object)
     if (config?.sigma) {
-      return { object, cursor: claimed.cursor, pageCursor: claimed.pageCursor }
+      return {
+        object,
+        cursor: claimed.cursor,
+        pageCursor: claimed.pageCursor,
+        created_gte: 0,
+        created_lte: 0,
+      }
     }
 
-    const cursor = await this.postgresClient.getLastCursorBeforeRun(accountId, object, runStartedAt)
-    return { object, cursor, pageCursor: claimed.pageCursor }
+    return {
+      object,
+      cursor: claimed.cursor,
+      pageCursor: claimed.pageCursor,
+      created_gte: claimed.created_gte ?? 0,
+      created_lte: claimed.created_lte ?? 0,
+    }
   }
 
   async updateTaskProgress(
@@ -119,46 +163,32 @@ export class StripeSyncWorker {
     data: Stripe.Response<Stripe.ApiList<unknown>>['data'],
     has_more: boolean
   ) {
-    // Update progress
-    const total = await this.postgresClient.incrementObjectProgress(
+    const minCreate = Math.min(...data.map((i) => (i as { created?: number }).created || 0))
+    const cursor = minCreate > 0 ? String(minCreate) : null
+
+    const lastItemCreated =
+      data.length > 0
+        ? Math.min(...data.map((i) => (i as { created?: number }).created ?? Infinity))
+        : 0
+    const pastBoundary =
+      task.created_gte > 0 && lastItemCreated > 0 && lastItemCreated < task.created_gte
+    const complete = !has_more || pastBoundary
+    const lastId =
+      has_more && data.length > 0 ? (data[data.length - 1] as { id: string }).id : undefined
+
+    await this.postgresClient.updateSyncObject(
       this.accountId,
       this.runKey.runStartedAt,
       task.object,
-      data.length
+      task.created_gte,
+      task.created_lte,
+      {
+        processedCount: data.length,
+        cursor,
+        status: complete ? 'complete' : 'pending',
+        pageCursor: complete ? null : lastId,
+      }
     )
-    console.log(`[${task.object}] progress: ${total} total records synced`)
-
-    // Update cursor with max created from this batch
-    const maxCreated = Math.max(...data.map((i) => (i as { created?: number }).created || 0))
-
-    if (maxCreated > 0) {
-      await this.postgresClient.updateObjectCursor(
-        this.accountId,
-        this.runKey.runStartedAt,
-        task.object,
-        String(maxCreated)
-      )
-    }
-
-    // Update pagination page_cursor and mark back as pending for next claim
-    if (has_more && data.length > 0) {
-      const lastId = (data[data.length - 1] as { id: string }).id
-      await this.postgresClient.releaseObjectSync(
-        this.accountId,
-        this.runKey.runStartedAt,
-        task.object,
-        lastId
-      )
-    }
-
-    // Mark complete if no more pages
-    if (!has_more) {
-      await this.postgresClient.completeObjectSync(
-        this.accountId,
-        this.runKey.runStartedAt,
-        task.object
-      )
-    }
   }
 
   async processSingleTask(task: SyncTask): Promise<ProcessNextResult> {
@@ -198,14 +228,18 @@ export class StripeSyncWorker {
       task.object,
       task.cursor,
       task.pageCursor,
-      config
+      config,
+      task.created_gte,
+      task.created_lte
     )
     if (data.length === 0 && has_more) {
-      await this.postgresClient.failObjectSync(
+      await this.postgresClient.updateSyncObject(
         this.accountId,
         this.runKey.runStartedAt,
         task.object,
-        'Stripe returned has_more=true with empty page'
+        task.created_gte,
+        task.created_lte,
+        { status: 'error', errorMessage: 'Stripe returned has_more=true with empty page' }
       )
     } else if (data.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
