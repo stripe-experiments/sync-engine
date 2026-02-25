@@ -322,7 +322,7 @@ export class StripeSync {
     objects: StripeObject[],
     workerCount: number
   ): Promise<RunKey> {
-    const { chunkCursors } = await this.createChunks(objects, workerCount)
+    const { chunkCursors, nonChunkTables } = await this.createChunks(objects, workerCount)
     const priorities = this.buildPriorityMap(objects)
     await this.postgresClient.createChunkedObjectRuns(
       runKey.accountId,
@@ -330,6 +330,14 @@ export class StripeSync {
       chunkCursors,
       priorities
     )
+    if (nonChunkTables.length > 0) {
+      await this.postgresClient.createObjectRuns(
+        runKey.accountId,
+        runKey.runStartedAt,
+        nonChunkTables,
+        priorities
+      )
+    }
     return runKey
   }
 
