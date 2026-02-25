@@ -280,7 +280,14 @@ export async function backfillCommand(options: CliOptions, entityName: string): 
     } else {
       // Use fullSync for specific objects (including sigma tables)
       // Cast to allow sigma table names which aren't in SyncObject type
-      const result = await stripeSync.fullSync([entityName] as StripeObject[])
+      const result = await stripeSync.fullSync(
+        [entityName] as StripeObject[],
+        true,
+        20,
+        10,
+        true,
+        0
+      )
       const tableType = isSigmaTable ? '(sigma)' : ''
       console.log(
         chalk.green(
