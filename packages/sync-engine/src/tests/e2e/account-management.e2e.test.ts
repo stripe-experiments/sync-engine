@@ -6,22 +6,18 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
 import {
-  startPostgres,
-  stopPostgres,
+  startPostgresContainer,
   queryDbCount,
   queryDbSingle,
-  getDatabaseUrl,
-} from './helpers/test-db.js'
-import { checkEnvVars } from './helpers/stripe-client.js'
-import { buildCli, runCliCommand } from './helpers/cli-process.js'
+  checkEnvVars,
+  type PostgresContainer,
+} from '../testSetup'
+import { runCliCommand } from './helpers/cli-process.js'
 import { StripeSync } from '../../index.js'
-
-const CONTAINER_NAME = 'stripe-sync-test-account-mgmt'
-const DB_NAME = 'app_db'
-const PORT = 5436
 
 describe('Account Management E2E', () => {
   let pool: pg.Pool
+  let container: PostgresContainer
   let sync: StripeSync
   const cwd = process.cwd()
   let accountId: string
@@ -29,44 +25,34 @@ describe('Account Management E2E', () => {
   beforeAll(async () => {
     checkEnvVars('STRIPE_API_KEY')
 
-    // Start PostgreSQL
-    pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
+    container = await startPostgresContainer()
+    pool = new pg.Pool({ connectionString: container.databaseUrl })
 
-    // Build CLI
-    buildCli(cwd)
-
-    // Run migrations
     execSync('node dist/cli/index.js migrate', {
       cwd,
-      env: { ...process.env, DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+      env: { ...process.env, DATABASE_URL: container.databaseUrl },
       stdio: 'pipe',
     })
 
-    // Create StripeSync instance
     sync = await StripeSync.create({
-      databaseUrl: getDatabaseUrl(PORT, DB_NAME),
+      databaseUrl: container.databaseUrl,
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })
   }, 60000)
 
   afterAll(async () => {
-    // Close sync pool
     await sync?.postgresClient?.pool?.end()
-
-    // Close pool and stop PostgreSQL
     await pool?.end()
-    await stopPostgres(CONTAINER_NAME)
+    await container?.stop()
   }, 30000)
 
   describe('getCurrentAccount()', () => {
     it('should fetch and persist account to database', async () => {
-      // Fetch account
       const account = await sync.getCurrentAccount()
       expect(account).not.toBeNull()
       expect(account!.id).toMatch(/^acct_/)
       accountId = account!.id
 
-      // Verify persisted to database
       const dbCount = await queryDbCount(
         pool,
         `SELECT COUNT(*) FROM stripe.accounts WHERE id = '${accountId}'`
@@ -100,10 +86,9 @@ describe('Account Management E2E', () => {
 
   describe('dangerouslyDeleteSyncedAccountData()', () => {
     beforeAll(async () => {
-      // Backfill existing products from Stripe account (no write permissions needed)
       runCliCommand('backfill', ['product'], {
         cwd,
-        env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+        env: { DATABASE_URL: container.databaseUrl },
       })
     }, 120000)
 
@@ -112,19 +97,15 @@ describe('Account Management E2E', () => {
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
       )
-      // Account should have at least some products
       expect(productsBefore).toBeGreaterThan(0)
 
-      // Run dry-run deletion
       const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, {
         dryRun: true,
       })
-      // API returns { deletedAccountId, deletedRecordCounts, warnings }
       expect(result.deletedAccountId).toBe(accountId)
       expect(result.deletedRecordCounts).toBeDefined()
       expect(result.deletedRecordCounts.products).toBe(productsBefore)
 
-      // Verify no actual deletion occurred (dry-run)
       const productsAfter = await queryDbCount(
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`
@@ -142,7 +123,6 @@ describe('Account Management E2E', () => {
         `SELECT COUNT(*) FROM stripe.accounts WHERE id = '${accountId}'`
       )
 
-      // Perform actual deletion
       const result = await sync.postgresClient.dangerouslyDeleteSyncedAccountData(accountId, {
         dryRun: false,
       })
@@ -150,7 +130,6 @@ describe('Account Management E2E', () => {
       expect(result.deletedRecordCounts.products).toBe(productsBefore)
       expect(result.deletedRecordCounts.accounts).toBe(accountsBefore)
 
-      // Verify cascade deletion
       const productsAfter = await queryDbCount(
         pool,
         `SELECT COUNT(*) FROM stripe.products WHERE _account_id = '${accountId}'`

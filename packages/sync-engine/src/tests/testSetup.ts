@@ -14,7 +14,7 @@ const POSTGRES_USER = 'postgres'
 const POSTGRES_PASSWORD = 'postgres'
 const POSTGRES_DB = 'test'
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
@@ -318,6 +318,56 @@ export class DatabaseValidator {
 
   async close(): Promise<void> {
     await this.pool.end()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight Query Helpers (for tests that use a raw pg.Pool)
+// ---------------------------------------------------------------------------
+
+export async function queryDb<T = Record<string, unknown>>(
+  pool: pg.Pool,
+  sql: string,
+  params?: unknown[]
+): Promise<T[]> {
+  const result = await pool.query(sql, params)
+  return result.rows as T[]
+}
+
+export async function queryDbSingle<T = Record<string, unknown>>(
+  pool: pg.Pool,
+  sql: string,
+  params?: unknown[]
+): Promise<T | null> {
+  const rows = await queryDb<T>(pool, sql, params)
+  return rows[0] ?? null
+}
+
+export async function queryDbCount(
+  pool: pg.Pool,
+  sql: string,
+  params?: unknown[]
+): Promise<number> {
+  const result = await pool.query(sql, params)
+  return parseInt(result.rows[0]?.count ?? '0', 10)
+}
+
+// ---------------------------------------------------------------------------
+// E2E Helpers
+// ---------------------------------------------------------------------------
+
+export function getStripeClient(keyEnvVar = 'STRIPE_API_KEY'): Stripe {
+  const apiKey = process.env[keyEnvVar]
+  if (!apiKey) {
+    throw new Error(`Environment variable ${keyEnvVar} is not set`)
+  }
+  return new Stripe(apiKey)
+}
+
+export function checkEnvVars(...vars: string[]): void {
+  const missing = vars.filter((v) => !process.env[v])
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
   }
 }
 

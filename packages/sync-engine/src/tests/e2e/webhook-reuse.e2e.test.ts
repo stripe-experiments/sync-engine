@@ -4,37 +4,35 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import pg from 'pg'
-import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
-import { checkEnvVars, getStripeClient } from './helpers/stripe-client.js'
+import {
+  startPostgresContainer,
+  getStripeClient,
+  checkEnvVars,
+  type PostgresContainer,
+} from '../testSetup'
 import { StripeSync, runMigrations } from '../../index.js'
-
-const CONTAINER_NAME = 'stripe-sync-webhook-reuse-test'
-const DB_NAME = 'app_db'
-const PORT = 5439
 
 describe('Webhook Reuse E2E', () => {
   let pool: pg.Pool
+  let container: PostgresContainer
   let sync: StripeSync
   const createdWebhookIds: string[] = []
 
   beforeAll(async () => {
     checkEnvVars('STRIPE_API_KEY')
 
-    // Start PostgreSQL
-    pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
+    container = await startPostgresContainer()
+    pool = new pg.Pool({ connectionString: container.databaseUrl })
 
-    // Run migrations
-    await runMigrations({ databaseUrl: getDatabaseUrl(PORT, DB_NAME) })
+    await runMigrations({ databaseUrl: container.databaseUrl })
 
-    // Create StripeSync instance
     sync = await StripeSync.create({
-      databaseUrl: getDatabaseUrl(PORT, DB_NAME),
+      databaseUrl: container.databaseUrl,
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })
   }, 60000)
 
   afterAll(async () => {
-    // Cleanup created webhooks
     for (const id of createdWebhookIds) {
       try {
         await sync.webhook.deleteManagedWebhook(id)
@@ -43,12 +41,9 @@ describe('Webhook Reuse E2E', () => {
       }
     }
 
-    // Close sync pool
     await sync?.postgresClient?.pool?.end()
-
-    // Close pool and stop PostgreSQL
     await pool?.end()
-    await stopPostgres(CONTAINER_NAME)
+    await container?.stop()
   }, 30000)
 
   it('should create initial webhook', async () => {
@@ -60,7 +55,6 @@ describe('Webhook Reuse E2E', () => {
     expect(webhook.id).toMatch(/^we_/)
     createdWebhookIds.push(webhook.id)
 
-    // Verify webhook count
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync.webhook as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
@@ -79,7 +73,6 @@ describe('Webhook Reuse E2E', () => {
 
     expect(webhook2.id).toBe(webhook1.id)
 
-    // Verify still only one webhook
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync.webhook as any).listManagedWebhooks()
     expect(webhooks.length).toBe(1)
@@ -103,7 +96,6 @@ describe('Webhook Reuse E2E', () => {
   it('should handle orphaned webhook cleanup', async () => {
     const stripe = getStripeClient()
 
-    // Create a webhook
     const webhook = await sync.webhook.findOrCreateManagedWebhook(
       'https://test3.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
@@ -111,13 +103,11 @@ describe('Webhook Reuse E2E', () => {
     const orphanedId = webhook.id
     createdWebhookIds.push(orphanedId)
 
-    // Delete from database only (simulate orphaned state)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (sync as any).postgresClient.query(`DELETE FROM stripe._managed_webhooks WHERE id = $1`, [
       orphanedId,
     ])
 
-    // Call again - should clean up orphan and create new one
     const newWebhook = await sync.webhook.findOrCreateManagedWebhook(
       'https://test3.example.com/stripe-webhooks',
       { enabled_events: ['*'] }
@@ -126,10 +116,8 @@ describe('Webhook Reuse E2E', () => {
 
     expect(newWebhook.id).not.toBe(orphanedId)
 
-    // Verify orphaned webhook was actually deleted from Stripe
     try {
       await stripe.webhookEndpoints.retrieve(orphanedId)
-      // If we get here, the webhook still exists - fail the test
       expect.fail('Orphaned webhook should have been deleted from Stripe')
     } catch (err: unknown) {
       const stripeError = err as { code?: string; type?: string }
@@ -140,20 +128,17 @@ describe('Webhook Reuse E2E', () => {
   it('should handle concurrent execution without duplicates', async () => {
     const concurrentUrl = 'https://test-concurrent.example.com/stripe-webhooks'
 
-    // Create 5 concurrent requests
     const promises = Array(5)
       .fill(null)
       .map(() => sync.webhook.findOrCreateManagedWebhook(concurrentUrl, { enabled_events: ['*'] }))
 
     const results = await Promise.all(promises)
 
-    // All should return the same ID
     const uniqueIds = new Set(results.map((w) => w.id))
     expect(uniqueIds.size).toBe(1)
 
     createdWebhookIds.push(results[0].id)
 
-    // Verify only one webhook in database
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webhooks = await (sync.webhook as any).listManagedWebhooks()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -168,9 +153,8 @@ describe('Webhook Reuse E2E', () => {
       return
     }
 
-    // Create second StripeSync instance
     const sync2 = await StripeSync.create({
-      databaseUrl: getDatabaseUrl(PORT, DB_NAME),
+      databaseUrl: container.databaseUrl,
       stripeSecretKey: key2,
     })
 
@@ -185,10 +169,8 @@ describe('Webhook Reuse E2E', () => {
       enabled_events: ['*'],
     })
 
-    // Each account should have its own webhook
     expect(webhook2.id).not.toBe(webhook1.id)
 
-    // Cleanup
     try {
       await sync2.webhook.deleteManagedWebhook(webhook2.id)
     } catch {

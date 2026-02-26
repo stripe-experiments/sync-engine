@@ -31,7 +31,7 @@
     "lint": "eslint src --ext .ts",
     "test": "vitest",
     "test:integration": "vitest run src/tests/integration/",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts && vitest run --config vitest.e2e.webhook.config.ts",
     "start": "pnpm run build && node dist/cli/index.js backfill",
     "full-sync": "pnpm run build && node dist/cli/index.js full-sync",
     "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts"
