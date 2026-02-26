@@ -66,6 +66,11 @@ jobs:
         run: |
           pnpm build
 
+      - name: Check migrations-embedded.ts is up to date
+        run: |
+          git diff --exit-code packages/sync-engine/src/database/migrations-embedded.ts || \
+            (echo "::error::migrations-embedded.ts is out of date. Run the build locally and commit the updated file." && exit 1)
+
       - name: Initialize DB schema
         run: |
           docker run --rm \
@@ -80,12 +85,11 @@ jobs:
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&search_path=stripe'
 
-      - name: Pull Postgres image for integration tests
-        run: docker pull postgres:15-alpine
-
       - name: Integration Tests
         run: |
           cd packages/sync-engine && npm run test:integration
+        env:
+          TEST_POSTGRES_DB_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
 
   e2e-test:
     name: CLI e2e tests
@@ -106,13 +110,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Pull Postgres image for e2e tests
-        run: docker pull postgres:15-alpine
+      - name: Build all packages
+        run: pnpm build
 
       - name: Set up .env file
         run: |
           cd packages/sync-engine
           touch .env
+          echo DATABASE_URL='postgresql://postgres:postgres@localhost:5432/app_db' >> .env
           echo STRIPE_API_KEY='${{ secrets.STRIPE_API_KEY }}' >> .env
           echo STRIPE_API_KEY_2='${{ secrets.STRIPE_API_KEY_2 }}' >> .env
           echo STRIPE_API_KEY_3='${{ secrets.STRIPE_API_KEY_3 }}' >> .env
