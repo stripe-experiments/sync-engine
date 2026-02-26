@@ -200,14 +200,18 @@ Deno.serve(async (req) => {
       })
 
       // Delete all managed webhooks
-      const webhooks = await stripeSync.webhook.listManagedWebhooks()
-      for (const webhook of webhooks) {
-        try {
-          await stripeSync.deleteManagedWebhook(webhook.id)
-          console.log(`Deleted webhook: ${webhook.id}`)
-        } catch (err) {
-          console.warn(`Could not delete webhook ${webhook.id}:`, err)
+      try {
+        const webhooks = await stripeSync.webhook.listManagedWebhooks()
+        for (const webhook of webhooks) {
+          try {
+            await stripeSync.deleteManagedWebhook(webhook.id)
+            console.log(`Deleted webhook: ${webhook.id}`)
+          } catch (err) {
+            console.warn(`Could not delete webhook ${webhook.id}:`, err)
+          }
         }
+      } catch (err) {
+        console.warn(`Could not get webooks:`, err)
       }
 
       // Unschedule pg_cron jobs
@@ -319,6 +323,12 @@ Deno.serve(async (req) => {
         await deleteEdgeFunction(projectRef, 'stripe-worker', accessToken)
       } catch (err) {
         console.warn('Could not delete stripe-worker function:', err)
+      }
+
+      try {
+        await deleteEdgeFunction(projectRef, 'sigma-data-worker', accessToken)
+      } catch (err) {
+        console.warn('Could not delete sigma-data-worker function:', err)
       }
 
       return new Response(
