@@ -9,7 +9,7 @@ import pg from 'pg'
 import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
 import { checkEnvVars } from './helpers/stripe-client.js'
 import { buildCli } from './helpers/cli-process.js'
-import { StripeSync, getTableName } from '../index.js'
+import { StripeSync, getTableName } from '../../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-lifecycle-test'
 const DB_NAME = 'app_db'

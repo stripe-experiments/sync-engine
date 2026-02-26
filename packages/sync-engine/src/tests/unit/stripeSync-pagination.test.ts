@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { StripeSyncWorker } from './stripeSyncWorker'
-import { createMockedStripeSync } from './testSetup'
-import type { ResourceConfig } from './types'
+import { StripeSyncWorker } from '../../stripeSyncWorker'
+import { createMockedStripeSync } from '../testSetup'
+import type { ResourceConfig } from '../../types'
 
 /**
  * Regression tests for pagination behavior.

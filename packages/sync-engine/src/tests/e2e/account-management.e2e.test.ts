@@ -14,7 +14,7 @@ import {
 } from './helpers/test-db.js'
 import { checkEnvVars } from './helpers/stripe-client.js'
 import { buildCli, runCliCommand } from './helpers/cli-process.js'
-import { StripeSync } from '../index.js'
+import { StripeSync } from '../../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-test-account-mgmt'
 const DB_NAME = 'app_db'

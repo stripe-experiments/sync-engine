@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { QueryUtils, type InsertColumn } from './QueryUtils'
+import { QueryUtils, type InsertColumn } from '../../database/QueryUtils'
 
 describe('QueryUtils', () => {
   describe('quoteIdent', () => {

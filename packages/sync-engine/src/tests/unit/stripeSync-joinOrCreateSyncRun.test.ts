@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { PostgresClient } from './database/postgres'
-import { getTableName } from './resourceRegistry'
-import type { ResourceConfig } from './types'
+import { PostgresClient } from '../../database/postgres'
+import { getTableName } from '../../resourceRegistry'
+import type { ResourceConfig } from '../../types'
 
 /**
  * Unit tests for PostgresClient.joinOrCreateSyncRun().

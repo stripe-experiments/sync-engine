@@ -2,8 +2,8 @@ import { vi, describe } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
 import Stripe from 'stripe'
-import { StripeSync, runMigrations } from './index'
-import type { StripeSyncConfig } from './types'
+import { StripeSync, runMigrations } from '../index'
+import type { StripeSyncConfig } from '../types'
 
 // ---------------------------------------------------------------------------
 // Docker Postgres Container
@@ -177,7 +177,7 @@ export async function createTestStripeSync(opts: {
 export async function createMockedStripeSync(
   configOverrides?: Partial<StripeSyncConfig>
 ): Promise<StripeSync> {
-  const { StripeSync: SS } = await import('./stripeSync')
+  const { StripeSync: SS } = await import('../stripeSync')
   vi.spyOn(SS.prototype, 'getCurrentAccount').mockResolvedValue({
     id: 'acct_test',
   } as Stripe.Account)

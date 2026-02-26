@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest'
-import type { WebhookProcessingResult } from './websocket-client'
+import type { WebhookProcessingResult } from '../../websocket-client'
 
 type EventHandler = (...args: unknown[]) => void
 
@@ -95,7 +95,7 @@ describe('websocket-client', () => {
 
   describe('createCliSession', () => {
     it('should call Stripe API with correct parameters', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onEvent = vi.fn()
       await createStripeWebSocketClient({
@@ -124,7 +124,7 @@ describe('websocket-client', () => {
         })
       )
 
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       await expect(
         createStripeWebSocketClient({
@@ -137,7 +137,7 @@ describe('websocket-client', () => {
 
   describe('WebSocket connection', () => {
     it('should call onReady when connection opens', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onReady = vi.fn()
       await createStripeWebSocketClient({
@@ -157,7 +157,7 @@ describe('websocket-client', () => {
     })
 
     it('should call onError when WebSocket error occurs', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       await createStripeWebSocketClient({
@@ -179,7 +179,7 @@ describe('websocket-client', () => {
     })
 
     it('should call onClose when WebSocket closes', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onClose = vi.fn()
       await createStripeWebSocketClient({
@@ -214,7 +214,7 @@ describe('websocket-client', () => {
         })
       )
 
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onReady = vi.fn()
       await createStripeWebSocketClient({
@@ -241,7 +241,7 @@ describe('websocket-client', () => {
     })
 
     it('should update lastPongReceived when pong is received', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       await createStripeWebSocketClient({
@@ -283,7 +283,7 @@ describe('websocket-client', () => {
         })
       )
 
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       await createStripeWebSocketClient({
@@ -312,7 +312,7 @@ describe('websocket-client', () => {
 
   describe('Proactive reconnection', () => {
     it('should use server-provided reconnect_delay for reconnect interval', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onReady = vi.fn()
       await createStripeWebSocketClient({
@@ -357,7 +357,7 @@ describe('websocket-client', () => {
         })
       )
 
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       await createStripeWebSocketClient({
         stripeApiKey: 'sk_test_123',
@@ -387,7 +387,7 @@ describe('websocket-client', () => {
     })
 
     it('should reconnect immediately on unexpected disconnect', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onClose = vi.fn()
       await createStripeWebSocketClient({
@@ -420,7 +420,7 @@ describe('websocket-client', () => {
 
   describe('Connection retry', () => {
     it('should retry connection after CONNECT_ATTEMPT_WAIT on failure', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       const clientPromise = createStripeWebSocketClient({
@@ -456,7 +456,7 @@ describe('websocket-client', () => {
     })
 
     it('should timeout connection attempt after CONNECT_ATTEMPT_WAIT', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       createStripeWebSocketClient({
@@ -481,7 +481,7 @@ describe('websocket-client', () => {
 
   describe('Event handling', () => {
     it('should send ack immediately before processing event', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onEvent = vi.fn().mockImplementation(() => {
         return new Promise((resolve) => setTimeout(resolve, 100))
@@ -516,7 +516,7 @@ describe('websocket-client', () => {
     })
 
     it('should process event through onEvent callback', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onEvent = vi.fn()
       await createStripeWebSocketClient({
@@ -548,7 +548,7 @@ describe('websocket-client', () => {
     })
 
     it('should send webhook_response after processing event with WebhookProcessingResult', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const mockResult: WebhookProcessingResult = {
         status: 200,
@@ -602,7 +602,7 @@ describe('websocket-client', () => {
     })
 
     it('should send webhook_response with default status when onEvent returns void', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onEvent = vi.fn().mockResolvedValue(undefined)
       await createStripeWebSocketClient({
@@ -638,7 +638,7 @@ describe('websocket-client', () => {
     })
 
     it('should send webhook_response with error when onEvent throws', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const onError = vi.fn()
       const onEvent = vi.fn().mockRejectedValue(new Error('Processing failed'))
@@ -685,7 +685,7 @@ describe('websocket-client', () => {
     })
 
     it('should include error in response body when WebhookProcessingResult has error', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const mockResult: WebhookProcessingResult = {
         status: 500,
@@ -733,7 +733,7 @@ describe('websocket-client', () => {
 
   describe('Client lifecycle', () => {
     it('should close WebSocket and stop run loop when close() is called', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const client = await createStripeWebSocketClient({
         stripeApiKey: 'sk_test_123',
@@ -757,7 +757,7 @@ describe('websocket-client', () => {
     })
 
     it('should return correct connection status', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const client = await createStripeWebSocketClient({
         stripeApiKey: 'sk_test_123',
@@ -781,7 +781,7 @@ describe('websocket-client', () => {
     })
 
     it('should not reconnect after close() is called', async () => {
-      const { createStripeWebSocketClient } = await import('./websocket-client')
+      const { createStripeWebSocketClient } = await import('../../websocket-client')
 
       const client = await createStripeWebSocketClient({
         stripeApiKey: 'sk_test_123',

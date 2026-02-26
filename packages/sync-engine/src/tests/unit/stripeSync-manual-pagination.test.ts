@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Stripe from 'stripe'
-import { createMockedStripeSync, mockStripeResource } from './testSetup'
-import type { StripeSync } from './stripeSync'
+import { createMockedStripeSync, mockStripeResource } from '../testSetup'
+import type { StripeSync } from '../../stripeSync'
 
 describe('Manual Pagination with Rate Limit Handling', () => {
   let sync: StripeSync

@@ -5,10 +5,10 @@ import {
   upsertTestAccount,
   DatabaseValidator,
   type TestDatabase,
-} from './testSetup'
-import type { StripeSync } from './index'
-import * as sigmaApi from './sigma/sigmaApi'
-import type { StripeObject } from './resourceRegistry'
+} from '../testSetup'
+import type { StripeSync } from '../../index'
+import * as sigmaApi from '../../sigma/sigmaApi'
+import type { StripeObject } from '../../resourceRegistry'
 
 const TEST_ACCOUNT_ID = 'acct_test_sigma_integration'
 const SIGMA_SCHEMA = 'sigma'

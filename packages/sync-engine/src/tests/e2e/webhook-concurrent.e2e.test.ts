@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { StripeSync } from './stripeSync'
-import { setupTestDatabase, type TestDatabase } from './testSetup'
+import { StripeSync } from '../../stripeSync'
+import { setupTestDatabase, type TestDatabase } from '../testSetup'
 import type { PoolConfig } from 'pg'
 import type Stripe from 'stripe'
 

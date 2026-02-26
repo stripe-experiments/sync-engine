@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import pg from 'pg'
 import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
 import { checkEnvVars, getStripeClient } from './helpers/stripe-client.js'
-import { StripeSync, runMigrations } from '../index.js'
+import { StripeSync, runMigrations } from '../../index.js'
 
 const CONTAINER_NAME = 'stripe-sync-webhook-reuse-test'
 const DB_NAME = 'app_db'

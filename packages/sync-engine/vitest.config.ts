@@ -11,6 +11,6 @@ export default defineConfig({
     },
     // Exclude E2E tests from default `vitest` command
     // These require STRIPE_API_KEY and run separately via `test:e2e`
-    exclude: ['**/node_modules/**', '**/dist/**', 'src/e2e-tests/*.e2e.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/tests/e2e/*.e2e.test.ts'],
   },
 })

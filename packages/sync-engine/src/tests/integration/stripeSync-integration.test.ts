@@ -9,8 +9,8 @@ import {
   DatabaseValidator,
   type MockStripeObject,
   type TestDatabase,
-} from './testSetup'
-import type { StripeSync } from './index'
+} from '../testSetup'
+import type { StripeSync } from '../../index'
 
 const TEST_ACCOUNT_ID = 'acct_test_integration'
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { PostgresClient } from './postgres'
+import { PostgresClient } from '../../database/postgres'
 import { setupTestDatabase, type TestDatabase } from '../testSetup'
 
 describe('Observable Sync System Methods', () => {

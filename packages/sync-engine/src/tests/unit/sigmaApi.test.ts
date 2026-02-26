@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSigmaTimestampToIso, parseCsvObjects } from './sigmaApi'
+import { normalizeSigmaTimestampToIso, parseCsvObjects } from '../../sigma/sigmaApi'
 
 describe('sigmaApi helpers', () => {
   describe('parseCsvObjects', () => {
