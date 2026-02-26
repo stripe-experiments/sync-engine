@@ -41,42 +41,54 @@ describe('Backfill E2E', () => {
       stdio: 'pipe',
     })
 
-    for (let i = 1; i <= 3; i++) {
-      const customer = await stripe.customers.create({
-        email: `test-backfill-${i}@example.com`,
-        name: `Test Customer ${i}`,
-        description: `Integration test customer ${i}`,
-      })
-      customerIds.push(customer.id)
-      tracker.trackCustomer(customer.id)
+    const [customers, products] = await Promise.all([
+      Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          stripe.customers.create({
+            email: `test-backfill-${i + 1}@example.com`,
+            name: `Test Customer ${i + 1}`,
+            description: `Integration test customer ${i + 1}`,
+          })
+        )
+      ),
+      Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          stripe.products.create({
+            name: `Test Product ${i + 1} - Backfill`,
+            description: `Integration test product ${i + 1}`,
+          })
+        )
+      ),
+    ])
+
+    for (const c of customers) {
+      customerIds.push(c.id)
+      tracker.trackCustomer(c.id)
+    }
+    for (const p of products) {
+      productIds.push(p.id)
+      tracker.trackProduct(p.id)
     }
 
-    for (let i = 1; i <= 3; i++) {
-      const product = await stripe.products.create({
-        name: `Test Product ${i} - Backfill`,
-        description: `Integration test product ${i}`,
+    const prices = await Promise.all(
+      productIds.map((pid, i) => {
+        const params: {
+          product: string
+          unit_amount: number
+          currency: string
+          nickname: string
+          recurring?: { interval: 'month' | 'year' | 'week' | 'day' }
+        } = {
+          product: pid,
+          unit_amount: (i + 1) * 1000,
+          currency: 'usd',
+          nickname: `Test Price ${i + 1}`,
+        }
+        if (i === 2) params.recurring = { interval: 'month' }
+        return stripe.prices.create(params)
       })
-      productIds.push(product.id)
-      tracker.trackProduct(product.id)
-    }
-
-    for (let i = 0; i < 3; i++) {
-      const priceParams: {
-        product: string
-        unit_amount: number
-        currency: string
-        nickname: string
-        recurring?: { interval: 'month' | 'year' | 'week' | 'day' }
-      } = {
-        product: productIds[i],
-        unit_amount: (i + 1) * 1000,
-        currency: 'usd',
-        nickname: `Test Price ${i + 1}`,
-      }
-      if (i === 2) {
-        priceParams.recurring = { interval: 'month' }
-      }
-      const price = await stripe.prices.create(priceParams)
+    )
+    for (const price of prices) {
       priceIds.push(price.id)
       tracker.trackPrice(price.id)
     }

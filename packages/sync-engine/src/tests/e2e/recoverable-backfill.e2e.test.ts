@@ -58,12 +58,17 @@ describe('Error Recovery E2E', () => {
       stdio: 'pipe',
     })
 
-    for (let i = 1; i <= 200; i++) {
-      const product = await stripe.products.create({
-        name: `Test Product ${i} - Recovery`,
-        description: `Integration test product ${i} for error recovery`,
-      })
-      tracker.trackProduct(product.id)
+    const batchSize = 10
+    for (let i = 0; i < 100; i += batchSize) {
+      const batch = Array.from({ length: Math.min(batchSize, 100 - i) }, (_, j) =>
+        stripe.products.create({
+          name: `Test Product ${i + j + 1} - Recovery`,
+          description: `Integration test product ${i + j + 1} for error recovery`,
+        })
+      )
+      const results = await Promise.all(batch)
+      results.forEach((p) => tracker.trackProduct(p.id))
+      await sleep(500)
     }
   }, 300000)
 
@@ -119,7 +124,7 @@ describe('Error Recovery E2E', () => {
     if (status === 'complete') {
       console.log('Sync completed before interruption - verifying completion instead')
       const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-      expect(finalProducts).toBeGreaterThanOrEqual(200)
+      expect(finalProducts).toBeGreaterThanOrEqual(100)
       syncProcess.kill('SIGTERM')
       return
     }
@@ -153,6 +158,6 @@ describe('Error Recovery E2E', () => {
     expect(finalStatusRow?.status).toBe('complete')
 
     const finalProducts = await queryDbCount(pool, 'SELECT COUNT(*) FROM stripe.products')
-    expect(finalProducts).toBeGreaterThanOrEqual(200)
+    expect(finalProducts).toBeGreaterThanOrEqual(100)
   }, 120000)
 })

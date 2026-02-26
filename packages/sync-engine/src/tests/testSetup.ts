@@ -18,6 +18,25 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Poll `condition` until it returns true or `timeoutMs` elapses.
+ * Exits early (no error) the moment the condition is satisfied.
+ * Throws if the timeout expires without the condition being met.
+ */
+export async function waitFor(
+  condition: () => Promise<boolean> | boolean,
+  timeoutMs: number,
+  opts?: { intervalMs?: number; message?: string }
+): Promise<void> {
+  const { intervalMs = 500, message } = opts ?? {}
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await condition()) return
+    await sleep(Math.min(intervalMs, deadline - Date.now()))
+  }
+  throw new Error(message ?? `waitFor timed out after ${timeoutMs}ms`)
+}
+
 export interface PostgresContainer {
   databaseUrl: string
   port: number
