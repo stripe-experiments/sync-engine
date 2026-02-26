@@ -1,18 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { StripeSyncWorker } from './stripeSyncWorker'
+import { createMockedStripeSync } from './testSetup'
 import type { ResourceConfig } from './types'
-
-async function createSyncForRegistry() {
-  const { StripeSync } = await import('./stripeSync')
-  vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
-    id: 'acct_test',
-  } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-
-  return StripeSync.create({
-    stripeSecretKey: 'sk_test_fake',
-    databaseUrl: 'postgresql://fake',
-  })
-}
 
 /**
  * Regression tests for pagination behavior.
@@ -27,24 +16,16 @@ async function createSyncForRegistry() {
 describe('Pagination regression tests', () => {
   describe('credit_notes supportsCreatedFilter', () => {
     it('should have supportsCreatedFilter: true for credit_note', async () => {
-      // Create a minimal StripeSync instance to check the registry
-      const sync = await createSyncForRegistry()
-
-      // Access resourceRegistry for testing
+      const sync = await createMockedStripeSync()
       const registry = sync.resourceRegistry
 
-      // credit_note MUST support created filter to enable incremental sync
-      // If this is false, pagination will loop infinitely
       expect(registry.credit_note.supportsCreatedFilter).toBe(true)
     })
 
     it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', async () => {
-      const sync = await createSyncForRegistry()
-
+      const sync = await createMockedStripeSync()
       const registry = sync.resourceRegistry
 
-      // Core objects that legitimately don't support created filter
-      // (they require customer context and are handled specially)
       const coreObjectsExpectedFalse = ['payment_method', 'tax_id']
 
       for (const [objectName, config] of Object.entries(registry)) {
@@ -70,7 +51,6 @@ describe('Pagination regression tests', () => {
     let creditNotesConfig: ResourceConfig
 
     beforeEach(async () => {
-      // Create mock functions
       mockCreditNotesList = vi.fn().mockResolvedValue({
         data: [
           { id: 'cn_1', created: 1700000100 },
@@ -88,7 +68,6 @@ describe('Pagination regression tests', () => {
     })
 
     it('should pass created filter when supportsCreatedFilter is true and cursor exists', async () => {
-      // Create a minimal worker to test fetchOnePage
       const worker = new StripeSyncWorker(
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -177,7 +156,7 @@ describe('Pagination regression tests', () => {
     it('should NOT pass created filter when supportsCreatedFilter is false', async () => {
       const noCreatedFilterConfig = {
         ...creditNotesConfig,
-        supportsCreatedFilter: false,
+        supportsCreatedFilter: false as const,
       }
 
       const worker = new StripeSyncWorker(

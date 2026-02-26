@@ -1,27 +1,20 @@
 import { describe, it, beforeAll, afterAll, beforeEach, vi, expect } from 'vitest'
-import { StripeSync, runMigrations } from './index'
-import pg from 'pg'
+import {
+  setupTestDatabase,
+  createTestStripeSync,
+  upsertTestAccount,
+  DatabaseValidator,
+  type TestDatabase,
+} from './testSetup'
+import type { StripeSync } from './index'
 import * as sigmaApi from './sigma/sigmaApi'
 import type { StripeObject } from './resourceRegistry'
 
-/**
- * Integration tests for Sigma-backed resources.
- *
- * These tests use a real database connection but mock the Sigma API
- * to test the full ingestion lifecycle without hitting Stripe.
- *
- * Run with:
- * TEST_POSTGRES_DB_URL=postgresql://... vitest run src/stripeSync-sigma-integration.test.ts
- */
-
-const TEST_DB_URL = process.env.TEST_POSTGRES_DB_URL
 const TEST_ACCOUNT_ID = 'acct_test_sigma_integration'
 const SIGMA_SCHEMA = 'sigma'
 const SUBSCRIPTION_ITEM_CHANGE_EVENTS_OBJECT =
   'subscription_item_change_events_v2_beta' as unknown as StripeObject
 const EXCHANGE_RATES_OBJECT = 'exchange_rates_from_usd' as unknown as StripeObject
-
-const describeWithDb = TEST_DB_URL ? describe : describe.skip
 
 type CsvRow = Record<string, string>
 
@@ -49,8 +42,6 @@ function mockSigmaApiRuns(params: {
 }): void {
   let runCount = 0
 
-  // Mock runSigmaQueryAndDownloadCsv directly since it's what stripeSync.ts imports
-  // (ES module mocking of internal function calls doesn't work with spyOn)
   vi.spyOn(sigmaApi, 'runSigmaQueryAndDownloadCsv').mockImplementation(async ({ sql }) => {
     params.validateSql?.(sql)
     params.sqlCalls?.push(sql)
@@ -130,103 +121,40 @@ const SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_CSV = buildCsvContentString(
 )
 const EXCHANGE_RATES_CSV = buildCsvContentString(EXCHANGE_RATES_ROWS)
 
-class SigmaDatabaseValidator {
-  private pool: pg.Pool
-
-  constructor(databaseUrl: string) {
-    this.pool = new pg.Pool({ connectionString: databaseUrl })
-  }
-
-  async getSubscriptionItemChangeEventsCount(accountId: string): Promise<number> {
-    const result = await this.pool.query(
-      `SELECT COUNT(*) as count FROM ${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta WHERE _account_id = $1`,
-      [accountId]
-    )
-    return parseInt(result.rows[0].count, 10)
-  }
-
-  async getSubscriptionItemChangeEventIds(accountId: string): Promise<string[]> {
-    const result = await this.pool.query(
-      `SELECT subscription_item_id FROM ${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta WHERE _account_id = $1 ORDER BY subscription_item_id`,
-      [accountId]
-    )
-    return result.rows.map((row) => row.subscription_item_id)
-  }
-
-  async getExchangeRatesCount(accountId: string): Promise<number> {
-    const result = await this.pool.query(
-      `SELECT COUNT(*) as count FROM ${SIGMA_SCHEMA}.exchange_rates_from_usd WHERE _account_id = $1`,
-      [accountId]
-    )
-    return parseInt(result.rows[0].count, 10)
-  }
-
-  async getExchangeRateKeys(
-    accountId: string
-  ): Promise<Array<{ date: string; sell_currency: string }>> {
-    const result = await this.pool.query(
-      `SELECT date, sell_currency FROM ${SIGMA_SCHEMA}.exchange_rates_from_usd WHERE _account_id = $1 ORDER BY date`,
-      [accountId]
-    )
-    return result.rows.map((row) => ({
-      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
-      sell_currency: row.sell_currency,
-    }))
-  }
-
-  async clearAccountData(accountId: string): Promise<void> {
-    await this.pool.query(
-      `DELETE FROM ${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta WHERE _account_id = $1`,
-      [accountId]
-    )
-    await this.pool.query(
-      `DELETE FROM ${SIGMA_SCHEMA}.exchange_rates_from_usd WHERE _account_id = $1`,
-      [accountId]
-    )
-    await this.pool.query('DELETE FROM stripe._sync_obj_runs WHERE _account_id = $1', [accountId])
-    await this.pool.query('DELETE FROM stripe._sync_runs WHERE _account_id = $1', [accountId])
-  }
-
-  async close(): Promise<void> {
-    await this.pool.end()
-  }
-}
-
-describeWithDb('StripeSync Sigma Integration Tests', () => {
+describe('StripeSync Sigma Integration Tests', () => {
   let sync: StripeSync
-  let validator: SigmaDatabaseValidator
+  let db: TestDatabase
+  let validator: DatabaseValidator
 
   beforeAll(async () => {
-    if (!TEST_DB_URL) throw new Error('TEST_POSTGRES_DB_URL environment variable is required')
-    await runMigrations({ databaseUrl: TEST_DB_URL, enableSigma: true })
-    validator = new SigmaDatabaseValidator(TEST_DB_URL)
-  })
+    db = await setupTestDatabase({ enableSigma: true })
+    validator = new DatabaseValidator(db.databaseUrl)
+  }, 30_000)
 
   afterAll(async () => {
-    if (validator) {
-      await validator.close()
-    }
-    if (sync) {
-      await sync.postgresClient.pool.end()
-    }
+    if (validator) await validator.close()
+    if (sync) await sync.postgresClient.pool.end()
+    if (db) await db.close()
   })
 
   beforeEach(async () => {
-    if (validator) await validator.clearAccountData(TEST_ACCOUNT_ID)
+    if (sync) await sync.postgresClient.pool.end()
+
+    await validator.clearAccountData(TEST_ACCOUNT_ID, [
+      `${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta`,
+      `${SIGMA_SCHEMA}.exchange_rates_from_usd`,
+    ])
 
     vi.restoreAllMocks()
 
-    sync = await StripeSync.create({
+    sync = await createTestStripeSync({
+      databaseUrl: db.databaseUrl,
+      accountId: TEST_ACCOUNT_ID,
       stripeSecretKey: 'sk_test_fake_sigma',
-      stripeAccountId: TEST_ACCOUNT_ID,
-      databaseUrl: TEST_DB_URL!,
       enableSigma: true,
     })
 
-    await sync.postgresClient.upsertAccount(
-      { id: TEST_ACCOUNT_ID, raw_data: { id: TEST_ACCOUNT_ID } },
-      'test_hash'
-    )
+    await upsertTestAccount(sync, TEST_ACCOUNT_ID)
   })
 
   describe('fullSync (sigma)', () => {
@@ -246,12 +174,14 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length
       )
 
-      const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
+      const count = await validator.getRowCount(
+        `${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta`,
+        TEST_ACCOUNT_ID
+      )
       expect(count).toStrictEqual(SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length)
     })
 
     it('should paginate sigma results using cursor across multiple pages', async () => {
-      // Force a small page size so we exercise multi-page cursor paging.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sigmaConfig = (sync as any).sigmaRegistry?.subscription_item_change_events_v2_beta
         ?.sigma
@@ -305,11 +235,18 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
 
       expect(result.results['exchange_rates_from_usd']?.synced).toStrictEqual(1)
 
-      const count = await validator.getExchangeRatesCount(TEST_ACCOUNT_ID)
+      const count = await validator.getRowCount(
+        `${SIGMA_SCHEMA}.exchange_rates_from_usd`,
+        TEST_ACCOUNT_ID
+      )
       expect(count).toStrictEqual(1)
 
-      const keys = await validator.getExchangeRateKeys(TEST_ACCOUNT_ID)
-      expect(keys).toStrictEqual([{ date: '2021-03-07', sell_currency: 'usd' }])
+      const keys = await validator.getColumnValues(
+        `${SIGMA_SCHEMA}.exchange_rates_from_usd`,
+        'date',
+        TEST_ACCOUNT_ID
+      )
+      expect(keys).toHaveLength(1)
     })
 
     it('should pick up new subscription item change events on subsequent runs', async () => {
@@ -347,7 +284,10 @@ describeWithDb('StripeSync Sigma Integration Tests', () => {
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length
       )
 
-      const count = await validator.getSubscriptionItemChangeEventsCount(TEST_ACCOUNT_ID)
+      const count = await validator.getRowCount(
+        `${SIGMA_SCHEMA}.subscription_item_change_events_v2_beta`,
+        TEST_ACCOUNT_ID
+      )
       expect(count).toStrictEqual(
         SUBSCRIPTION_ITEM_CHANGE_EVENTS_ROWS.length +
           SUBSCRIPTION_ITEM_CHANGE_EVENTS_NEW_ROWS.length

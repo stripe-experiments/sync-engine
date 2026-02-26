@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { StripeSync } from './stripeSync'
-import { runMigrations } from './database/migrate'
+import { setupTestDatabase, type TestDatabase } from './testSetup'
 import type { PoolConfig } from 'pg'
 import type Stripe from 'stripe'
 
 describe('Webhook Race Condition Tests', () => {
   let stripeSync: StripeSync
-  const databaseUrl =
-    process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
+  let db: TestDatabase
   const stripeApiKey = process.env.STRIPE_API_KEY
 
   if (!stripeApiKey) {
@@ -17,27 +16,25 @@ describe('Webhook Race Condition Tests', () => {
   beforeAll(async () => {
     if (!stripeApiKey) return
 
-    // Run migrations to ensure unique constraint exists
-    await runMigrations({ databaseUrl })
+    db = await setupTestDatabase()
 
     const poolConfig: PoolConfig = {
-      max: 20, // Need more connections for concurrent tests
-      connectionString: databaseUrl,
+      max: 20,
+      connectionString: db.databaseUrl,
       keepAlive: true,
     }
 
     stripeSync = await StripeSync.create({
-      databaseUrl,
+      databaseUrl: db.databaseUrl,
       stripeSecretKey: stripeApiKey,
       stripeApiVersion: '2020-08-27',
       poolConfig,
     })
-  })
+  }, 30_000)
 
   afterAll(async () => {
     if (!stripeSync) return
 
-    // Clean up all test webhooks
     try {
       const webhooks = await stripeSync.webhook.listManagedWebhooks()
       const testWebhooks = webhooks.filter((w) => w.url.includes('test-race-'))
@@ -53,14 +50,13 @@ describe('Webhook Race Condition Tests', () => {
       console.warn('Failed to clean up test webhooks:', error)
     }
 
-    // Close database connection
     await stripeSync.postgresClient.pool.end()
+    if (db) await db.close()
   })
 
   beforeEach(async () => {
     if (!stripeSync) return
 
-    // Clean up any existing webhooks for this test URL
     const webhooks = await stripeSync.webhook.listManagedWebhooks()
     const matchingWebhooks = webhooks.filter((w) => w.url.includes('test-race-'))
 
@@ -79,7 +75,6 @@ describe('Webhook Race Condition Tests', () => {
       async () => {
         const uniqueUrl = `https://test-race-${Date.now()}-concurrent10.example.com/webhooks`
 
-        // Start 10 parallel calls with same baseUrl
         const promises = Array(10)
           .fill(null)
           .map(() =>
@@ -91,23 +86,19 @@ describe('Webhook Race Condition Tests', () => {
 
         const results = await Promise.allSettled(promises)
 
-        // All should succeed
         const succeeded = results.filter((r) => r.status === 'fulfilled')
         expect(succeeded.length).toBe(10)
 
-        // All should return same webhook ID
         const webhookIds = succeeded.map(
           (r) => (r as PromiseFulfilledResult<Stripe.WebhookEndpoint>).value.id
         )
         const uniqueIds = new Set(webhookIds)
         expect(uniqueIds.size).toBe(1)
 
-        // Verify only 1 webhook in database
         const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === uniqueUrl)
         expect(matchingWebhooks.length).toBe(1)
 
-        // Verify only 1 webhook in Stripe
         const stripeWebhooks = await stripeSync.stripe.webhookEndpoints.list({ limit: 100 })
         const matchingStripeWebhooks = stripeWebhooks.data.filter(
           (w) => w.url === uniqueUrl && w.metadata?.managed_by === 'stripe-sync'
@@ -115,7 +106,7 @@ describe('Webhook Race Condition Tests', () => {
         expect(matchingStripeWebhooks.length).toBe(1)
       },
       30000
-    ) // 30 second timeout for this test
+    )
 
     it.skipIf(!stripeApiKey)(
       'should handle concurrent calls with different URLs correctly',
@@ -124,7 +115,6 @@ describe('Webhook Race Condition Tests', () => {
         const urlA = `https://test-race-${timestamp}-url-a.example.com/webhooks`
         const urlB = `https://test-race-${timestamp}-url-b.example.com/webhooks`
 
-        // 5 calls for URL A, 5 calls for URL B - simultaneously
         const urlAPromises = Array(5)
           .fill(null)
           .map(() =>
@@ -145,23 +135,19 @@ describe('Webhook Race Condition Tests', () => {
 
         const results = await Promise.allSettled([...urlAPromises, ...urlBPromises])
 
-        // All should succeed
         const succeeded = results.filter((r) => r.status === 'fulfilled')
         expect(succeeded.length).toBe(10)
 
-        // Should have exactly 2 different webhook IDs (one for each URL)
         const webhookIds = succeeded.map(
           (r) => (r as PromiseFulfilledResult<Stripe.WebhookEndpoint>).value.id
         )
         const uniqueIds = new Set(webhookIds)
         expect(uniqueIds.size).toBe(2)
 
-        // Verify database state
         const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === urlA || w.url === urlB)
         expect(matchingWebhooks.length).toBe(2)
 
-        // Clean up
         for (const id of uniqueIds) {
           await stripeSync.webhook.deleteManagedWebhook(id)
         }
@@ -174,22 +160,18 @@ describe('Webhook Race Condition Tests', () => {
       async () => {
         const uniqueUrl = `https://test-race-${Date.now()}-sequential.example.com/webhooks`
 
-        // First call
         const webhook1 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook sequential',
         })
 
-        // Second call - should reuse
         const webhook2 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook sequential',
         })
 
-        // Should be the same webhook
         expect(webhook1.id).toBe(webhook2.id)
 
-        // Clean up
         await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000
@@ -202,34 +184,24 @@ describe('Webhook Race Condition Tests', () => {
       async () => {
         const uniqueUrl = `https://test-race-${Date.now()}-unique-constraint.example.com/webhooks`
 
-        // Create first webhook normally
         const webhook1 = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook 1',
         })
 
-        // Manually try to create another webhook with same URL directly
-        // This should trigger the unique constraint fallback logic
         const webhook2Promise = await stripeSync.webhook.findOrCreateManagedWebhook(uniqueUrl, {
           enabled_events: ['*'],
           description: 'Test webhook 2',
         })
 
-        // The second creation should either:
-        // 1. Succeed by detecting the duplicate and returning the existing one
-        // 2. Or fail gracefully
         const webhook2 = await webhook2Promise
 
-        // Either way, we should end up with the same webhook
-        // (If unique constraint was hit, it returns the existing one)
         expect(webhook2.id).toBeTruthy()
 
-        // Verify only one webhook exists
         const dbWebhooks = await stripeSync.webhook.listManagedWebhooks()
         const matchingWebhooks = dbWebhooks.filter((w) => w.url === uniqueUrl)
         expect(matchingWebhooks.length).toBe(1)
 
-        // Clean up
         await stripeSync.webhook.deleteManagedWebhook(webhook1.id)
       },
       15000

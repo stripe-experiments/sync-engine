@@ -1,54 +1,35 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { PostgresClient } from './postgres'
-import { runMigrations } from './migrate'
-import pg from 'pg'
+import { setupTestDatabase, type TestDatabase } from '../testSetup'
 
 describe('Observable Sync System Methods', () => {
   let postgresClient: PostgresClient
-  let pool: pg.Pool | undefined
+  let db: TestDatabase
   const testAccountId = 'acct_test_obs_123'
 
   beforeAll(async () => {
-    const databaseUrl =
-      process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:54322/postgres'
-
-    // Run migrations to ensure schema and tables exist
-    await runMigrations({ databaseUrl })
+    db = await setupTestDatabase()
 
     postgresClient = new PostgresClient({
       schema: 'stripe',
       poolConfig: {
-        connectionString: databaseUrl,
+        connectionString: db.databaseUrl,
       },
     })
-    pool = postgresClient.pool
 
-    // Ensure test account exists using the proper method
     await postgresClient.upsertAccount(
       { id: testAccountId, raw_data: { id: testAccountId, object: 'account' } },
       `test_api_key_hash_${testAccountId}`
     )
-  })
+  }, 30_000)
 
   afterAll(async () => {
-    // Clean up test data
-    if (pool) {
-      await pool.query('DELETE FROM stripe._sync_obj_runs WHERE "_account_id" = $1', [
-        testAccountId,
-      ])
-      await pool.query('DELETE FROM stripe._sync_runs WHERE "_account_id" = $1', [testAccountId])
-      await pool.end()
-    }
+    if (postgresClient) await postgresClient.pool.end()
+    if (db) await db.close()
   })
 
   beforeEach(async () => {
-    // Clean up between tests
-    if (pool) {
-      await pool.query('DELETE FROM stripe._sync_obj_runs WHERE "_account_id" = $1', [
-        testAccountId,
-      ])
-      await pool.query('DELETE FROM stripe._sync_runs WHERE "_account_id" = $1', [testAccountId])
-    }
+    await db.clearSyncData(testAccountId)
   })
 
   describe('getOrCreateSyncRun', () => {
@@ -71,12 +52,10 @@ describe('Observable Sync System Methods', () => {
     })
 
     it('should enforce single active run per account with EXCLUDE constraint', async () => {
-      // Create first run
       await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
 
-      // Try to insert directly (bypassing the check)
       await expect(
-        pool.query(
+        db.pool.query(
           `INSERT INTO stripe._sync_runs ("_account_id", triggered_by) VALUES ($1, 'test')`,
           [testAccountId]
         )
@@ -100,7 +79,6 @@ describe('Observable Sync System Methods', () => {
 
     it('should not return closed runs', async () => {
       const created = await postgresClient.getOrCreateSyncRun(testAccountId)
-      // Create and complete an object to close the run
       await postgresClient.createObjectRuns(created!.accountId, created!.runStartedAt, ['customer'])
       await postgresClient.tryStartObjectSync(created!.accountId, created!.runStartedAt, 'customer')
       await postgresClient.completeObjectSync(created!.accountId, created!.runStartedAt, 'customer')
@@ -117,8 +95,7 @@ describe('Observable Sync System Methods', () => {
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customer')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // Check derived status via view
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT status, closed_at FROM stripe.sync_runs
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
@@ -139,8 +116,7 @@ describe('Observable Sync System Methods', () => {
         'Test error'
       )
 
-      // Check derived status via view
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT status, error_message FROM stripe.sync_runs
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
@@ -158,7 +134,7 @@ describe('Observable Sync System Methods', () => {
 
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, objects)
 
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT object, status FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2
          ORDER BY object`,
@@ -178,7 +154,7 @@ describe('Observable Sync System Methods', () => {
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['customer'])
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['customer'])
 
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT COUNT(*) as count FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2 AND object = 'customer'`,
         [run!.accountId, run!.runStartedAt]
@@ -220,9 +196,7 @@ describe('Observable Sync System Methods', () => {
     })
 
     it('should respect max_concurrent limit', async () => {
-      // Create run with max_concurrent = 2
-      // Use date_trunc for JS Date compatibility
-      await pool.query(
+      await db.pool.query(
         `INSERT INTO stripe._sync_runs ("_account_id", max_concurrent, started_at)
          VALUES ($1, 2, date_trunc('milliseconds', now()))`,
         [testAccountId]
@@ -234,7 +208,6 @@ describe('Observable Sync System Methods', () => {
         'subscription',
       ])
 
-      // Start first two objects
       const r1 = await postgresClient.tryStartObjectSync(
         run!.accountId,
         run!.runStartedAt,
@@ -246,7 +219,6 @@ describe('Observable Sync System Methods', () => {
         'invoice'
       )
 
-      // Third should fail due to limit
       const r3 = await postgresClient.tryStartObjectSync(
         run!.accountId,
         run!.runStartedAt,
@@ -326,7 +298,7 @@ describe('Observable Sync System Methods', () => {
         'API error'
       )
 
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT status, error_message FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2 AND object = 'customer'`,
         [run!.accountId, run!.runStartedAt]
@@ -382,9 +354,7 @@ describe('Observable Sync System Methods', () => {
     })
 
     it('should return null when at concurrency limit', async () => {
-      // Create run with max_concurrent = 1
-      // Use date_trunc for JS Date compatibility
-      await pool.query(
+      await db.pool.query(
         `INSERT INTO stripe._sync_runs ("_account_id", max_concurrent, started_at)
          VALUES ($1, 1, date_trunc('milliseconds', now()))`,
         [testAccountId]
@@ -447,27 +417,22 @@ describe('Observable Sync System Methods', () => {
 
   describe('cancelStaleRuns', () => {
     it('should cancel runs with stale objects', async () => {
-      // Create a run
       const run = await postgresClient.getOrCreateSyncRun(testAccountId)
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['customer'])
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // Manually set updated_at to 10 minutes ago (stale)
-      // Must disable trigger first as it overwrites updated_at with now()
-      await pool.query(`ALTER TABLE stripe._sync_obj_runs DISABLE TRIGGER handle_updated_at`)
-      await pool.query(
+      await db.pool.query(`ALTER TABLE stripe._sync_obj_runs DISABLE TRIGGER handle_updated_at`)
+      await db.pool.query(
         `UPDATE stripe._sync_obj_runs
          SET updated_at = now() - interval '10 minutes'
          WHERE "_account_id" = $1`,
         [run!.accountId]
       )
-      await pool.query(`ALTER TABLE stripe._sync_obj_runs ENABLE TRIGGER handle_updated_at`)
+      await db.pool.query(`ALTER TABLE stripe._sync_obj_runs ENABLE TRIGGER handle_updated_at`)
 
-      // Call cancelStaleRuns
       await postgresClient.cancelStaleRuns(testAccountId)
 
-      // Check run is now closed and status derived as error
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT status, error_message FROM stripe.sync_runs
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
@@ -482,11 +447,9 @@ describe('Observable Sync System Methods', () => {
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['customer'])
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // Call cancelStaleRuns (should not cancel because updated_at is recent)
       await postgresClient.cancelStaleRuns(testAccountId)
 
-      // Check run is still running (not closed)
-      const result = await pool.query(
+      const result = await db.pool.query(
         `SELECT status FROM stripe.sync_runs
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
@@ -498,17 +461,14 @@ describe('Observable Sync System Methods', () => {
 
   describe('full sync workflow', () => {
     it('should complete a full sync cycle', async () => {
-      // 1. Create run
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       expect(run!.isNew).toBe(true)
 
-      // 2. Create object runs
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
         'customer',
         'invoice',
       ])
 
-      // 3. Process customers
       const started1 = await postgresClient.tryStartObjectSync(
         run!.accountId,
         run!.runStartedAt,
@@ -529,7 +489,6 @@ describe('Observable Sync System Methods', () => {
       )
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // 4. Process invoices
       const started2 = await postgresClient.tryStartObjectSync(
         run!.accountId,
         run!.runStartedAt,
@@ -539,20 +498,17 @@ describe('Observable Sync System Methods', () => {
       await postgresClient.incrementObjectProgress(run!.accountId, run!.runStartedAt, 'invoice', 50)
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'invoice')
 
-      // 5. Check all complete (run auto-closed by completeObjectSync)
       const allDone = await postgresClient.areAllObjectsComplete(run!.accountId, run!.runStartedAt)
       expect(allDone).toBe(true)
 
-      // 6. Verify final state via derived view
-      const finalRun = await pool.query(
+      const finalRun = await db.pool.query(
         `SELECT status, total_processed FROM stripe.sync_runs
          WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
       expect(finalRun.rows[0].status).toBe('complete')
-      expect(Number(finalRun.rows[0].total_processed)).toBe(150) // 100 + 50
+      expect(Number(finalRun.rows[0].total_processed)).toBe(150)
 
-      // 7. Can start a new run now
       const newRun = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       expect(newRun!.isNew).toBe(true)
     })
@@ -560,30 +516,25 @@ describe('Observable Sync System Methods', () => {
 
   describe('Sync Run Auto-Close', () => {
     it('should auto-close sync run when all objects are complete', async () => {
-      // 1. Create run with 2 objects
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
         'customer',
         'invoice',
       ])
 
-      // 2. Complete first object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customer')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // 3. Verify run still running (one object pending, not closed yet)
-      let syncRunResult = await pool.query(
+      let syncRunResult = await db.pool.query(
         `SELECT status FROM stripe.sync_runs WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
       expect(syncRunResult.rows[0].status).toBe('running')
 
-      // 4. Complete second object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'invoice')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'invoice')
 
-      // 5. Verify run is now complete (auto-closed, status derived from objects)
-      syncRunResult = await pool.query(
+      syncRunResult = await db.pool.query(
         `SELECT status FROM stripe.sync_runs WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
@@ -591,18 +542,15 @@ describe('Observable Sync System Methods', () => {
     })
 
     it('should derive error status when all objects are done but some errored', async () => {
-      // 1. Create run with 2 objects
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
         'customer',
         'invoice',
       ])
 
-      // 2. Complete first object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customer')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'customer')
 
-      // 3. Fail second object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'invoice')
       await postgresClient.failObjectSync(
         run!.accountId,
@@ -611,8 +559,7 @@ describe('Observable Sync System Methods', () => {
         'Test error'
       )
 
-      // 4. Verify status is derived as error (run auto-closed, status from objects)
-      const syncRunResult = await pool.query(
+      const syncRunResult = await db.pool.query(
         `SELECT status FROM stripe.sync_runs WHERE account_id = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
@@ -622,29 +569,24 @@ describe('Observable Sync System Methods', () => {
     it('should not auto-close when only first object completes with upfront object runs', async () => {
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
 
-      // Create all object runs upfront
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
         'customers',
         'invoices',
       ])
 
-      // Complete first object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'customers')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'customers')
 
-      // Run should stay open (second object still pending)
-      const syncRunResult = await pool.query(
+      const syncRunResult = await db.pool.query(
         `SELECT closed_at FROM stripe._sync_runs WHERE "_account_id" = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
       expect(syncRunResult.rows[0].closed_at).toBeNull()
 
-      // Complete second object
       await postgresClient.tryStartObjectSync(run!.accountId, run!.runStartedAt, 'invoices')
       await postgresClient.completeObjectSync(run!.accountId, run!.runStartedAt, 'invoices')
 
-      // Now run should close
-      const finalResult = await pool.query(
+      const finalResult = await db.pool.query(
         `SELECT closed_at FROM stripe._sync_runs WHERE "_account_id" = $1 AND started_at = $2`,
         [run!.accountId, run!.runStartedAt]
       )
@@ -654,21 +596,16 @@ describe('Observable Sync System Methods', () => {
 
   describe('Object Type vs Resource Name Consistency', () => {
     it('should store resource names (plural) not object types (singular) in _sync_obj_runs', async () => {
-      // This test prevents the footgun where object types like 'product', 'customer'
-      // are mixed up with resource names like 'products', 'customers'
-
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       expect(run).toBeTruthy()
 
-      // Create object runs with resource names (correct)
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
-        'products', // resource name (plural)
-        'customers', // resource name (plural)
-        'prices', // resource name (plural)
+        'products',
+        'customers',
+        'prices',
       ])
 
-      // Query what was actually stored
-      const result = await pool!.query(
+      const result = await db.pool.query(
         `SELECT object FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2
          ORDER BY object`,
@@ -677,69 +614,49 @@ describe('Observable Sync System Methods', () => {
 
       const storedObjects = result.rows.map((r) => r.object)
 
-      // Verify resource names (plural forms) are stored, not object types (singular)
       expect(storedObjects).toEqual(['customers', 'prices', 'products'])
 
-      // These would be WRONG (singular object types):
       expect(storedObjects).not.toContain('product')
       expect(storedObjects).not.toContain('customer')
       expect(storedObjects).not.toContain('price')
     })
 
     it('should reject object types if accidentally passed to createObjectRuns', async () => {
-      // This test verifies that if someone passes object types (singular) by mistake,
-      // it won't match what processNext expects (resource names/plural)
-
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       expect(run).toBeTruthy()
 
-      // Accidentally create with object types (WRONG)
-      await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
-        'product', // WRONG - object type (singular)
-      ])
+      await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['product'])
 
-      // Try to query with resource name (what processNext uses)
-      const resourceNameResult = await pool!.query(
+      const resourceNameResult = await db.pool.query(
         `SELECT object FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-        [run!.accountId, run!.runStartedAt, 'products'] // resource name (plural)
+        [run!.accountId, run!.runStartedAt, 'products']
       )
 
-      // Should NOT find it because we stored 'product' not 'products'
       expect(resourceNameResult.rows.length).toBe(0)
 
-      // Can only find it with the wrong singular form
-      const objectTypeResult = await pool!.query(
+      const objectTypeResult = await db.pool.query(
         `SELECT object FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2 AND object = $3`,
-        [run!.accountId, run!.runStartedAt, 'product'] // object type (singular)
+        [run!.accountId, run!.runStartedAt, 'product']
       )
 
       expect(objectTypeResult.rows.length).toBe(1)
       expect(objectTypeResult.rows[0].object).toBe('product')
-
-      // This demonstrates the footgun: if createObjectRuns gets object types instead of
-      // resource names, processNext won't find the object runs it expects
     })
 
     it('should use consistent naming between createObjectRuns calls', async () => {
-      // Ensure that multiple calls to createObjectRuns use the same naming convention
-      // (all resource names, not a mix of object types and resource names)
-
       const run = await postgresClient.getOrCreateSyncRun(testAccountId, 'test')
       expect(run).toBeTruthy()
 
-      // First call with some resource names
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, [
         'products',
         'customers',
       ])
 
-      // Second call (simulating processNext creating on-demand - though this shouldn't happen anymore)
       await postgresClient.createObjectRuns(run!.accountId, run!.runStartedAt, ['prices'])
 
-      // Query all objects
-      const result = await pool!.query(
+      const result = await db.pool.query(
         `SELECT object FROM stripe._sync_obj_runs
          WHERE "_account_id" = $1 AND run_started_at = $2
          ORDER BY object`,
@@ -748,12 +665,9 @@ describe('Observable Sync System Methods', () => {
 
       const allObjects = result.rows.map((r) => r.object)
 
-      // All should be resource names (plural)
       expect(allObjects).toEqual(['customers', 'prices', 'products'])
 
-      // Verify they all follow the same pattern (plural resource names)
       allObjects.forEach((obj) => {
-        // Resource names are plural (end with 's' or special cases)
         expect(
           obj.endsWith('s') || obj === 'tax_ids' || obj === 'early_fraud_warnings'
         ).toBeTruthy()
