@@ -1,0 +1,1 @@
+ALTER TABLE "stripe"."coupons" ADD COLUMN IF NOT EXISTS "_account_id" TEXT;
