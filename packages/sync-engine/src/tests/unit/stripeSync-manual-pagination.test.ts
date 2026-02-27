@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Stripe from 'stripe'
-import { StripeSync } from './stripeSync'
-import type { StripeSyncConfig } from './types'
+import { createMockedStripeSync, mockStripeResource } from '../testSetup'
+import type { StripeSync } from '../../stripeSync'
 
 describe('Manual Pagination with Rate Limit Handling', () => {
   let sync: StripeSync
@@ -10,42 +10,23 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers()
-    vi.spyOn(StripeSync.prototype, 'getCurrentAccount').mockResolvedValue({
-      id: 'acct_test',
-    } as Stripe.Account)
 
-    // Create minimal config
-    const config: StripeSyncConfig = {
+    sync = await createMockedStripeSync({
       stripeSecretKey: 'sk_test_123',
-      poolConfig: {
-        connectionString: 'postgresql://test',
-      },
-    }
+      poolConfig: { connectionString: 'postgresql://test' },
+    })
 
-    // Create StripeSync instance
-    sync = await StripeSync.create(config)
+    const mocks = mockStripeResource(sync, 'customers', ['list'])
+    mockCustomersList = mocks.list
 
-    // Create mock functions
-    mockCustomersList = vi.fn()
-    mockPaymentMethodsList = vi.fn()
-
-    // Inject mocks
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(sync as any).stripe = {
-      customers: {
-        list: mockCustomersList,
-      },
-      paymentMethods: {
-        list: mockPaymentMethodsList,
-      },
-    }
+    const pmMocks = mockStripeResource(sync, 'paymentMethods', ['list'])
+    mockPaymentMethodsList = pmMocks.list
   })
 
   it('should handle 429 rate limit during manual pagination and retry successfully', async () => {
-    // Mock response: first page throws 429, retry succeeds with data
     const rateLimitError = new Stripe.errors.StripeRateLimitError({
       message: 'Rate limit exceeded',
-    })
+    } as Stripe.StripeRawError)
 
     const successResponse: Stripe.ApiList<Stripe.Customer> = {
       object: 'list' as const,
@@ -56,7 +37,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
     mockCustomersList.mockRejectedValueOnce(rateLimitError).mockResolvedValueOnce(successResponse)
 
-    // Manually call the list method to test pagination
     const fetchPage = async (startingAfter?: string) => {
       return await mockCustomersList({
         limit: 100,
@@ -64,7 +44,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
       })
     }
 
-    // Simulate manual pagination loop
     const allData: Stripe.Customer[] = []
     let hasMore = true
     let startingAfter: string | undefined = undefined
@@ -79,8 +58,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
         }
       } catch (error) {
         if (error instanceof Stripe.errors.StripeRateLimitError) {
-          // In real code, withRetry() handles this
-          // Here we simulate retry by continuing the loop
           await vi.advanceTimersByTimeAsync(100)
           continue
         }
@@ -88,15 +65,13 @@ describe('Manual Pagination with Rate Limit Handling', () => {
       }
     }
 
-    // Verify we got the data after retry
     expect(allData).toHaveLength(2)
     expect(allData[0].id).toBe('cus_1')
     expect(allData[1].id).toBe('cus_2')
-    expect(mockCustomersList).toHaveBeenCalledTimes(2) // Initial + 1 retry
+    expect(mockCustomersList).toHaveBeenCalledTimes(2)
   })
 
   it('should handle 429 during payment method pagination with multiple pages', async () => {
-    // Mock response: Rate limit on page 2, then success
     const page1: Stripe.ApiList<Stripe.PaymentMethod> = {
       object: 'list' as const,
       data: [{ id: 'pm_1' }] as Stripe.PaymentMethod[],
@@ -106,7 +81,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
     const rateLimitError = new Stripe.errors.StripeRateLimitError({
       message: 'Rate limit exceeded',
-    })
+    } as Stripe.StripeRawError)
 
     const page2: Stripe.ApiList<Stripe.PaymentMethod> = {
       object: 'list' as const,
@@ -116,11 +91,10 @@ describe('Manual Pagination with Rate Limit Handling', () => {
     }
 
     mockPaymentMethodsList
-      .mockResolvedValueOnce(page1) // First page succeeds
-      .mockRejectedValueOnce(rateLimitError) // Second page hits rate limit
-      .mockResolvedValueOnce(page2) // Retry succeeds
+      .mockResolvedValueOnce(page1)
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce(page2)
 
-    // Simulate manual pagination loop
     const allData: Stripe.PaymentMethod[] = []
     let hasMore = true
     let startingAfter: string | undefined = undefined
@@ -129,7 +103,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
     while (hasMore) {
       try {
-        const response = await mockPaymentMethodsList({
+        const response: Stripe.ApiList<Stripe.PaymentMethod> = await mockPaymentMethodsList({
           limit: 100,
           customer: 'cus_123',
           ...(startingAfter ? { starting_after: startingAfter } : {}),
@@ -140,22 +114,21 @@ describe('Manual Pagination with Rate Limit Handling', () => {
         if (response.data.length > 0) {
           startingAfter = response.data[response.data.length - 1].id
         }
-        retryCount = 0 // Reset retry count on success
+        retryCount = 0
       } catch (error) {
         if (error instanceof Stripe.errors.StripeRateLimitError && retryCount < maxRetries) {
           retryCount++
           await vi.advanceTimersByTimeAsync(100 * Math.pow(2, retryCount - 1))
-          continue // Retry same page
+          continue
         }
         throw error
       }
     }
 
-    // Verify we got all data across both pages
     expect(allData).toHaveLength(2)
     expect(allData[0].id).toBe('pm_1')
     expect(allData[1].id).toBe('pm_2')
-    expect(mockPaymentMethodsList).toHaveBeenCalledTimes(3) // page1 + failed page2 + retry page2
+    expect(mockPaymentMethodsList).toHaveBeenCalledTimes(3)
   })
 
   it('should respect has_more flag and stop pagination', async () => {
@@ -169,7 +142,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
     const page2: Stripe.ApiList<Stripe.Customer> = {
       object: 'list' as const,
       data: [{ id: 'cus_2' }] as Stripe.Customer[],
-      has_more: false, // Last page
+      has_more: false,
       url: '/v1/customers',
     }
 
@@ -180,7 +153,7 @@ describe('Manual Pagination with Rate Limit Handling', () => {
     let startingAfter: string | undefined = undefined
 
     while (hasMore) {
-      const response = await mockCustomersList({
+      const response: Stripe.ApiList<Stripe.Customer> = await mockCustomersList({
         limit: 100,
         ...(startingAfter ? { starting_after: startingAfter } : {}),
       })
@@ -194,7 +167,6 @@ describe('Manual Pagination with Rate Limit Handling', () => {
 
     expect(allData).toHaveLength(2)
     expect(mockCustomersList).toHaveBeenCalledTimes(2)
-    // Verify second call used starting_after
     expect(mockCustomersList).toHaveBeenNthCalledWith(2, {
       limit: 100,
       starting_after: 'cus_1',

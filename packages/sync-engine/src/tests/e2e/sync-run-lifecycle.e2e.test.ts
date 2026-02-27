@@ -6,53 +6,39 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
-import { startPostgres, stopPostgres, getDatabaseUrl } from './helpers/test-db.js'
-import { checkEnvVars } from './helpers/stripe-client.js'
-import { buildCli } from './helpers/cli-process.js'
-import { StripeSync, getTableName } from '../index.js'
-
-const CONTAINER_NAME = 'stripe-sync-lifecycle-test'
-const DB_NAME = 'app_db'
-const PORT = 5435
+import { startPostgresContainer, checkEnvVars, type PostgresContainer } from '../testSetup'
+import { StripeSync, getTableName } from '../../index.js'
 
 describe('Sync Run Lifecycle E2E', () => {
   let pool: pg.Pool
+  let container: PostgresContainer
   let sync: StripeSync
   const cwd = process.cwd()
 
   beforeAll(async () => {
     checkEnvVars('STRIPE_API_KEY')
 
-    // Start PostgreSQL
-    pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
+    container = await startPostgresContainer()
+    pool = new pg.Pool({ connectionString: container.databaseUrl })
 
-    // Build CLI
-    buildCli(cwd)
-
-    // Run migrations
     execSync('node dist/cli/index.js migrate', {
       cwd,
-      env: { ...process.env, DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+      env: { ...process.env, DATABASE_URL: container.databaseUrl },
       stdio: 'pipe',
     })
 
-    // Create StripeSync instance
     sync = await StripeSync.create({
-      databaseUrl: getDatabaseUrl(PORT, DB_NAME),
+      databaseUrl: container.databaseUrl,
       stripeSecretKey: process.env.STRIPE_API_KEY!,
     })
   }, 60000)
 
   afterAll(async () => {
-    // Close sync pool
     await sync?.postgresClient?.pool?.end()
-
-    // Close pool and stop PostgreSQL
     await pool?.end()
-    await stopPostgres(CONTAINER_NAME)
+    await container?.stop()
   }, 30000)
 
-  /** Helper: get resource (table) names for all supported sync objects */
   function getResourceNames(): string[] {
     const objects = sync.getSupportedSyncObjects()
     return objects.map((obj) => getTableName(obj, sync.resourceRegistry))
@@ -61,14 +47,12 @@ describe('Sync Run Lifecycle E2E', () => {
   it('should create object runs upfront (prevents premature close)', async () => {
     const resourceNames = getResourceNames()
 
-    // Create sync run via postgresClient
     const runKey = await sync.postgresClient.joinOrCreateSyncRun(
       sync.accountId,
       'test',
       resourceNames
     )
 
-    // Check object runs were created upfront
     const result = await sync.postgresClient.pool.query(
       `SELECT COUNT(*) as count FROM stripe._sync_obj_runs
        WHERE "_account_id" = $1 AND run_started_at = $2`,
@@ -87,14 +71,11 @@ describe('Sync Run Lifecycle E2E', () => {
       resourceNames
     )
 
-    // Get active run via StripeSync method
     const activeRun = await sync.postgresClient.getActiveSyncRun(runKey.accountId)
     expect(activeRun).not.toBeNull()
-    // Use tolerance for timestamp comparison (database precision may differ slightly)
     const timeDiff = Math.abs(activeRun!.runStartedAt.getTime() - runKey.runStartedAt.getTime())
-    expect(timeDiff).toBeLessThanOrEqual(100) // Allow 100ms tolerance
+    expect(timeDiff).toBeLessThanOrEqual(100)
 
-    // Check view vs table
     const viewResult = await sync.postgresClient.pool.query(
       `SELECT closed_at, status, total_objects FROM stripe.sync_runs
        WHERE account_id = $1 AND started_at = $2`,
@@ -109,7 +90,6 @@ describe('Sync Run Lifecycle E2E', () => {
     const viewData = viewResult.rows[0]
     const tableData = tableResult.rows[0]
 
-    // Both should have null closed_at (run is active)
     expect(viewData.closed_at === null).toBe(tableData.closed_at === null)
   })
 
@@ -123,7 +103,6 @@ describe('Sync Run Lifecycle E2E', () => {
       resourceNames
     )
 
-    // Complete the first object directly via postgresClient
     await sync.postgresClient.tryStartObjectSync(
       runKey.accountId,
       runKey.runStartedAt,
@@ -135,7 +114,6 @@ describe('Sync Run Lifecycle E2E', () => {
       resourceNames[0]
     )
 
-    // Check state after first object
     const afterFirstResult = await sync.postgresClient.pool.query(
       `SELECT closed_at, complete_count, total_objects, pending_count FROM stripe.sync_runs
        WHERE account_id = $1 AND started_at = $2`,
@@ -148,7 +126,7 @@ describe('Sync Run Lifecycle E2E', () => {
 
     expect(completeCount).toBe(1)
     expect(totalObjects).toBe(resourceNames.length)
-    expect(afterFirst.closed_at).toBeNull() // Run should NOT close prematurely
+    expect(afterFirst.closed_at).toBeNull()
   })
 
   it('should close run properly after all objects complete', async () => {
@@ -159,13 +137,11 @@ describe('Sync Run Lifecycle E2E', () => {
       resourceNames
     )
 
-    // Complete all objects via postgresClient
     for (const obj of resourceNames) {
       await sync.postgresClient.tryStartObjectSync(runKey.accountId, runKey.runStartedAt, obj)
       await sync.postgresClient.completeObjectSync(runKey.accountId, runKey.runStartedAt, obj)
     }
 
-    // Check final state
     const finalResult = await sync.postgresClient.pool.query(
       `SELECT closed_at, status, complete_count, total_objects, pending_count FROM stripe.sync_runs
        WHERE account_id = $1 AND started_at = $2`,
@@ -181,7 +157,6 @@ describe('Sync Run Lifecycle E2E', () => {
     expect(finalCompleteCount).toBe(resourceNames.length)
     expect(finalPendingCount).toBe(0)
 
-    // Verify table is in sync
     const tableResult = await sync.postgresClient.pool.query(
       `SELECT closed_at FROM stripe._sync_runs
        WHERE "_account_id" = $1 AND started_at = $2`,
@@ -193,7 +168,6 @@ describe('Sync Run Lifecycle E2E', () => {
   it('should isolate multiple runs without interference', async () => {
     const resourceNames = getResourceNames()
 
-    // Create first run and complete it
     const runKey1 = await sync.postgresClient.joinOrCreateSyncRun(
       sync.accountId,
       'test-isolation-1',
@@ -205,17 +179,14 @@ describe('Sync Run Lifecycle E2E', () => {
       await sync.postgresClient.completeObjectSync(runKey1.accountId, runKey1.runStartedAt, obj)
     }
 
-    // Create second run
     const runKey2 = await sync.postgresClient.joinOrCreateSyncRun(
       sync.accountId,
       'test-isolation-2',
       resourceNames
     )
 
-    // Verify different timestamps
     expect(runKey2.runStartedAt.getTime()).not.toBe(runKey1.runStartedAt.getTime())
 
-    // Verify object runs created for new run
     const run2ObjectsResult = await sync.postgresClient.pool.query(
       `SELECT COUNT(*) as count FROM stripe._sync_obj_runs
        WHERE "_account_id" = $1 AND run_started_at = $2`,
@@ -223,7 +194,6 @@ describe('Sync Run Lifecycle E2E', () => {
     )
     expect(parseInt(run2ObjectsResult.rows[0].count, 10)).toBe(resourceNames.length)
 
-    // Verify first run still shows as complete
     const run1Check = await sync.postgresClient.pool.query(
       `SELECT closed_at, status FROM stripe.sync_runs
        WHERE account_id = $1 AND started_at = $2`,
@@ -232,7 +202,6 @@ describe('Sync Run Lifecycle E2E', () => {
     expect(run1Check.rows[0].closed_at).not.toBeNull()
     expect(run1Check.rows[0].status).toBe('complete')
 
-    // Both runs should be visible
     const allRunsResult = await sync.postgresClient.pool.query(
       `SELECT account_id, started_at, status FROM stripe.sync_runs
        WHERE account_id = $1

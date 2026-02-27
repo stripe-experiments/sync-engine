@@ -5,7 +5,7 @@ import {
   encodeSigmaCursor,
   type SigmaIngestionConfig,
   type SigmaCursorSpec,
-} from './sigmaIngestion'
+} from '../../sigma/sigmaIngestion'
 
 describe('sigmaIngestion helpers', () => {
   const cfg: SigmaIngestionConfig = {
