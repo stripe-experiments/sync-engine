@@ -1,4 +1,10 @@
-import { StripeSync, runMigrationsFromContent, VERSION, embeddedMigrations } from '../../index'
+import {
+  StripeSync,
+  runMigrationsFromContent,
+  VERSION,
+  embeddedMigrations,
+  parseSchemaComment,
+} from '../../index'
 import postgres from 'postgres'
 
 // Get management API base URL from environment variable (for testing against localhost/staging)
@@ -114,16 +120,27 @@ Deno.serve(async (req) => {
       `
 
       const comment = commentResult[0]?.comment || null
+
+      // Parse comment (supports both JSON and legacy plain-text format)
+      const parsedComment = parseSchemaComment(comment)
       let installationStatus = 'not_installed'
 
-      if (comment && comment.includes('stripe-sync')) {
-        // Parse installation status from comment
-        if (comment.includes('installation:started')) {
-          installationStatus = 'installing'
-        } else if (comment.includes('installation:error')) {
-          installationStatus = 'error'
-        } else if (comment.includes('installed')) {
-          installationStatus = 'installed'
+      if (parsedComment) {
+        // Map StripeSchemaComment status to response status
+        switch (parsedComment.status) {
+          case 'installing':
+            installationStatus = 'installing'
+            break
+          case 'installed':
+            installationStatus = 'installed'
+            break
+          case 'install_error':
+          case 'uninstall_error':
+            installationStatus = 'error'
+            break
+          case 'uninstalling':
+            installationStatus = 'uninstalling'
+            break
         }
       }
 
