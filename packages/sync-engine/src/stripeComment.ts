@@ -18,8 +18,8 @@ export function buildSchemaComment(comment: StripeSchemaComment): string {
 /**
  * Parse schema comment - tries JSON first, falls back to legacy plain-text parsing
  */
-export function parseSchemaComment(comment: string | null): StripeSchemaComment | null {
-  if (!comment) return null
+export function parseSchemaComment(comment: string | null | undefined): StripeSchemaComment {
+  if (!comment) return { status: 'uninstalled' }
 
   // Try parsing as JSON first
   try {
@@ -34,7 +34,7 @@ export function parseSchemaComment(comment: string | null): StripeSchemaComment 
 
   // Legacy plain-text parsing for backward compatibility
   if (!comment.includes(STRIPE_SCHEMA_COMMENT_PREFIX)) {
-    return null
+    return { status: 'uninstalled' }
   }
 
   // Extract version if present (format: "stripe-sync v1.2.3 ..." or "stripe-sync 1.2.3 ...")
@@ -62,7 +62,7 @@ export function parseSchemaComment(comment: string | null): StripeSchemaComment 
     status = 'installed'
   } else {
     // Unknown legacy format
-    return null
+    return { status: 'uninstalled' }
   }
 
   return { status, version, errorMessage }
