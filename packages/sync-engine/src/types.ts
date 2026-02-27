@@ -11,31 +11,6 @@ export interface Logger {
   error(message?: unknown, ...optionalParams: unknown[]): void
 }
 
-/**
- * Installation status for the Supabase schema comment
- */
-export type SchemaInstallationStatus =
-  | 'installing'
-  | 'installed'
-  | 'install_error'
-  | 'uninstalling'
-  | 'uninstalled'
-  | 'uninstall_error'
-
-/**
- * Comment structure stored in stripe schema as JSON
- */
-export interface StripeSchemaComment {
-  /** The installation status */
-  status: SchemaInstallationStatus
-
-  /** The sync engine package version from the schema comment (e.g., '1.2.3') */
-  version?: string
-
-  /** Error message if status is install_error or uninstall_error */
-  errorMessage?: string
-}
-
 export type RevalidateEntity =
   | 'charge'
   | 'credit_note'
