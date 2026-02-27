@@ -388,7 +388,7 @@ export class SupabaseSetupClient {
       const parsedComment = parseSchemaComment(comment)
 
       // If schema + migrations table exist but no valid comment, throw error (legacy installation)
-      if (!parsedComment) {
+      if (parsedComment.status === 'uninstalled') {
         throw new Error(
           `Legacy installation detected: Schema '${schema}' and migrations table exist, but missing stripe-sync comment marker. ` +
             `This may be a legacy installation or manually created schema. ` +
