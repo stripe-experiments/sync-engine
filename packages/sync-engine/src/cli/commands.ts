@@ -119,6 +119,7 @@ const VALID_SYNC_OBJECTS: SyncObject[] = [
   'invoice',
   'price',
   'product',
+  'coupon',
   'subscription',
   'subscription_schedules',
   'setup_intent',
