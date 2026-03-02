@@ -1,34 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { StripeSync } from './stripeSync'
+import { describe, it, expect, vi } from 'vitest'
 import type Stripe from 'stripe'
+import { createMockedStripeSync } from '../testSetup'
 
 /**
  * Unit tests for invoice.upcoming handling.
  *
- * Verifies that:
- * 1. invoice.upcoming is not in the supported event types (removed from handler registry)
- * 2. Events whose data.object lacks an id are skipped gracefully (defensive guard)
- * 3. No database write is attempted for id-less events
+ * invoice.upcoming IS a supported event type (so the webhook endpoint receives it),
+ * but processWebhook skips events whose data.object lacks an id — these are
+ * preview/draft objects that cannot be persisted (NOT NULL constraint on id).
  */
 
 describe('invoice.upcoming handling', () => {
-  let stripeSync: StripeSync
-
-  beforeEach(() => {
-    stripeSync = new StripeSync({
-      stripeSecretKey: 'sk_test_fake',
-      databaseUrl: 'postgresql://localhost:5432/fake_db',
-      poolConfig: {},
-    })
+  it('should include invoice.upcoming in supported event types so the webhook receives it', async () => {
+    const stripeSync = await createMockedStripeSync()
+    const supportedEvents = stripeSync.webhook.getSupportedEventTypes()
+    expect(supportedEvents).toContain('invoice.upcoming')
   })
 
-  it('should not include invoice.upcoming in supported event types', () => {
-    const supportedEvents = stripeSync.getSupportedEventTypes()
-    expect(supportedEvents).not.toContain('invoice.upcoming')
-  })
-
-  it('should include other invoice events in supported event types', () => {
-    const supportedEvents = stripeSync.getSupportedEventTypes()
+  it('should include other invoice events in supported event types', async () => {
+    const stripeSync = await createMockedStripeSync()
+    const supportedEvents = stripeSync.webhook.getSupportedEventTypes()
     expect(supportedEvents).toContain('invoice.created')
     expect(supportedEvents).toContain('invoice.paid')
     expect(supportedEvents).toContain('invoice.finalized')
@@ -42,25 +33,15 @@ describe('invoice.upcoming handling', () => {
       error: vi.fn(),
     }
 
-    stripeSync = new StripeSync({
-      stripeSecretKey: 'sk_test_fake',
-      databaseUrl: 'postgresql://localhost:5432/fake_db',
-      poolConfig: {},
-      logger,
-    })
+    const stripeSync = await createMockedStripeSync({ logger })
 
-    // Mock getAccountId and getCurrentAccount to avoid real Stripe/DB calls
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(stripeSync as any).getAccountId = vi.fn().mockResolvedValue('acct_test')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(stripeSync as any).getCurrentAccount = vi.fn().mockResolvedValue({ id: 'acct_test' })
 
-    // Spy on upsertInvoices to verify it's never called
     const upsertSpy = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(stripeSync as any).upsertInvoices = upsertSpy
 
-    // Simulate an invoice.upcoming event (no id on data.object)
     const event = {
       id: 'evt_test_upcoming',
       type: 'invoice.upcoming',
@@ -77,13 +58,10 @@ describe('invoice.upcoming handling', () => {
       created: Math.floor(Date.now() / 1000),
     } as unknown as Stripe.Event
 
-    // processEvent should complete without error
     await expect(stripeSync.processEvent(event)).resolves.toBeUndefined()
 
-    // Verify upsertInvoices was never called
     expect(upsertSpy).not.toHaveBeenCalled()
 
-    // Verify the skip was logged
     expect(logger.info).toHaveBeenCalledWith(
       expect.stringContaining('Skipping webhook evt_test_upcoming')
     )
@@ -96,19 +74,11 @@ describe('invoice.upcoming handling', () => {
       error: vi.fn(),
     }
 
-    stripeSync = new StripeSync({
-      stripeSecretKey: 'sk_test_fake',
-      databaseUrl: 'postgresql://localhost:5432/fake_db',
-      poolConfig: {},
-      logger,
-    })
+    const stripeSync = await createMockedStripeSync({ logger })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(stripeSync as any).getAccountId = vi.fn().mockResolvedValue('acct_test')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(stripeSync as any).getCurrentAccount = vi.fn().mockResolvedValue({ id: 'acct_test' })
 
-    // Mock the handler to verify it IS called for normal invoice events
     const handlerSpy = vi.fn().mockResolvedValue(undefined)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(stripeSync as any).eventHandlers['invoice.paid'] = handlerSpy
@@ -131,7 +101,6 @@ describe('invoice.upcoming handling', () => {
 
     await expect(stripeSync.processEvent(event)).resolves.toBeUndefined()
 
-    // The handler should have been called for a normal invoice with an id
     expect(handlerSpy).toHaveBeenCalledWith(event, 'acct_test')
   })
 })
