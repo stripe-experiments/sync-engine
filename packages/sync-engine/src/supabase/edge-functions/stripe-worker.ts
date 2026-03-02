@@ -8,7 +8,8 @@
  * Concurrency:
  */
 
-import { StripeSync, StripeSyncWorker } from '../../index'
+import { StripeSync } from '../../stripeSync.ts'
+import { StripeSyncWorker } from '../../stripeSyncWorker.ts'
 import postgres from 'postgres'
 
 // Reuse these between requests
@@ -17,7 +18,7 @@ const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7 
 const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 60
 const workerCount = Number(Deno.env.get('WORKER_COUNT')) || 10
 
-const sql = postgres(dbUrl, { max: 1, prepare: false })
+const sql = dbUrl ? postgres(dbUrl, { max: 1, prepare: false }) : undefined
 const stripeSync = await StripeSync.create({
   poolConfig: { connectionString: dbUrl, max: 1 },
   stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
@@ -25,7 +26,9 @@ const stripeSync = await StripeSync.create({
   partnerId: 'pp_supabase',
 })
 const objects = stripeSync.getSupportedSyncObjects()
-const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
+const tableNames = objects.map(
+  (obj: keyof typeof stripeSync.resourceRegistry) => stripeSync.resourceRegistry[obj].tableName
+)
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
@@ -34,6 +37,10 @@ Deno.serve(async (req) => {
   }
 
   const token = authHeader.substring(7) // Remove 'Bearer '
+
+  if (!sql) {
+    return new Response('SUPABASE_DB_URL secret not configured', { status: 500 })
+  }
 
   // Validate that the token matches the unique worker secret stored in vault
   const vaultResult = await sql`
@@ -113,7 +120,10 @@ Deno.serve(async (req) => {
     stripeSync.accountId,
     runKey.runStartedAt
   )
-  const totalSynced = Object.values(totals).reduce((sum, n) => sum + n, 0)
+  const totalSynced = (Object.values(totals) as number[]).reduce(
+    (sum: number, n: number) => sum + n,
+    0
+  )
   console.log(`Finished: ${totalSynced} objects synced`, totals)
 
   return new Response(JSON.stringify({ totals }), {

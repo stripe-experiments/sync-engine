@@ -6,13 +6,7 @@ import {
   sigmaWorkerFunctionCode,
 } from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
-
-export const STRIPE_SCHEMA_COMMENT_PREFIX = 'stripe-sync'
-export const INSTALLATION_STARTED_SUFFIX = 'installation:started'
-export const INSTALLATION_ERROR_SUFFIX = 'installation:error'
-export const INSTALLATION_INSTALLED_SUFFIX = 'installed'
-export const UNINSTALLATION_STARTED_SUFFIX = 'uninstallation:started'
-export const UNINSTALLATION_ERROR_SUFFIX = 'uninstallation:error'
+import { parseSchemaComment, buildSchemaComment } from './schemaComment'
 
 export interface DeployClientOptions {
   accessToken: string
@@ -389,10 +383,13 @@ export class SupabaseSetupClient {
          WHERE nspname = '${schema}'`
       )) as { rows?: { comment: string | null }[] }[]
 
-      const comment = commentCheck[0]?.rows?.[0]?.comment
+      const comment = commentCheck[0]?.rows?.[0]?.comment ?? null
 
-      // If schema + migrations table exist but no comment, throw error (legacy installation)
-      if (!comment || !comment.includes(STRIPE_SCHEMA_COMMENT_PREFIX)) {
+      // Parse the comment
+      const parsedComment = parseSchemaComment(comment)
+
+      // If schema + migrations table exist but no valid comment, throw error (legacy installation)
+      if (parsedComment.status === 'uninstalled') {
         throw new Error(
           `Legacy installation detected: Schema '${schema}' and migrations table exist, but missing stripe-sync comment marker. ` +
             `This may be a legacy installation or manually created schema. ` +
@@ -401,29 +398,28 @@ export class SupabaseSetupClient {
       }
 
       // Check for uninstallation in progress
-      // NOTE: Check uninstallation before installation since "uninstallation:*" contains "installation:*"
-      if (comment.includes(UNINSTALLATION_STARTED_SUFFIX)) {
+      if (parsedComment.status === 'uninstalling') {
         return false
       }
 
       // Check for failed uninstallation (requires manual intervention)
-      if (comment.includes(UNINSTALLATION_ERROR_SUFFIX)) {
+      if (parsedComment.status === 'uninstall_error') {
         throw new Error(
           `Uninstallation failed: Schema '${schema}' exists but uninstallation encountered an error. ` +
-            `Comment: ${comment}. Manual cleanup may be required.`
+            `${parsedComment.errorMessage ? `Error: ${parsedComment.errorMessage}` : ''}. Manual cleanup may be required.`
         )
       }
 
       // Check for incomplete installation (can retry)
-      if (comment.includes(INSTALLATION_STARTED_SUFFIX)) {
+      if (parsedComment.status === 'installing') {
         return false
       }
 
       // Check for failed installation (requires manual intervention)
-      if (comment.includes(INSTALLATION_ERROR_SUFFIX)) {
+      if (parsedComment.status === 'install_error') {
         throw new Error(
           `Installation failed: Schema '${schema}' exists but installation encountered an error. ` +
-            `Comment: ${comment}. Please uninstall and install again.`
+            `${parsedComment.errorMessage ? `Error: ${parsedComment.errorMessage}` : ''}. Please uninstall and install again.`
         )
       }
 
@@ -464,7 +460,7 @@ export class SupabaseSetupClient {
       const hasSchema = await this.schemaExists('stripe')
       if (hasSchema) {
         await this.updateInstallationComment(
-          `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${UNINSTALLATION_STARTED_SUFFIX}`
+          buildSchemaComment({ status: 'uninstalling', version: pkg.version })
         )
       }
 
@@ -482,9 +478,11 @@ export class SupabaseSetupClient {
         const hasSchema = await this.schemaExists('stripe')
         if (hasSchema) {
           await this.updateInstallationComment(
-            `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${UNINSTALLATION_ERROR_SUFFIX} - ${
-              error instanceof Error ? error.message : String(error)
-            }`
+            buildSchemaComment({
+              status: 'uninstall_error',
+              version: pkg.version,
+              errorMessage: error instanceof Error ? error.message : String(error),
+            })
           )
         }
       } catch (error) {
@@ -521,7 +519,7 @@ export class SupabaseSetupClient {
 
       // Signal installation started
       await this.updateInstallationComment(
-        `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_STARTED_SUFFIX}`
+        buildSchemaComment({ status: 'installing', version: pkg.version })
       )
 
       // Set secrets first -- stripe-setup needs STRIPE_SECRET_KEY to run
@@ -577,14 +575,16 @@ export class SupabaseSetupClient {
 
       // Set final version comment
       await this.updateInstallationComment(
-        `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_INSTALLED_SUFFIX}`
+        buildSchemaComment({ status: 'installed', version: pkg.version })
       )
     } catch (error) {
       try {
         await this.updateInstallationComment(
-          `${STRIPE_SCHEMA_COMMENT_PREFIX} v${pkg.version} ${INSTALLATION_ERROR_SUFFIX} - ${
-            error instanceof Error ? error.message : String(error)
-          }`
+          buildSchemaComment({
+            status: 'install_error',
+            version: pkg.version,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          })
         )
       } catch {
         // Schema may not exist if early steps failed -- don't mask the original error
