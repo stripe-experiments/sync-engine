@@ -1,4 +1,4 @@
-import { StripeSync } from '../../index'
+import { StripeSync } from '../../stripeSync'
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {

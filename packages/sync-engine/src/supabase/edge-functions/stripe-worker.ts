@@ -8,7 +8,8 @@
  * Concurrency:
  */
 
-import { StripeSync, StripeSyncWorker } from '../../index'
+import { StripeSync } from '../../stripeSync'
+import { StripeSyncWorker } from '../../stripeSyncWorker'
 import postgres from 'postgres'
 
 // Reuse these between requests

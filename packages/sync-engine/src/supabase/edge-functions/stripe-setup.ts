@@ -1,10 +1,8 @@
-import {
-  StripeSync,
-  runMigrationsFromContent,
-  VERSION,
-  embeddedMigrations,
-  parseSchemaComment,
-} from '../../index'
+import { StripeSync } from '../../stripeSync'
+import { runMigrationsFromContent } from '../../database/migrate'
+import { VERSION } from '../../version'
+import { embeddedMigrations } from '../../database/migrations-embedded'
+import { parseSchemaComment } from '../schemaComment'
 import postgres from 'postgres'
 
 // Get management API base URL from environment variable (for testing against localhost/staging)
