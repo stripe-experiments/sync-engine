@@ -8,11 +8,11 @@
  * Concurrency:
  */
 
-import { StripeSync, StripeSyncWorker } from '../../index'
+import { StripeSync, StripeSyncWorker } from '../../index.ts'
 import postgres from 'postgres'
 
 // Reuse these between requests
-const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+const dbUrl = Deno.env.get('SUPABASE_DB_URL')!
 const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7 // Once a week default
 const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 60
 const workerCount = Number(Deno.env.get('WORKER_COUNT')) || 10
@@ -25,7 +25,9 @@ const stripeSync = await StripeSync.create({
   partnerId: 'pp_supabase',
 })
 const objects = stripeSync.getSupportedSyncObjects()
-const tableNames = objects.map((obj) => stripeSync.resourceRegistry[obj].tableName)
+const tableNames = objects.map(
+  (obj: keyof typeof stripeSync.resourceRegistry) => stripeSync.resourceRegistry[obj].tableName
+)
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization')
@@ -113,7 +115,10 @@ Deno.serve(async (req) => {
     stripeSync.accountId,
     runKey.runStartedAt
   )
-  const totalSynced = Object.values(totals).reduce((sum, n) => sum + n, 0)
+  const totalSynced = (Object.values(totals) as number[]).reduce(
+    (sum: number, n: number) => sum + n,
+    0
+  )
   console.log(`Finished: ${totalSynced} objects synced`, totals)
 
   return new Response(JSON.stringify({ totals }), {
