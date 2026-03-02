@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { SupabaseSetupClient } from './supabase'
+import { SupabaseSetupClient } from '../../supabase/supabase'
 
 describe('SupabaseDeployClient', () => {
   const mockAccessToken = 'test-access-token'

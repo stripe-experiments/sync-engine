@@ -1,5 +1,6 @@
 import { SupabaseManagementAPI } from 'supabase-management-js'
 import {
+  setupFunctionCode,
   webhookFunctionCode,
   workerFunctionCode,
   sigmaWorkerFunctionCode,
@@ -628,6 +629,9 @@ export class SupabaseSetupClient {
         secrets.push({ name: 'SYNC_INTERVAL', value: String(syncIntervalSeconds) })
       }
       await this.setSecrets(secrets)
+
+      const versionedSetup = this.injectPackageVersion(setupFunctionCode, version)
+      await this.deployFunction('stripe-setup', versionedSetup, false)
 
       // Run setup (migrations + webhook creation)
       // Use accessToken for Management API validation

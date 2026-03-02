@@ -4,6 +4,7 @@
  */
 import { spawn, execSync, ChildProcess } from 'child_process'
 import * as fs from 'fs'
+import { waitFor, sleep } from '../../testSetup'
 
 export class CliProcess {
   private process: ChildProcess | null = null
@@ -28,19 +29,15 @@ export class CliProcess {
     this.process.stdout?.pipe(logStream)
     this.process.stderr?.pipe(logStream)
 
-    // Wait for startup
-    await sleep(15000)
-
-    if (!this.isRunning()) {
-      const logs = this.getLogs()
-      throw new Error(`CLI failed to start. Logs:\n${logs}`)
-    }
+    await waitFor(() => this.isRunning() && this.getLogs().length > 0, 30000, {
+      intervalMs: 1000,
+      message: `CLI failed to start. Logs:\n${this.getLogs()}`,
+    })
   }
 
   isRunning(): boolean {
     if (!this.process) return false
     try {
-      // Check if process is still alive
       process.kill(this.process.pid!, 0)
       return true
     } catch {
@@ -51,7 +48,6 @@ export class CliProcess {
   async stop(): Promise<void> {
     if (this.process && this.isRunning()) {
       this.process.kill('SIGTERM')
-      // Wait for cleanup
       await sleep(2000)
     }
     this.process = null
@@ -95,8 +91,4 @@ export function runCliCommand(
 
 export function buildCli(cwd: string): void {
   execSync('npm run build', { cwd, stdio: 'pipe' })
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

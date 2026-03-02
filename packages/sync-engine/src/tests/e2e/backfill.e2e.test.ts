@@ -6,27 +6,24 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execSync } from 'child_process'
 import pg from 'pg'
 import {
-  startPostgres,
-  stopPostgres,
+  startPostgresContainer,
   queryDbCount,
   queryDbSingle,
-  getDatabaseUrl,
-} from './helpers/test-db.js'
-import { getStripeClient, checkEnvVars } from './helpers/stripe-client.js'
+  getStripeClient,
+  checkEnvVars,
+  sleep,
+  type PostgresContainer,
+} from '../testSetup'
 import { ResourceTracker } from './helpers/cleanup.js'
-import { buildCli, runCliCommand } from './helpers/cli-process.js'
-
-const CONTAINER_NAME = 'stripe-sync-test-backfill'
-const DB_NAME = 'app_db'
-const PORT = 5434
+import { runCliCommand } from './helpers/cli-process.js'
 
 describe('Backfill E2E', () => {
   let pool: pg.Pool
+  let container: PostgresContainer
   const tracker = new ResourceTracker()
   const cwd = process.cwd()
   let stripe: ReturnType<typeof getStripeClient>
 
-  // Store created resource IDs
   const customerIds: string[] = []
   const productIds: string[] = []
   const priceIds: string[] = []
@@ -35,95 +32,92 @@ describe('Backfill E2E', () => {
     checkEnvVars('STRIPE_API_KEY')
     stripe = getStripeClient()
 
-    // Start PostgreSQL
-    pool = await startPostgres({ containerName: CONTAINER_NAME, dbName: DB_NAME, port: PORT })
+    container = await startPostgresContainer()
+    pool = new pg.Pool({ connectionString: container.databaseUrl })
 
-    // Build CLI
-    buildCli(cwd)
-
-    // Run migrations
     execSync('node dist/cli/index.js migrate', {
       cwd,
-      env: { ...process.env, DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+      env: { ...process.env, DATABASE_URL: container.databaseUrl },
       stdio: 'pipe',
     })
 
-    // Create test data in Stripe
-    // Create 3 customers
-    for (let i = 1; i <= 3; i++) {
-      const customer = await stripe.customers.create({
-        email: `test-backfill-${i}@example.com`,
-        name: `Test Customer ${i}`,
-        description: `Integration test customer ${i}`,
-      })
-      customerIds.push(customer.id)
-      tracker.trackCustomer(customer.id)
+    const [customers, products] = await Promise.all([
+      Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          stripe.customers.create({
+            email: `test-backfill-${i + 1}@example.com`,
+            name: `Test Customer ${i + 1}`,
+            description: `Integration test customer ${i + 1}`,
+          })
+        )
+      ),
+      Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          stripe.products.create({
+            name: `Test Product ${i + 1} - Backfill`,
+            description: `Integration test product ${i + 1}`,
+          })
+        )
+      ),
+    ])
+
+    for (const c of customers) {
+      customerIds.push(c.id)
+      tracker.trackCustomer(c.id)
+    }
+    for (const p of products) {
+      productIds.push(p.id)
+      tracker.trackProduct(p.id)
     }
 
-    // Create 3 products
-    for (let i = 1; i <= 3; i++) {
-      const product = await stripe.products.create({
-        name: `Test Product ${i} - Backfill`,
-        description: `Integration test product ${i}`,
+    const prices = await Promise.all(
+      productIds.map((pid, i) => {
+        const params: {
+          product: string
+          unit_amount: number
+          currency: string
+          nickname: string
+          recurring?: { interval: 'month' | 'year' | 'week' | 'day' }
+        } = {
+          product: pid,
+          unit_amount: (i + 1) * 1000,
+          currency: 'usd',
+          nickname: `Test Price ${i + 1}`,
+        }
+        if (i === 2) params.recurring = { interval: 'month' }
+        return stripe.prices.create(params)
       })
-      productIds.push(product.id)
-      tracker.trackProduct(product.id)
-    }
-
-    // Create 3 prices
-    for (let i = 0; i < 3; i++) {
-      const priceParams: {
-        product: string
-        unit_amount: number
-        currency: string
-        nickname: string
-        recurring?: { interval: 'month' | 'year' | 'week' | 'day' }
-      } = {
-        product: productIds[i],
-        unit_amount: (i + 1) * 1000,
-        currency: 'usd',
-        nickname: `Test Price ${i + 1}`,
-      }
-      if (i === 2) {
-        priceParams.recurring = { interval: 'month' }
-      }
-      const price = await stripe.prices.create(priceParams)
+    )
+    for (const price of prices) {
       priceIds.push(price.id)
       tracker.trackPrice(price.id)
     }
   }, 120000)
 
   afterAll(async () => {
-    // Cleanup Stripe resources
     await tracker.cleanup(stripe)
-
-    // Close pool and stop PostgreSQL
     await pool?.end()
-    await stopPostgres(CONTAINER_NAME)
+    await container?.stop()
   }, 30000)
 
   it('should backfill all data from Stripe', async () => {
-    // Run backfill all
     runCliCommand('backfill', ['all'], {
       cwd,
-      env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+      env: { DATABASE_URL: container.databaseUrl },
     })
 
-    // Verify customers
     const customerCount = await queryDbCount(
       pool,
       "SELECT COUNT(*) FROM stripe.customers WHERE email LIKE 'test-backfill-%'"
     )
     expect(customerCount).toBeGreaterThanOrEqual(3)
 
-    // Verify products
     const productCount = await queryDbCount(
       pool,
       "SELECT COUNT(*) FROM stripe.products WHERE name LIKE '%Backfill%'"
     )
     expect(productCount).toBeGreaterThanOrEqual(3)
 
-    // Verify prices
     const priceCount = await queryDbCount(
       pool,
       "SELECT COUNT(*) FROM stripe.prices WHERE nickname LIKE 'Test Price%'"
@@ -132,7 +126,6 @@ describe('Backfill E2E', () => {
   }, 120000)
 
   it('should save sync cursor after backfill', async () => {
-    // Get account ID from synced data
     const accountRow = await queryDbSingle<{ _account_id: string }>(
       pool,
       'SELECT DISTINCT _account_id FROM stripe.products LIMIT 1'
@@ -140,7 +133,6 @@ describe('Backfill E2E', () => {
     expect(accountRow).not.toBeNull()
     const accountId = accountRow!._account_id
 
-    // Check cursor was saved
     const cursorRow = await queryDbSingle<{ cursor: string }>(
       pool,
       `SELECT cursor FROM stripe._sync_obj_runs o
@@ -170,7 +162,6 @@ describe('Backfill E2E', () => {
   })
 
   it('should perform incremental sync on subsequent backfill', async () => {
-    // Create new product after first backfill
     const newProduct = await stripe.products.create({
       name: 'Test Product 4 - Incremental',
       description: 'Integration test product 4 - created after first backfill',
@@ -178,23 +169,19 @@ describe('Backfill E2E', () => {
     productIds.push(newProduct.id)
     tracker.trackProduct(newProduct.id)
 
-    // Wait to ensure different timestamps
     await sleep(2000)
 
-    // Run incremental backfill
     runCliCommand('backfill', ['product'], {
       cwd,
-      env: { DATABASE_URL: getDatabaseUrl(PORT, DB_NAME) },
+      env: { DATABASE_URL: container.databaseUrl },
     })
 
-    // Verify new product was synced
     const newProductInDb = await queryDbCount(
       pool,
       `SELECT COUNT(*) FROM stripe.products WHERE id = '${newProduct.id}'`
     )
     expect(newProductInDb).toBe(1)
 
-    // Verify all test products exist
     const totalProducts = await queryDbCount(
       pool,
       `SELECT COUNT(*) FROM stripe.products WHERE id IN (${productIds.map((id) => `'${id}'`).join(',')})`
@@ -202,7 +189,3 @@ describe('Backfill E2E', () => {
     expect(totalProducts).toBe(productIds.length)
   }, 60000)
 })
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
