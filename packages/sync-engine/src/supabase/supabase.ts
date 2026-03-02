@@ -7,7 +7,6 @@ import {
 } from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
 import { parseSchemaComment, buildSchemaComment } from './schemaComment'
-import type { StripeSchemaComment, SchemaInstallationStatus } from './schemaComment'
 
 export interface DeployClientOptions {
   accessToken: string
