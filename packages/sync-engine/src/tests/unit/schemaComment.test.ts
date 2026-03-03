@@ -7,8 +7,8 @@ describe('parseSchemaComment', () => {
       const result = parseSchemaComment('stripe-sync v1.0.19 installed')
       expect(result).toEqual({
         status: 'installed',
-        oldVersion: '1.0.19',
-        newVersion: undefined,
+        oldVersion: undefined,
+        newVersion: '1.0.19',
         errorMessage: undefined,
       })
     })
@@ -39,8 +39,8 @@ describe('parseSchemaComment', () => {
       const result = parseSchemaComment('stripe-sync v1.2.3 uninstallation:started')
       expect(result).toEqual({
         status: 'uninstalling',
-        oldVersion: '1.2.3',
-        newVersion: undefined,
+        oldVersion: undefined,
+        newVersion: '1.2.3',
         errorMessage: undefined,
       })
     })
@@ -49,8 +49,8 @@ describe('parseSchemaComment', () => {
       const result = parseSchemaComment('stripe-sync v1.2.3 uninstallation:error - Cleanup failed')
       expect(result).toEqual({
         status: 'uninstall_error',
-        oldVersion: '1.2.3',
-        newVersion: undefined,
+        oldVersion: undefined,
+        newVersion: '1.2.3',
         errorMessage: 'Cleanup failed',
       })
     })
