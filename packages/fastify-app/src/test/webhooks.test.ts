@@ -363,10 +363,12 @@ describe('POST /webhooks', () => {
     const createStripeSyncSpy = vitest
       .spyOn(server, 'createStripeSyncForHost')
       .mockImplementation(() => {
-        return {
-          processWebhook: processWebhookSpy,
+        return Promise.resolve({
+          webhook: {
+            processWebhook: processWebhookSpy,
+          },
           close: closeSpy,
-        } as unknown as StripeSync
+        } as unknown as StripeSync)
       })
 
     const primarySignature = createHmac('sha256', primaryWebhookSecret)

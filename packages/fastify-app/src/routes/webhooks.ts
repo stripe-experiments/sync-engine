@@ -19,7 +19,7 @@ export default async function routes(fastify: FastifyInstance) {
         logger.warn({ requestHost }, 'Unknown merchant host for webhook request')
         return reply.code(404).send('Merchant not found')
       }
-      const stripeSync = fastify.createStripeSyncForHost(merchantRuntime.host)
+      const stripeSync = await fastify.createStripeSyncForHost(merchantRuntime.host)
       if (!stripeSync) {
         logger.warn({ requestHost }, 'Merchant config missing for webhook request host')
         return reply.code(404).send('Merchant not found')
@@ -34,7 +34,7 @@ export default async function routes(fastify: FastifyInstance) {
       }
 
       try {
-        await stripeSync.processWebhook(body.raw, signature)
+        await stripeSync.webhook.processWebhook(body.raw, signature)
       } catch (error) {
         logger.error({ err: error, requestHost: merchantRuntime.host }, 'Webhook processing error')
         return reply

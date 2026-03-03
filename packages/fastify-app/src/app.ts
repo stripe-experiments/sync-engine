@@ -28,7 +28,7 @@ export async function createServer(opts: buildOpts = {}): Promise<FastifyInstanc
       config: merchantConfig,
     }
   })
-  app.decorate('createStripeSyncForHost', (host: string) => {
+  app.decorate('createStripeSyncForHost', async (host: string) => {
     const merchantRuntime = app.resolveMerchantByHost(host)
     if (!merchantRuntime) return undefined
 
@@ -39,7 +39,7 @@ export async function createServer(opts: buildOpts = {}): Promise<FastifyInstanc
       ssl: config.sslConnectionOptions,
     }
 
-    return new StripeSync({
+    return StripeSync.create({
       ...merchantRuntime.config,
       stripeApiVersion: config.stripeApiVersion,
       revalidateObjectsViaStripeApi: config.revalidateObjectsViaStripeApi,
