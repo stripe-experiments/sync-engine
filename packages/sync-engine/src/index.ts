@@ -13,7 +13,6 @@ export type { EmbeddedMigration } from './database/migrations-embedded'
 export { hashApiKey } from './utils/hashApiKey'
 export {
   parseSchemaComment,
-  buildSchemaComment,
   type StripeSchemaComment,
   type SchemaInstallationStatus,
 } from './supabase/schemaComment'

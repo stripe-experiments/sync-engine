@@ -39,13 +39,6 @@ export interface StripeSchemaComment {
 }
 
 /**
- * Build a JSON comment string from StripeSchemaComment interface
- */
-export function buildSchemaComment(comment: StripeSchemaComment): string {
-  return JSON.stringify(comment)
-}
-
-/**
  * Parse schema comment - tries JSON first, falls back to legacy plain-text parsing
  */
 export function parseSchemaComment(comment: string | null | undefined): StripeSchemaComment {

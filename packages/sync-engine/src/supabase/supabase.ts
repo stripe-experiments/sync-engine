@@ -6,12 +6,7 @@ import {
   sigmaWorkerFunctionCode,
 } from './edge-function-code'
 import pkg from '../../package.json' with { type: 'json' }
-import {
-  parseSchemaComment,
-  buildSchemaComment,
-  SchemaInstallationStatus,
-  StripeSchemaComment,
-} from './schemaComment'
+import { parseSchemaComment, SchemaInstallationStatus, StripeSchemaComment } from './schemaComment'
 
 export interface DeployClientOptions {
   accessToken: string
@@ -463,7 +458,7 @@ export class SupabaseSetupClient {
     oldVersion?: string,
     errorMessage?: string
   ): Promise<void> {
-    const comment = buildSchemaComment({
+    const comment = JSON.stringify({
       status,
       newVersion: pkg.version,
       oldVersion,
