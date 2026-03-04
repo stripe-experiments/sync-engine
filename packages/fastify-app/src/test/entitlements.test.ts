@@ -19,19 +19,20 @@ beforeAll(async () => {
     logger,
   })
 
-  stripeSync = new StripeSync(config)
+  stripeSync = await StripeSync.create({ ...config, stripeAccountId: 'acct_test_account' })
   const stripe = Object.assign(stripeSync.stripe, mockStripe)
   vitest.spyOn(stripeSync, 'stripe', 'get').mockReturnValue(stripe)
+
+  const accountId = await stripeSync.getAccountId()
+  await stripeSync.postgresClient.upsertAccount(
+    { id: accountId, raw_data: { id: accountId } },
+    'test_hash'
+  )
 })
 
 afterAll(async () => {
   if (stripeSync) {
-    await Promise.all([
-      stripeSync.postgresClient.query(
-        `delete from stripe.active_entitlements where customer = '${customerId}'`
-      ),
-      stripeSync.postgresClient.query(`delete from stripe.customers where id = '${customerId}'`),
-    ])
+    await stripeSync.postgresClient.pool.end()
   }
 })
 
@@ -46,7 +47,7 @@ describe('entitlements', () => {
         name: 'Test Customer 1',
       } as Stripe.Customer,
     ]
-    await stripeSync.upsertCustomers(customer, accountId)
+    await stripeSync.upsertAny(customer, accountId)
 
     const activeEntitlements = [
       {

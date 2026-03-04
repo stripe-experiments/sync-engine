@@ -25,7 +25,7 @@ export async function createServer(opts: buildOpts = {}): Promise<FastifyInstanc
     ssl: config.sslConnectionOptions,
   }
 
-  const stripeSync = new StripeSync({ ...config, logger, poolConfig })
+  const stripeSync = await StripeSync.create({ ...config, logger, poolConfig })
 
   app.decorate('stripeSync', stripeSync)
 
