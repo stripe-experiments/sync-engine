@@ -12,10 +12,10 @@ export const UNINSTALLATION_ERROR_SUFFIX = 'uninstallation:error'
 export type SchemaInstallationStatus =
   | 'installing'
   | 'installed'
-  | 'install_error'
+  | 'install error'
   | 'uninstalling'
   | 'uninstalled'
-  | 'uninstall_error'
+  | 'uninstall error'
 
 /**
  * Comment structure stored in stripe schema as JSON
@@ -34,7 +34,7 @@ export interface StripeSchemaComment {
    */
   newVersion?: string
 
-  /** Error message if status is install_error or uninstall_error */
+  /** Error message if status is install error or uninstall error */
   errorMessage?: string
 }
 
@@ -69,14 +69,14 @@ export function parseSchemaComment(comment: string | null | undefined): StripeSc
   let errorMessage: string | undefined
 
   if (comment.includes(UNINSTALLATION_ERROR_SUFFIX)) {
-    status = 'uninstall_error'
+    status = 'uninstall error'
     // Extract error message after " - "
     const errorMatch = comment.match(/uninstallation:error\s*-\s*(.+)$/)
     errorMessage = errorMatch?.[1]
   } else if (comment.includes(UNINSTALLATION_STARTED_SUFFIX)) {
     status = 'uninstalling'
   } else if (comment.includes(INSTALLATION_ERROR_SUFFIX)) {
-    status = 'install_error'
+    status = 'install error'
     const errorMatch = comment.match(/installation:error\s*-\s*(.+)$/)
     errorMessage = errorMatch?.[1]
   } else if (comment.includes(INSTALLATION_STARTED_SUFFIX)) {

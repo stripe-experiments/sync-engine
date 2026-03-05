@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
           status = 'completed'
           step = `installed${parsedComment.newVersion ? ` (v${parsedComment.newVersion})` : ''}`
           break
-        case 'install_error':
+        case 'install error':
           status = 'error'
           step = parsedComment.errorMessage || 'Installation error'
           break
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
           status = 'in_progress'
           step = 'uninstalling'
           break
-        case 'uninstall_error':
+        case 'uninstall error':
           status = 'error'
           step = parsedComment.errorMessage || 'Uninstallation error'
           break

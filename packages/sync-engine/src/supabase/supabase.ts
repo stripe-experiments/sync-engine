@@ -413,7 +413,7 @@ export class SupabaseSetupClient {
       }
 
       // Check for failed uninstallation (requires manual intervention)
-      if (parsedComment.status === 'uninstall_error') {
+      if (parsedComment.status === 'uninstall error') {
         throw new Error(
           `Uninstallation failed: Schema '${schema}' exists but uninstallation encountered an error. ` +
             `${parsedComment.errorMessage ? `Error: ${parsedComment.errorMessage}` : ''}. Manual cleanup may be required.`
@@ -426,7 +426,7 @@ export class SupabaseSetupClient {
       }
 
       // Check for failed installation (requires manual intervention)
-      if (parsedComment.status === 'install_error') {
+      if (parsedComment.status === 'install error') {
         throw new Error(
           `Installation failed: Schema '${schema}' exists but installation encountered an error. ` +
             `${parsedComment.errorMessage ? `Error: ${parsedComment.errorMessage}` : ''}. Please uninstall and install again.`
@@ -496,7 +496,7 @@ export class SupabaseSetupClient {
         const hasSchema = await this.schemaExists('stripe')
         if (hasSchema) {
           const errorMessage = error instanceof Error ? error.message : String(error)
-          await this.updateComment('uninstall_error', undefined, errorMessage)
+          await this.updateComment('uninstall error', undefined, errorMessage)
         }
       } catch (error) {
         throw new Error(
@@ -594,7 +594,7 @@ export class SupabaseSetupClient {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       try {
-        await this.updateComment('install_error', undefined, errorMessage)
+        await this.updateComment('install error', undefined, errorMessage)
       } catch {
         // Schema may not exist if early steps failed -- don't mask the original error
       }

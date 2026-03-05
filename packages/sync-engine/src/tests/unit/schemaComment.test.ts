@@ -23,12 +23,12 @@ describe('parseSchemaComment', () => {
       })
     })
 
-    it('should parse install_error status with error message', () => {
+    it('should parse install error status with error message', () => {
       const result = parseSchemaComment(
         'stripe-sync v1.2.3 installation:error - Database connection failed'
       )
       expect(result).toEqual({
-        status: 'install_error',
+        status: 'install error',
         oldVersion: undefined,
         newVersion: '1.2.3',
         errorMessage: 'Database connection failed',
@@ -45,10 +45,10 @@ describe('parseSchemaComment', () => {
       })
     })
 
-    it('should parse uninstall_error status with error message', () => {
+    it('should parse uninstall error status with error message', () => {
       const result = parseSchemaComment('stripe-sync v1.2.3 uninstallation:error - Cleanup failed')
       expect(result).toEqual({
-        status: 'uninstall_error',
+        status: 'uninstall error',
         oldVersion: undefined,
         newVersion: '1.2.3',
         errorMessage: 'Cleanup failed',
@@ -85,14 +85,14 @@ describe('parseSchemaComment', () => {
 
     it('should parse JSON comment with all fields', () => {
       const comment = JSON.stringify({
-        status: 'install_error',
+        status: 'install error',
         oldVersion: '1.0.0',
         newVersion: '2.0.0',
         errorMessage: 'Migration failed',
       })
       const result = parseSchemaComment(comment)
       expect(result).toEqual({
-        status: 'install_error',
+        status: 'install error',
         oldVersion: '1.0.0',
         newVersion: '2.0.0',
         errorMessage: 'Migration failed',

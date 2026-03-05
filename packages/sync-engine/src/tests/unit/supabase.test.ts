@@ -445,7 +445,7 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([
           {
             comment: JSON.stringify({
-              status: 'install_error',
+              status: 'install error',
               newVersion: '1.0.0',
               errorMessage: 'Something went wrong',
             }),
@@ -498,7 +498,7 @@ describe('SupabaseDeployClient', () => {
         .mockResolvedValueOnce([
           {
             comment: JSON.stringify({
-              status: 'uninstall_error',
+              status: 'uninstall error',
               oldVersion: '1.0.0',
               errorMessage: 'Cleanup failed',
             }),
