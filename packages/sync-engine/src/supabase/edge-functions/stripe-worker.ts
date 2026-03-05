@@ -14,11 +14,14 @@ import postgres from 'postgres'
 
 // Reuse these between requests
 const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+if (!dbUrl) {
+  throw new Error('SUPABASE_DB_URL secret not configured')
+}
 const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7 // Once a week default
 const rateLimit = Number(Deno.env.get('RATE_LIMIT')) || 60
 const workerCount = Number(Deno.env.get('WORKER_COUNT')) || 10
 
-const sql = dbUrl ? postgres(dbUrl, { max: 1, prepare: false }) : undefined
+const sql = postgres(dbUrl, { max: 1, prepare: false })
 const stripeSync = await StripeSync.create({
   poolConfig: { connectionString: dbUrl, max: 1 },
   stripeSecretKey: Deno.env.get('STRIPE_SECRET_KEY')!,
@@ -37,10 +40,6 @@ Deno.serve(async (req) => {
   }
 
   const token = authHeader.substring(7) // Remove 'Bearer '
-
-  if (!sql) {
-    return new Response('SUPABASE_DB_URL secret not configured', { status: 500 })
-  }
 
   // Validate that the token matches the unique worker secret stored in vault
   const vaultResult = await sql`
