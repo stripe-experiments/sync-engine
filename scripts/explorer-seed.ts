@@ -5,10 +5,12 @@
  * Generates realistic, deterministic synthetic Stripe data for testing the schema explorer.
  * - Uses a fixed seed for reproducibility
  * - Inserts data as _raw_data JSONB so generated columns work automatically
- * - Follows Stripe billing/payment graph relationships
+ * - Follows Stripe billing/payment graph relationships for core tables
+ * - Uses generic fallback generator for all remaining projected tables
  * - Uses stable IDs (e.g., prod_seed_001, cus_seed_001)
  * - Timestamps fall within a stable window
  * - Reads database connection from .tmp/schema-explorer-run.json
+ * - Prints manifest of row counts per table
  *
  * Usage:
  *   pnpm tsx scripts/explorer-seed.ts
@@ -17,6 +19,8 @@
 import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SpecParser, resolveOpenApiSpec, OPENAPI_RESOURCE_TABLE_ALIASES } from '../packages/sync-engine/src/openapi/index.js';
+import type { ParsedResourceTable, ParsedColumn, ScalarType } from '../packages/sync-engine/src/openapi/types.js';
 
 const TMP_DIR = path.join(process.cwd(), '.tmp');
 const METADATA_FILE = path.join(TMP_DIR, 'schema-explorer-run.json');
@@ -27,6 +31,17 @@ const SEED = 42;
 // Stable timestamp window (Jan 1, 2024 to Dec 31, 2024)
 const START_TIMESTAMP = 1704067200; // 2024-01-01 00:00:00 UTC
 const END_TIMESTAMP = 1735689599;   // 2024-12-31 23:59:59 UTC
+
+// Core tables with graph-aware generators
+const CORE_TABLES = new Set([
+  'accounts', 'products', 'prices', 'customers', 'payment_methods',
+  'setup_intents', 'subscriptions', 'subscription_items', 'invoices',
+  'payment_intents', 'charges', 'refunds', 'checkout_sessions',
+  'credit_notes', 'disputes', 'tax_ids'
+]);
+
+// Stripe API version for spec resolution
+const DEFAULT_STRIPE_API_VERSION = '2020-08-27';
 
 interface ContainerMetadata {
   databaseUrl: string;
@@ -1083,6 +1098,140 @@ class StripeDataGraph {
   }
 }
 
+/**
+ * Generic fallback generator for long-tail projected tables
+ * Uses column metadata from SpecParser to generate type-correct _raw_data
+ */
+class GenericTableSeeder {
+  private rng: SeededRandom;
+  private accountId: string;
+
+  constructor(seed: number, accountId: string) {
+    this.rng = new SeededRandom(seed);
+    this.accountId = accountId;
+  }
+
+  /**
+   * Generate a type-correct value for a column based on its type
+   */
+  private generateValueForType(columnName: string, type: ScalarType, index: number): any {
+    switch (type) {
+      case 'text':
+        // Use stable string values based on column name
+        if (columnName === 'id') {
+          return `generic_${index}_${this.rng.nextInt(1000, 9999)}`;
+        }
+        if (columnName.includes('email')) {
+          return `generic${index}@example.com`;
+        }
+        if (columnName.includes('name') || columnName.includes('description')) {
+          return `Generic ${columnName} ${index}`;
+        }
+        if (columnName.includes('status')) {
+          return this.rng.choice(['active', 'inactive', 'pending', 'succeeded']);
+        }
+        if (columnName.includes('currency')) {
+          return this.rng.choice(['usd', 'eur', 'gbp']);
+        }
+        return `value_${columnName}_${index}`;
+
+      case 'bigint':
+        // Generate stable integers
+        if (columnName.includes('amount') || columnName.includes('balance')) {
+          return this.rng.nextInt(100, 100000);
+        }
+        if (columnName.includes('created') || columnName.includes('timestamp')) {
+          return this.rng.nextTimestamp();
+        }
+        if (columnName.includes('count') || columnName.includes('quantity')) {
+          return this.rng.nextInt(1, 100);
+        }
+        return this.rng.nextInt(1, 1000000);
+
+      case 'boolean':
+        return this.rng.boolean();
+
+      case 'timestamptz':
+        // Return Unix timestamp (will be converted to timestamptz)
+        return this.rng.nextTimestamp();
+
+      case 'numeric':
+        // Generate decimal values
+        return this.rng.nextInt(100, 100000) / 100;
+
+      case 'json':
+        // Return stable JSON objects
+        return {
+          [`${columnName}_field`]: `value_${index}`,
+          metadata: {},
+          timestamp: this.rng.nextTimestamp(),
+        };
+
+      default:
+        return `fallback_${index}`;
+    }
+  }
+
+  /**
+   * Generate a single row of data for a table
+   */
+  private generateRow(table: ParsedResourceTable, index: number): Record<string, any> {
+    const row: Record<string, any> = {
+      object: table.resourceId,
+    };
+
+    // Generate id field if not in columns (it's usually in _raw_data)
+    const hasIdColumn = table.columns.some(col => col.name === 'id');
+    if (!hasIdColumn) {
+      row.id = `${table.tableName}_seed_${String(index).padStart(3, '0')}`;
+    }
+
+    // Generate values for all columns
+    for (const column of table.columns) {
+      // Skip reserved columns that are handled separately
+      if (['_raw_data', '_last_synced_at', '_updated_at', '_account_id'].includes(column.name)) {
+        continue;
+      }
+
+      const value = this.generateValueForType(column.name, column.type, index);
+
+      // Handle nullable columns
+      if (column.nullable && this.rng.next() < 0.3) {
+        row[column.name] = null;
+      } else {
+        row[column.name] = value;
+      }
+    }
+
+    return row;
+  }
+
+  /**
+   * Seed a table with generic data
+   */
+  async seedTable(client: Client, table: ParsedResourceTable): Promise<number> {
+    // Determine row count (1-20 for long-tail tables)
+    const rowCount = this.rng.nextInt(1, 20);
+
+    for (let i = 1; i <= rowCount; i++) {
+      const rawData = this.generateRow(table, i);
+
+      try {
+        await client.query(
+          `INSERT INTO stripe.${table.tableName} (_raw_data, _account_id) VALUES ($1, $2)`,
+          [JSON.stringify(rawData), this.accountId]
+        );
+      } catch (error) {
+        // Log error but continue with other tables
+        console.error(`    ⚠️  Error inserting row ${i} into ${table.tableName}:`, (error as Error).message);
+        return i - 1; // Return count of successful inserts
+      }
+    }
+
+    return rowCount;
+  }
+}
+
 async function main(): Promise<void> {
   console.log('🚀 Explorer Seed Script\n');
 
@@ -1114,25 +1263,168 @@ async function main(): Promise<void> {
     const gen = new DataGenerator(SEED);
     const accountId = gen.accountId();
 
-    // Create graph generator and seed
+    // Phase 1: Seed core tables with graph-aware generators
+    console.log('📦 Phase 1: Seeding core tables with graph-aware data...\n');
     const graph = new StripeDataGraph(SEED, accountId);
     await graph.seed(client);
 
-    // Display summary
-    console.log('\n📊 Summary:');
-    const tables = [
-      'accounts', 'products', 'prices', 'customers', 'payment_methods',
-      'setup_intents', 'subscriptions', 'subscription_items', 'invoices',
-      'payment_intents', 'charges', 'refunds', 'checkout_sessions',
-      'credit_notes', 'disputes', 'tax_ids'
-    ];
+    // Phase 2: Discover all projected tables from OpenAPI spec
+    console.log('\n📦 Phase 2: Discovering projected tables from OpenAPI spec...\n');
+    const resolvedSpec = await resolveOpenApiSpec({
+      apiVersion: DEFAULT_STRIPE_API_VERSION,
+    });
+    console.log(`   ✓ Resolved OpenAPI spec (${resolvedSpec.source})`);
 
-    for (const table of tables) {
-      const result = await client.query(
-        `SELECT COUNT(*) FROM stripe.${table}`
+    const parser = new SpecParser();
+    // Parse ALL projected tables (no allowedTables filter)
+    const parsedSpec = parser.parse(resolvedSpec.spec, {
+      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+      // Omit allowedTables to get all resolvable tables
+    });
+
+    console.log(`   ✓ Parsed ${parsedSpec.tables.length} projected tables\n`);
+
+    // Phase 3: Seed long-tail tables with generic fallback generator
+    console.log('📦 Phase 3: Seeding long-tail tables with generic fallback...\n');
+    const genericSeeder = new GenericTableSeeder(SEED + 1000, accountId);
+    const seededTables: Record<string, number> = {};
+    const failedTables: Array<{ table: string; reason: string }> = [];
+    const skippedTables: string[] = [];
+
+    for (const table of parsedSpec.tables) {
+      // Skip core tables (already seeded)
+      if (CORE_TABLES.has(table.tableName)) {
+        skippedTables.push(table.tableName);
+        continue;
+      }
+
+      // Check if table exists in database
+      const tableExistsResult = await client.query(
+        `SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'stripe'
+          AND table_name = $1
+        )`,
+        [table.tableName]
       );
-      console.log(`   ${table}: ${result.rows[0].count} rows`);
+
+      if (!tableExistsResult.rows[0]?.exists) {
+        failedTables.push({
+          table: table.tableName,
+          reason: 'Table does not exist in database (not migrated)',
+        });
+        continue;
+      }
+
+      console.log(`  🔧 Seeding ${table.tableName}...`);
+      try {
+        const rowCount = await genericSeeder.seedTable(client, table);
+        seededTables[table.tableName] = rowCount;
+        console.log(`    ✓ Inserted ${rowCount} rows`);
+      } catch (error) {
+        failedTables.push({
+          table: table.tableName,
+          reason: (error as Error).message,
+        });
+        console.error(`    ❌ Failed: ${(error as Error).message}`);
+      }
     }
+
+    // Phase 4: Generate manifest
+    console.log('\n📊 Seeding Complete - Row Count Manifest:\n');
+    console.log('Core Tables (Graph-Aware):');
+
+    const manifest: Record<string, number> = {};
+
+    // Query row counts for all tables in stripe schema
+    const allTablesResult = await client.query(
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = 'stripe'
+       AND table_type = 'BASE TABLE'
+       ORDER BY table_name`
+    );
+
+    for (const row of allTablesResult.rows) {
+      const tableName = row.table_name;
+
+      // Skip internal tables
+      if (tableName.startsWith('_')) {
+        continue;
+      }
+
+      const countResult = await client.query(
+        `SELECT COUNT(*) as count FROM stripe."${tableName}"`
+      );
+      const count = parseInt(countResult.rows[0].count, 10);
+      manifest[tableName] = count;
+
+      if (CORE_TABLES.has(tableName)) {
+        console.log(`   ✓ ${tableName}: ${count} rows`);
+      }
+    }
+
+    console.log('\nLong-Tail Tables (Generic Fallback):');
+    for (const [tableName, count] of Object.entries(manifest)) {
+      if (!CORE_TABLES.has(tableName)) {
+        console.log(`   ✓ ${tableName}: ${count} rows`);
+      }
+    }
+
+    // Display excluded tables
+    if (failedTables.length > 0) {
+      console.log('\n⚠️  Excluded Tables (with reasons):');
+      for (const { table, reason } of failedTables) {
+        console.log(`   ✗ ${table}: ${reason}`);
+      }
+    }
+
+    // Display skipped tables
+    if (skippedTables.length > 0) {
+      console.log('\n⏭️  Skipped Tables (already seeded by core generators):');
+      for (const table of skippedTables) {
+        console.log(`   - ${table}`);
+      }
+    }
+
+    // Verify all tables have at least 1 row
+    console.log('\n🔍 Verification:');
+    const emptyTables = Object.entries(manifest).filter(([_, count]) => count === 0);
+    const tablesWithData = Object.entries(manifest).filter(([_, count]) => count > 0);
+
+    console.log(`   ✓ Tables with data: ${tablesWithData.length}`);
+    if (emptyTables.length > 0) {
+      console.log(`   ⚠️  Tables with 0 rows: ${emptyTables.length}`);
+      for (const [tableName] of emptyTables) {
+        console.log(`      - ${tableName}`);
+      }
+    } else {
+      console.log('   ✅ All tables have at least 1 row!');
+    }
+
+    console.log(`\n✅ Seeding complete! ${Object.keys(manifest).length} tables seeded.`);
+
+    // Write manifest to file for reference
+    const manifestPath = path.join(TMP_DIR, 'seed-manifest.json');
+    const manifestData = {
+      timestamp: new Date().toISOString(),
+      seed: SEED,
+      apiVersion: DEFAULT_STRIPE_API_VERSION,
+      totalTables: Object.keys(manifest).length,
+      coreTables: Array.from(CORE_TABLES).filter((t) => t in manifest),
+      longTailTables: Object.keys(manifest).filter((t) => !CORE_TABLES.has(t)),
+      manifest,
+      failedTables,
+      verification: {
+        allTablesSeeded: emptyTables.length === 0,
+        tablesWithData: tablesWithData.length,
+        emptyTables: emptyTables.map(([name]) => name),
+      },
+    };
+
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestData, null, 2));
+    console.log(`\n📄 Manifest written to: ${manifestPath}`);
 
   } catch (error) {
     console.error('\n❌ Error:', error);

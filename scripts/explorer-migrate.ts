@@ -52,7 +52,7 @@ async function main(): Promise<void> {
         warn: (msg: any) => console.log('  ⚠️ ', typeof msg === 'string' ? msg : JSON.stringify(msg)),
         error: (msg: any) => console.log('  ❌', typeof msg === 'string' ? msg : JSON.stringify(msg)),
       },
-      tableMode: 'runtime_required', // Use runtime_required mode as specified
+      tableMode: 'all_projected', // Use all_projected mode to include all projected tables
     });
 
     console.log('\n✅ Migrations complete!');
