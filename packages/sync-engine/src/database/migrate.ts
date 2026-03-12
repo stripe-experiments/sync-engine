@@ -38,7 +38,7 @@ export type MigrationConfig = {
   openApiSpecPath?: string
   openApiCacheDir?: string
   schemaName?: string
-  /** Schema for sync metadata tables (accounts, _sync_runs, etc.). Defaults to schemaName. */
+  /** Schema for sync metadata tables (_sync_accounts, _sync_runs, etc.). Defaults to schemaName. */
   syncTablesSchemaName?: string
   /**
    * Table filtering mode for OpenAPI schema migration:
@@ -237,7 +237,7 @@ async function ensureSigmaTableMetadata(
   await client.query(`
     ALTER TABLE "${schema}"."${tableName}"
     ADD CONSTRAINT "${fkName}"
-    FOREIGN KEY ("_account_id") REFERENCES ${stripeSchemaIdent}."accounts" (id);
+    FOREIGN KEY ("_account_id") REFERENCES ${stripeSchemaIdent}."_sync_accounts" (id);
   `)
 
   await client.query(`
@@ -512,6 +512,7 @@ async function applyOpenApiSchema(
   const adapter = new PostgresAdapter({
     schemaName: dataSchema,
     accountSchema: syncSchema,
+    accountTableName: '_sync_accounts',
   })
   const statements = adapter.buildAllStatements(parsedSpec.tables)
   for (const statement of statements) {
