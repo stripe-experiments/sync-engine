@@ -164,7 +164,7 @@ export default function ExplorerClient() {
     }
 
     const startState = EditorState.create({
-      doc: '-- Select a table from the left or write your own SQL\n-- Ctrl+Enter to run',
+      doc: '-- Select a table from the left or write your own SQL',
       extensions: [
         basicSetup,
         sql(),

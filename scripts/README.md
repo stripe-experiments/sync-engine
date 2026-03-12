@@ -1,6 +1,7 @@
 # Schema Explorer Scripts
 
-This directory contains scripts for setting up and seeding an isolated Postgres database for testing the schema explorer.
+This directory contains scripts for generating the standalone schema visualizer artifacts in
+`packages/visualizer/public/explorer-data`.
 
 ## Scripts
 
@@ -105,6 +106,17 @@ cat .tmp/seed-manifest.json | jq '.verification, .manifest'
 ```
 
 ## Quick Start
+
+For the normal workflow, prefer the single build command:
+
+```bash
+pnpm explorer:build
+pnpm visualizer:with-data
+```
+
+If you need to debug the pipeline phase-by-phase, use the direct commands below.
+
+## Direct Phase Workflow
 
 ```bash
 # 1. Start the database

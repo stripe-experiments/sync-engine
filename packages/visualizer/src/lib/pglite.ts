@@ -27,7 +27,7 @@ interface ExplorerManifest {
   totalTables: number
   coreTables: string[]
   longTailTables: string[]
-  manifest: Record<string, number> // table name -> row count
+  manifest: Record<string, number>
   failedTables: Array<{ table: string; reason: string }>
   verification: {
     allTablesSeeded: boolean
@@ -46,30 +46,14 @@ type InitializedDatabase = {
 let sharedDatabasePromise: Promise<InitializedDatabase> | null = null
 
 interface UsePGliteResult {
-  /** PGlite database instance (null until ready) */
   db: PGliteInstance | null
-  /** Current status of database initialization */
   status: DatabaseStatus
-  /** Error message if status is 'error' */
   error: string | null
-  /** Execute a SQL query against the database */
   query: (sql: string, params?: unknown[]) => Promise<QueryResult>
-  /** Execute a SQL command (INSERT, UPDATE, DELETE) */
   exec: (sql: string) => Promise<void>
-  /** Manifest of available tables and row counts */
   manifest: ExplorerManifest | null
 }
 
-/**
- * React hook for initializing and using PGlite database
- *
- * Initialization flow:
- * 1. Fetch manifest.json from /explorer-data/manifest.json
- * 2. Discover data artifact path (SQL or JSON format)
- * 3. Initialize PGlite instance
- * 4. Hydrate database with artifact data
- * 5. Mark as ready for queries
- */
 export function usePGlite(): UsePGliteResult {
   const [db, setDb] = useState<PGliteInstance | null>(null)
   const [status, setStatus] = useState<DatabaseStatus>('idle')
@@ -105,7 +89,6 @@ export function usePGlite(): UsePGliteResult {
     }
   }, [])
 
-  // Query function with validation
   const query = useCallback(
     async (sql: string, params?: unknown[]): Promise<QueryResult> => {
       if (status !== 'ready' || !db) {
@@ -123,7 +106,6 @@ export function usePGlite(): UsePGliteResult {
     [db, status]
   )
 
-  // Exec function for commands without results
   const exec = useCallback(
     async (sql: string): Promise<void> => {
       if (status !== 'ready' || !db) {
@@ -150,10 +132,6 @@ export function usePGlite(): UsePGliteResult {
   }
 }
 
-/**
- * Hydrate PGlite from SQL bootstrap file
- * Most efficient format - direct SQL execution
- */
 async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise<void> {
   console.log(`[PGlite] Fetching SQL bootstrap from ${sqlPath}`)
 
@@ -165,8 +143,6 @@ async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise
   const sqlContent = await response.text()
   console.log(`[PGlite] SQL bootstrap size: ${(sqlContent.length / 1024).toFixed(2)} KB`)
 
-  // PGlite's exec() method supports multi-statement SQL
-  // Try to execute the entire SQL content as a single string first (simplest and most robust)
   try {
     console.log(`[PGlite] Attempting to execute SQL as single multi-statement block...`)
     await db.exec(sqlContent)
@@ -179,8 +155,6 @@ async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise
     console.warn('[PGlite] Error was:', err instanceof Error ? err.message : String(err))
   }
 
-  // Fallback: execute statement by statement
-  // Strip comments and split on semicolons, preserving the semicolon
   const cleanedSql = sqlContent
     .split('\n')
     .filter((line) => {
@@ -189,12 +163,11 @@ async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise
     })
     .join('\n')
 
-  // Split on semicolons but preserve them for execution
   const statements = cleanedSql
     .split(';')
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
-    .map((s) => s + ';') // Append semicolon back
+    .map((s) => s + ';')
 
   console.log(`[PGlite] Executing ${statements.length} SQL statements individually...`)
 
@@ -203,7 +176,6 @@ async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise
     try {
       await db.exec(statement)
 
-      // Log progress every 100 statements
       if ((i + 1) % 100 === 0) {
         console.log(`[PGlite] Progress: ${i + 1}/${statements.length} statements`)
       }
@@ -220,10 +192,6 @@ async function hydrateSqlBootstrap(db: PGliteInstance, sqlPath: string): Promise
   console.log('[PGlite] SQL bootstrap executed successfully (statement-by-statement mode)')
 }
 
-/**
- * Hydrate PGlite from JSON bootstrap file
- * Fallback format - reconstructs INSERTs from JSON data
- */
 async function hydrateJsonBootstrap(
   db: PGliteInstance,
   jsonPath: string,
@@ -241,7 +209,6 @@ async function hydrateJsonBootstrap(
     `[PGlite] JSON bootstrap size: ${(JSON.stringify(jsonData).length / 1024).toFixed(2)} KB`
   )
 
-  // JSON format: { tableName: [{ row1 }, { row2 }], ... }
   const tables = Object.keys(jsonData)
   console.log(`[PGlite] Hydrating ${tables.length} tables...`)
 
@@ -254,8 +221,6 @@ async function hydrateJsonBootstrap(
 
     console.log(`[PGlite] Inserting ${rows.length} rows into stripe.${tableName}...`)
 
-    // Insert rows using parameterized queries
-    // Assumes table structure: (_raw_data JSONB, _account_id TEXT)
     for (const row of rows) {
       try {
         await db.query(`INSERT INTO stripe.${tableName} (_raw_data, _account_id) VALUES ($1, $2)`, [
@@ -264,7 +229,6 @@ async function hydrateJsonBootstrap(
         ])
       } catch (err) {
         console.error(`[PGlite] Error inserting row into ${tableName}:`, err)
-        // Continue with other rows - don't fail entire hydration
       }
     }
   }
@@ -272,25 +236,18 @@ async function hydrateJsonBootstrap(
   console.log('[PGlite] JSON bootstrap loaded successfully')
 }
 
-/**
- * Standalone function to initialize PGlite without React hooks
- * Useful for non-React contexts or server-side scripts
- */
 export async function createPGliteDatabase(): Promise<{
   db: PGliteInstance
   manifest: ExplorerManifest
 }> {
-  // Fetch manifest
   const manifestResponse = await fetch('/explorer-data/manifest.json')
   if (!manifestResponse.ok) {
     throw new Error(`Failed to fetch manifest: ${manifestResponse.status}`)
   }
   const manifest: ExplorerManifest = await manifestResponse.json()
 
-  // Initialize PGlite
   const db = await PGlite.create()
 
-  // Discover and hydrate
   const sqlCheckResponse = await fetch('/explorer-data/bootstrap.sql', { method: 'HEAD' })
   if (sqlCheckResponse.ok) {
     await hydrateSqlBootstrap(db, '/explorer-data/bootstrap.sql')
