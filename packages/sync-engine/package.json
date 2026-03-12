@@ -1,5 +1,5 @@
 {
-  "name": "stripe-experiment-sync",
+  "name": "@stripe/sync-engine",
   "version": "1.0.26",
   "private": false,
   "description": "DEPRECATED - This package has moved to https://github.com/stripe/sync-engine",
