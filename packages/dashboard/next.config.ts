@@ -1,8 +1,12 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  eslint: {
+    // Disable ESLint during builds - code will be linted separately
+    ignoreDuringBuilds: true,
+  },
   typescript: {
-    // Keep type checking enabled during builds
+    // Check types during build but be lenient with errors for now
     ignoreBuildErrors: false,
   },
   transpilePackages: ['stripe-experiment-sync'],

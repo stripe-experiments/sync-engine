@@ -43,55 +43,34 @@ function formatDuration(startDate: Date, endDate: Date): string {
 export function SyncStatus({ sessionId }: SyncStatusProps) {
   const [syncRun, setSyncRun] = useState<SyncRun | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const [, setTick] = useState(0)
 
   useEffect(() => {
-    let isActive = true
-    let interval: ReturnType<typeof setInterval> | null = null
-
     async function fetchStatus() {
-      if (!isActive) return
-
       try {
         const response = await fetch(`/api/status?sessionId=${sessionId}`)
         const data = await response.json()
 
         if (!response.ok) {
           setError(data.error)
-          if (interval) {
-            clearInterval(interval)
-            interval = null
-          }
           return
         }
 
         setSyncRun(data.syncRun)
-
-        if (data.syncRun?.status === 'complete' || data.syncRun?.status === 'error') {
-          if (interval) {
-            clearInterval(interval)
-            interval = null
-          }
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
-        if (interval) {
-          clearInterval(interval)
-          interval = null
-        }
       }
     }
 
     fetchStatus()
 
     // Poll every 5 seconds
-    interval = setInterval(() => {
-      void fetchStatus()
+    const interval = setInterval(() => {
+      fetchStatus()
+      setTick((t) => t + 1)
     }, 5000)
 
-    return () => {
-      isActive = false
-      if (interval) clearInterval(interval)
-    }
+    return () => clearInterval(interval)
   }, [sessionId])
 
   // Error state
