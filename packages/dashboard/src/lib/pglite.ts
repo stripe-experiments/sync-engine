@@ -41,14 +41,14 @@ interface ExplorerManifest {
   }
 }
 
-// Data artifact structure - can be SQL dump or JSON
-interface DataArtifact {
-  format: 'sql' | 'json'
-  path: string // relative to public/explorer-data/
-  tables: string[] // list of tables included
+type DatabaseStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+type InitializedDatabase = {
+  db: PGliteInstance
+  manifest: ExplorerManifest
 }
 
-type DatabaseStatus = 'idle' | 'loading' | 'ready' | 'error'
+let sharedDatabasePromise: Promise<InitializedDatabase> | null = null
 
 interface UsePGliteResult {
   /** PGlite database instance (null until ready) */
@@ -81,114 +81,32 @@ export function usePGlite(): UsePGliteResult {
   const [error, setError] = useState<string | null>(null)
   const [manifest, setManifest] = useState<ExplorerManifest | null>(null)
 
-  // Use ref to prevent double initialization in strict mode
-  const initRef = useRef(false)
+  const currentPromiseRef = useRef<Promise<InitializedDatabase> | null>(null)
 
   useEffect(() => {
-    // Prevent double initialization
-    if (initRef.current) return
-    initRef.current = true
+    let cancelled = false
 
-    let mounted = true
+    setStatus('loading')
+    setError(null)
 
-    async function initializeDatabase() {
-      try {
-        setStatus('loading')
-        setError(null)
+    currentPromiseRef.current ??= getOrCreateDatabase()
 
-        // Step 1: Fetch manifest from public directory
-        console.log('[PGlite] Fetching manifest from /explorer-data/manifest.json')
-        const manifestResponse = await fetch('/explorer-data/manifest.json')
-
-        if (!manifestResponse.ok) {
-          throw new Error(
-            `Failed to fetch manifest: ${manifestResponse.status} ${manifestResponse.statusText}`
-          )
-        }
-
-        const manifestData: ExplorerManifest = await manifestResponse.json()
-        console.log('[PGlite] Manifest loaded:', {
-          totalTables: manifestData.totalTables,
-          coreTables: manifestData.coreTables.length,
-          longTailTables: manifestData.longTailTables.length,
-        })
-
-        if (!mounted) return
-        setManifest(manifestData)
-
-        // Step 2: Discover data artifact
-        // Try SQL format first (more efficient), fallback to JSON
-        let dataArtifact: DataArtifact | null = null
-
-        // Check for SQL dump
-        const sqlCheckResponse = await fetch('/explorer-data/bootstrap.sql', { method: 'HEAD' })
-        if (sqlCheckResponse.ok) {
-          dataArtifact = {
-            format: 'sql',
-            path: '/explorer-data/bootstrap.sql',
-            tables: Object.keys(manifestData.manifest),
-          }
-          console.log('[PGlite] Found SQL bootstrap artifact')
-        } else {
-          // Check for JSON dump
-          const jsonCheckResponse = await fetch('/explorer-data/bootstrap.json', { method: 'HEAD' })
-          if (jsonCheckResponse.ok) {
-            dataArtifact = {
-              format: 'json',
-              path: '/explorer-data/bootstrap.json',
-              tables: Object.keys(manifestData.manifest),
-            }
-            console.log('[PGlite] Found JSON bootstrap artifact')
-          }
-        }
-
-        if (!dataArtifact) {
-          throw new Error(
-            'No data artifact found. Expected /explorer-data/bootstrap.sql or bootstrap.json'
-          )
-        }
-
-        // Step 3: Initialize PGlite
-        console.log('[PGlite] Initializing PGlite instance...')
-
-        // Dynamic import to avoid SSR issues
-        const { PGlite } = await import('@electric-sql/pglite')
-        const pgliteInstance = await PGlite.create()
-
-        console.log('[PGlite] PGlite instance created')
-
-        if (!mounted) return
-
-        // Step 4: Hydrate database
-        console.log(`[PGlite] Hydrating database from ${dataArtifact.format} artifact...`)
-
-        if (dataArtifact.format === 'sql') {
-          await hydrateSqlBootstrap(pgliteInstance, dataArtifact.path)
-        } else {
-          await hydrateJsonBootstrap(pgliteInstance, dataArtifact.path, manifestData)
-        }
-
-        console.log('[PGlite] Database hydration complete')
-        console.log('[PGlite] Ready for queries')
-
-        if (!mounted) return
-
-        setDb(pgliteInstance)
+    currentPromiseRef.current
+      .then(({ db: initializedDb, manifest: initializedManifest }) => {
+        if (cancelled) return
+        setManifest(initializedManifest)
+        setDb(initializedDb)
         setStatus('ready')
-      } catch (err) {
+      })
+      .catch((err) => {
         console.error('[PGlite] Initialization error:', err)
-
-        if (!mounted) return
-
+        if (cancelled) return
         setError(err instanceof Error ? err.message : 'Unknown error during initialization')
         setStatus('error')
-      }
-    }
-
-    initializeDatabase()
+      })
 
     return () => {
-      mounted = false
+      cancelled = true
     }
   }, [])
 
@@ -387,4 +305,15 @@ export async function createPGliteDatabase(): Promise<{
   }
 
   return { db, manifest }
+}
+
+async function getOrCreateDatabase(): Promise<InitializedDatabase> {
+  if (!sharedDatabasePromise) {
+    sharedDatabasePromise = createPGliteDatabase().catch((error) => {
+      sharedDatabasePromise = null
+      throw error
+    })
+  }
+
+  return sharedDatabasePromise
 }

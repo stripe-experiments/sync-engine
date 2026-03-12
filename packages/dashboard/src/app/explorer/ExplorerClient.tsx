@@ -19,12 +19,12 @@ export default function ExplorerClient() {
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
   const [isExecuting, setIsExecuting] = useState(false)
-  const [editorView, setEditorView] = useState<EditorView | null>(null)
   const editorContainerRef = useRef<HTMLDivElement>(null)
+  const editorViewRef = useRef<EditorView | null>(null)
 
   // Initialize CodeMirror
   useEffect(() => {
-    if (!editorContainerRef.current || editorView) return
+    if (status !== 'ready' || !editorContainerRef.current || editorViewRef.current) return
 
     let view: EditorView | null = null
 
@@ -80,12 +80,15 @@ export default function ExplorerClient() {
       parent: editorContainerRef.current,
     })
 
-    setEditorView(view)
+    editorViewRef.current = view
 
     return () => {
       if (view) view.destroy()
+      if (editorViewRef.current === view) {
+        editorViewRef.current = null
+      }
     }
-  }, [])
+  }, [status])
 
   // Execute query function
   const executeQuery = useCallback(
@@ -117,6 +120,7 @@ export default function ExplorerClient() {
     async (tableName: string) => {
       setSelectedTable(tableName)
       const sql = `SELECT * FROM stripe.${tableName} LIMIT 100`
+      const editorView = editorViewRef.current
 
       if (editorView) {
         editorView.dispatch({
@@ -130,15 +134,16 @@ export default function ExplorerClient() {
 
       await executeQuery(sql)
     },
-    [editorView, executeQuery]
+    [executeQuery]
   )
 
   // Handle Run button
   const handleRunClick = useCallback(() => {
+    const editorView = editorViewRef.current
     if (!editorView) return
     const sql = editorView.state.doc.toString()
     executeQuery(sql)
-  }, [editorView, executeQuery])
+  }, [executeQuery])
 
   // Loading state
   if (status === 'loading') {
