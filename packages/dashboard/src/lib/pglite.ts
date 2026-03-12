@@ -13,16 +13,11 @@
  *   const result = await query('SELECT * FROM stripe.customers LIMIT 10');
  */
 
+import { PGlite } from '@electric-sql/pglite'
 import { useEffect, useState, useCallback, useRef } from 'react'
 
-// PGlite types - these will be properly typed when @electric-sql/pglite is installed
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PGliteInstance = any
-type QueryResult = {
-  rows: Record<string, unknown>[]
-  fields: { name: string; dataTypeID: number }[]
-  rowCount: number
-}
+type PGliteInstance = InstanceType<typeof PGlite>
+type QueryResult = Awaited<ReturnType<PGliteInstance['query']>>
 
 // Manifest structure from explorer-seed.ts
 interface ExplorerManifest {
@@ -293,7 +288,6 @@ export async function createPGliteDatabase(): Promise<{
   const manifest: ExplorerManifest = await manifestResponse.json()
 
   // Initialize PGlite
-  const { PGlite } = await import('@electric-sql/pglite')
   const db = await PGlite.create()
 
   // Discover and hydrate
