@@ -8,16 +8,16 @@ This directory contains scripts for setting up and seeding an isolated Postgres 
 
 Creates and manages an isolated Postgres container with random suffixes to avoid collisions.
 
-**Commands:**
+**Commands (direct script mode):**
 ```bash
 # Start the harness (creates container, random port, volume)
-pnpm explorer:db:start
+pnpm tsx scripts/explorer-harness.ts start
 
 # Check status
-pnpm explorer:db:status
+pnpm tsx scripts/explorer-harness.ts status
 
 # Stop and cleanup
-pnpm explorer:db:stop
+pnpm tsx scripts/explorer-harness.ts stop
 ```
 
 **Features:**
@@ -32,7 +32,7 @@ Runs database migrations to create the Stripe schema tables.
 
 **Command:**
 ```bash
-pnpm explorer:migrate
+pnpm tsx scripts/explorer-migrate.ts -- --api-version=2020-08-27
 ```
 
 **What it does:**
@@ -47,7 +47,7 @@ Generates deterministic, graph-aware synthetic Stripe data.
 
 **Command:**
 ```bash
-pnpm explorer:seed
+pnpm tsx scripts/explorer-seed.ts -- --api-version=2020-08-27 --seed=42
 ```
 
 **Features:**
@@ -85,16 +85,16 @@ pnpm explorer:seed
 
 ```bash
 # 1. Start the database
-pnpm explorer:db:start
+pnpm tsx scripts/explorer-harness.ts start
 
 # 2. Run migrations
-pnpm explorer:migrate
+pnpm tsx scripts/explorer-migrate.ts -- --api-version=2020-08-27
 
 # 3. Seed data
-pnpm explorer:seed
+pnpm tsx scripts/explorer-seed.ts -- --api-version=2020-08-27 --seed=42
 
 # 4. When done, cleanup
-pnpm explorer:db:stop
+pnpm tsx scripts/explorer-harness.ts stop
 ```
 
 ## Verifying Data

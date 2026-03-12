@@ -80,8 +80,17 @@ npx stripe-experiment-sync supabase install \
 
 - [Library & CLI: stripe-experiment-sync](./packages/sync-engine/README.md)
 - [Docker/Server: stripe-sync-fastify](./packages/fastify-app/README.md)
+- [Schema Explorer (dashboard)](./packages/dashboard/EXPLORER-README.md)
+
+The schema explorer is a client-side SQL playground for Stripe tables.
+It uses `pnpm explorer:build` to generate `bootstrap.sql` and `manifest.json`
+for PGlite hydration in `packages/dashboard`.
 
 Each package has its own README with installation, configuration, and usage instructions.
+
+### Schema Explorer
+
+See [`packages/dashboard/EXPLORER-README.md`](./packages/dashboard/EXPLORER-README.md) for the current explorer workflow.
 
 ---
 

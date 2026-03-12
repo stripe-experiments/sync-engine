@@ -4,7 +4,7 @@
  *
  * Usage:
  *   pnpm tsx scripts/explorer-migrate.ts [--api-version=2020-08-27]
- *   STRIPE_API_VERSION=2023-10-16 pnpm explorer:migrate
+ *   STRIPE_API_VERSION=2023-10-16 pnpm tsx scripts/explorer-migrate.ts
  */
 
 import * as fs from 'fs';
@@ -30,7 +30,7 @@ interface MigrationScriptConfig {
 }
 
 function printUsage(): void {
-  console.log('Usage: pnpm explorer:migrate -- --api-version=2020-08-27');
+  console.log('Usage: pnpm tsx scripts/explorer-migrate.ts -- --api-version=2020-08-27');
   console.log('');
   console.log('Flags:');
   console.log(`  --api-version  Stripe API version for schema resolution (default: ${DEFAULT_STRIPE_API_VERSION})`);
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
   if (!fs.existsSync(METADATA_FILE)) {
     console.error('❌ Error: No metadata file found');
     console.error(`   Expected: ${METADATA_FILE}`);
-    console.error('\n💡 Start the harness first: pnpm explorer:db:start');
+    console.error('\n💡 Start the harness first: pnpm tsx scripts/explorer-harness.ts start');
     process.exit(1);
   }
 

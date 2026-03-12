@@ -14,7 +14,7 @@
  *
  * Usage:
  *   pnpm tsx scripts/explorer-seed.ts [--api-version=2020-08-27] [--seed=42]
- *   STRIPE_API_VERSION=2023-10-16 SEED=1337 pnpm explorer:seed
+ *   STRIPE_API_VERSION=2023-10-16 SEED=1337 pnpm tsx scripts/explorer-seed.ts
  */
 
 import { Client } from 'pg'
@@ -81,7 +81,7 @@ interface SeedScriptConfig {
 }
 
 function printUsage(): void {
-  console.log('Usage: pnpm explorer:seed -- [--api-version=2020-08-27] [--seed=42]')
+  console.log('Usage: pnpm tsx scripts/explorer-seed.ts -- --api-version=2020-08-27 --seed=42')
   console.log('')
   console.log('Flags:')
   console.log(
@@ -1416,7 +1416,7 @@ async function main(): Promise<void> {
   if (!fs.existsSync(METADATA_FILE)) {
     console.error('❌ Error: No metadata file found')
     console.error(`   Expected: ${METADATA_FILE}`)
-    console.error('\n💡 Start the harness first: pnpm explorer:db:start')
+    console.error('\n💡 Start the harness first: pnpm tsx scripts/explorer-harness.ts start')
     process.exit(1)
   }
 

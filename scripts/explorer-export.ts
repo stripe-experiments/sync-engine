@@ -11,7 +11,7 @@
  * 6. Generates a fresh manifest.json with metadata
  *
  * Usage:
- *   pnpm explorer:export
+ *   pnpm tsx scripts/explorer-export.ts
  */
 
 import { Client } from 'pg';
@@ -611,7 +611,7 @@ async function main(): Promise<void> {
   if (!fs.existsSync(METADATA_FILE)) {
     console.error('❌ Error: No metadata file found');
     console.error(`   Expected: ${METADATA_FILE}`);
-    console.error('\n💡 Start the harness first: pnpm explorer:db:start');
+    console.error('\n💡 Start the harness first: pnpm tsx scripts/explorer-harness.ts start');
     process.exit(1);
   }
 

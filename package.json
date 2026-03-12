@@ -13,13 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dashboard": "pnpm --filter @supabase/stripe-sync-dashboard dev",
-    "explorer:build": "tsx scripts/explorer-build.ts",
-    "explorer:db:start": "tsx scripts/explorer-harness.ts start",
-    "explorer:db:stop": "tsx scripts/explorer-harness.ts stop",
-    "explorer:db:status": "tsx scripts/explorer-harness.ts status",
-    "explorer:migrate": "tsx scripts/explorer-migrate.ts",
-    "explorer:seed": "tsx scripts/explorer-seed.ts",
-    "explorer:export": "tsx scripts/explorer-export.ts"
+    "dashboard:with-data": "pnpm explorer:build && pnpm dashboard",
+    "explorer:build": "tsx scripts/explorer-build.ts"
   },
   "dependencies": {
     "pino": "^10.0.0"

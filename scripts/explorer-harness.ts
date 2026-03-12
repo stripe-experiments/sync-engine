@@ -10,8 +10,8 @@
  * - Safety checks to prevent running against shared instances
  *
  * Usage:
- *   pnpm explorer:db:start   # Create and start container
- *   pnpm explorer:db:stop    # Stop and cleanup container
+ *   pnpm tsx scripts/explorer-harness.ts start   # Create and start container
+ *   pnpm tsx scripts/explorer-harness.ts stop    # Stop and cleanup container
  */
 
 import { execSync } from 'child_process';
@@ -192,7 +192,7 @@ async function startContainer(): Promise<void> {
   console.log(`   Container Name: ${containerName}`);
   console.log(`   Port: ${hostPort}`);
   console.log(`\n📄 Metadata saved to: ${METADATA_FILE}`);
-  console.log(`\n🛑 To stop: pnpm explorer:db:stop`);
+  console.log(`\n🛑 To stop: pnpm tsx scripts/explorer-harness.ts stop`);
 }
 
 async function stopContainer(): Promise<void> {
@@ -242,7 +242,7 @@ async function statusCheck(): Promise<void> {
   if (!fs.existsSync(METADATA_FILE)) {
     console.log('❌ No running instance found');
     console.log(`   Metadata file not found: ${METADATA_FILE}`);
-    console.log(`\n💡 Start with: pnpm explorer:db:start`);
+    console.log(`\n💡 Start with: pnpm tsx scripts/explorer-harness.ts start`);
     process.exit(0);
   }
 
@@ -292,9 +292,9 @@ async function main(): Promise<void> {
       break;
     default:
       console.error('Usage:');
-      console.error('  pnpm explorer:db:start   # Start container');
-      console.error('  pnpm explorer:db:stop    # Stop and cleanup');
-      console.error('  pnpm explorer:db:status  # Check status');
+      console.error('  pnpm tsx scripts/explorer-harness.ts start   # Start container');
+      console.error('  pnpm tsx scripts/explorer-harness.ts stop    # Stop and cleanup');
+      console.error('  pnpm tsx scripts/explorer-harness.ts status  # Check status');
       process.exit(1);
   }
 }

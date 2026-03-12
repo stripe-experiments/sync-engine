@@ -71,9 +71,12 @@ function parseArgs(): PipelineConfig {
 /**
  * Execute a command and handle errors with phase context
  */
-function execPhase(command: string, phase: string): void {
+function execPhase(command: string, phase: string, env?: NodeJS.ProcessEnv): void {
   try {
-    execSync(command, { stdio: 'inherit' });
+    execSync(command, {
+      stdio: 'inherit',
+      env: env ? { ...process.env, ...env } : process.env,
+    });
   } catch (error) {
     console.error(`\n❌ Pipeline failed at phase: ${phase}`);
     console.error(`   Command: ${command}`);
@@ -119,7 +122,7 @@ async function main(): Promise<void> {
     if (isHarnessRunning()) {
       console.log('⚠️  Harness already running. Stopping existing instance first...\n');
       try {
-        execPhase('pnpm explorer:db:stop', 'Pre-cleanup');
+        execPhase('pnpm tsx scripts/explorer-harness.ts stop', 'Pre-cleanup');
       } catch {
         // Ignore cleanup errors, may have stale metadata file
         if (fs.existsSync(METADATA_FILE)) {
@@ -129,7 +132,7 @@ async function main(): Promise<void> {
       console.log('');
     }
 
-    execPhase('pnpm explorer:db:start', 'Start Harness DB');
+    execPhase('pnpm tsx scripts/explorer-harness.ts start', 'Start Harness DB');
     shouldCleanup = true; // Mark for cleanup if subsequent phases fail
 
     console.log('\n✅ Phase 1 complete\n');
@@ -139,12 +142,14 @@ async function main(): Promise<void> {
     console.log('📦 Phase 2: Running migrations (all_projected mode)...\n');
 
     // Set environment variable for API version
-    const migrateEnv = { ...process.env, STRIPE_API_VERSION: config.apiVersion };
     try {
-      execSync('pnpm explorer:migrate', {
-        stdio: 'inherit',
-        env: migrateEnv,
-      });
+      execPhase(
+        `pnpm tsx scripts/explorer-migrate.ts -- --api-version=${config.apiVersion}`,
+        'Migrate schema',
+        {
+          STRIPE_API_VERSION: config.apiVersion,
+        },
+      );
     } catch (error) {
       throw new Error('Migration phase failed');
     }
@@ -155,16 +160,15 @@ async function main(): Promise<void> {
     // Phase 3: Seed data
     console.log('📦 Phase 3: Seeding deterministic data...\n');
 
-    const seedEnv = {
-      ...process.env,
-      STRIPE_API_VERSION: config.apiVersion,
-      SEED: String(config.seed),
-    };
     try {
-      execSync('pnpm explorer:seed', {
-        stdio: 'inherit',
-        env: seedEnv,
-      });
+      execPhase(
+        `pnpm tsx scripts/explorer-seed.ts -- --api-version=${config.apiVersion} --seed=${config.seed}`,
+        'Seed data',
+        {
+          STRIPE_API_VERSION: config.apiVersion,
+          SEED: String(config.seed),
+        },
+      );
     } catch (error) {
       throw new Error('Seed phase failed');
     }
@@ -175,7 +179,7 @@ async function main(): Promise<void> {
     // Phase 4: Export artifact
     console.log('📦 Phase 4: Exporting artifact...\n');
 
-    execPhase('pnpm explorer:export', 'Export Artifact');
+    execPhase('pnpm tsx scripts/explorer-export.ts', 'Export Artifact');
 
     console.log('\n✅ Phase 4 complete\n');
     console.log('═══════════════════════════════════════════════════════════\n');
@@ -183,7 +187,7 @@ async function main(): Promise<void> {
     // Phase 5: Stop harness DB
     console.log('📦 Phase 5: Cleaning up harness database...\n');
 
-    execPhase('pnpm explorer:db:stop', 'Stop Harness DB');
+    execPhase('pnpm tsx scripts/explorer-harness.ts stop', 'Stop Harness DB');
     shouldCleanup = false; // Cleanup successful
 
     console.log('\n✅ Phase 5 complete\n');
@@ -210,11 +214,11 @@ async function main(): Promise<void> {
     if (shouldCleanup && isHarnessRunning()) {
       console.error('\n🧹 Attempting to clean up harness database...\n');
       try {
-        execSync('pnpm explorer:db:stop', { stdio: 'inherit' });
+        execSync('pnpm tsx scripts/explorer-harness.ts stop', { stdio: 'inherit' });
         console.error('\n✅ Cleanup successful\n');
       } catch (cleanupError) {
         console.error('\n⚠️  Cleanup failed. You may need to manually stop the container:\n');
-        console.error('   pnpm explorer:db:stop\n');
+        console.error('   pnpm tsx scripts/explorer-harness.ts stop\n');
       }
     }
 

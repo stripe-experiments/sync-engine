@@ -14,3 +14,6 @@ private/
 .vercel
 .env*.local
 .tmp/
+
+packages/dashboard/public/explorer-data/bootstrap.sql
+packages/dashboard/public/explorer-data/manifest.json
