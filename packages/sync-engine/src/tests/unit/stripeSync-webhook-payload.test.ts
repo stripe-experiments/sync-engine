@@ -33,6 +33,10 @@ describe('webhook payload handling', () => {
     }
 
     expect(constructEventAsync).toHaveBeenCalledWith(payload, 'sig_test', 'whsec_test')
+    expect(constructEventAsync.mock.contexts[0]).toBe(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (stripeSync.webhook as any).deps.stripe.webhooks
+    )
     expect(processEventSpy).toHaveBeenCalledWith(event)
   })
 })

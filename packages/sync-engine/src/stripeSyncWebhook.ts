@@ -68,13 +68,15 @@ export class StripeSyncWebhook {
       throw new Error('Missing stripe-signature header')
     }
 
-    const constructEventAsync = this.deps.stripe.webhooks.constructEventAsync as (
-      payload: string | Buffer | Uint8Array,
-      signature: string,
-      secret: string
-    ) => Promise<Stripe.Event>
+    const stripeWebhooks = this.deps.stripe.webhooks as typeof this.deps.stripe.webhooks & {
+      constructEventAsync: (
+        payload: string | Buffer | Uint8Array,
+        signature: string,
+        secret: string
+      ) => Promise<Stripe.Event>
+    }
 
-    const event = await constructEventAsync(payload, signature, webhookSecret)
+    const event = await stripeWebhooks.constructEventAsync(payload, signature, webhookSecret)
 
     return this.processEvent(event)
   }
