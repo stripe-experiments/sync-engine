@@ -216,7 +216,7 @@ RATE_LIMITED=false
 
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     # Query npm registry API directly
-    NPM_API_RESPONSE=$(curl -s "https://registry.npmjs.org/@stripe/sync-engine/$BETA_VERSION" || true)
+    NPM_API_RESPONSE=$(curl -s "https://registry.npmjs.org/@stripe%2Fsync-engine/$BETA_VERSION" || true)
 
     # Check if we got the version back (not a 404)
     if echo "$NPM_API_RESPONSE" | jq -e '.version' > /dev/null 2>&1; then
