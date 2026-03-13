@@ -1,6 +1,5 @@
 import Stripe from 'stripe'
 import pkg from '../package.json' with { type: 'json' }
-import { managedWebhookSchema } from './schemas/managed_webhook'
 import {
   type StripeSyncConfig,
   type ResourceConfig,
@@ -9,6 +8,24 @@ import {
 } from './types'
 import { PostgresClient } from './database/postgres'
 import { getTableName, normalizeStripeObjectName } from './resourceRegistry'
+
+const managedWebhookSchema = {
+  properties: [
+    'id',
+    'object',
+    'url',
+    'enabled_events',
+    'description',
+    'enabled',
+    'livemode',
+    'metadata',
+    'secret',
+    'status',
+    'api_version',
+    'created',
+    'account_id',
+  ],
+} as const
 
 export type StripeSyncWebhookDeps = {
   stripe: Stripe

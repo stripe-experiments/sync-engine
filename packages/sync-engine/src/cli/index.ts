@@ -8,6 +8,7 @@ import {
   installCommand,
   uninstallCommand,
   fullSyncCommand,
+  generateSchemaCommand,
 } from './commands'
 
 const program = new Command()
@@ -89,6 +90,26 @@ program
     await monitorCommand({
       databaseUrl: options.databaseUrl,
       stripeKey: options.stripeKey,
+    })
+  })
+
+// Generate OpenAPI schema command
+program
+  .command('generate-schema')
+  .description('Generate Postgres DDL from the Stripe OpenAPI spec (no database required)')
+  .option(
+    '--api-version <version>',
+    'Stripe API version (default: 2020-08-27 or STRIPE_API_VERSION env)'
+  )
+  .option('--spec-path <path>', 'Path to a local OpenAPI spec file (skips GitHub fetch)')
+  .option('--output <dir>', 'Output directory for the generated SQL file (default: ./migration)')
+  .option('--schema-name <name>', 'Postgres schema name (default: stripe)')
+  .action(async (options) => {
+    await generateSchemaCommand({
+      apiVersion: options.apiVersion,
+      specPath: options.specPath,
+      output: options.output,
+      schemaName: options.schemaName,
     })
   })
 

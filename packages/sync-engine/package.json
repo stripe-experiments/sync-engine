@@ -33,7 +33,8 @@
     "test:integration": "vitest run src/tests/integration/",
     "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts && vitest run --config vitest.e2e.webhook.config.ts",
     "sync": "pnpm run build && node dist/cli/index.js sync",
-    "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts"
+    "generate:sigma-schema": "tsx src/sigma/schema/fetch-schema.ts",
+    "generate:openapi-schema": "pnpm run build && node dist/cli/index.js generate-schema"
   },
   "files": [
     "dist"
@@ -51,6 +52,7 @@
     "pg-node-migrations": "0.0.8",
     "stripe": "^17.7.0",
     "supabase-management-js": "^2.0.2",
+    "typeorm": "^0.3.28",
     "ws": "^8.18.0",
     "yesql": "^7.0.0"
   },

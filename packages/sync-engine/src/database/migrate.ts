@@ -19,6 +19,7 @@ import {
   resolveOpenApiSpec,
 } from '../openapi'
 import type { EmbeddedMigration } from './migrations-embedded'
+import { syncEntitySchemas } from './typeormSync'
 
 const DEFAULT_STRIPE_API_VERSION = '2020-08-27'
 const SIGMA_BASE_COLUMNS = ['_raw_data', '_last_synced_at', '_updated_at', '_account_id'] as const
@@ -40,6 +41,8 @@ type MigrationConfig = {
   schemaName?: string
   /** Schema for sync metadata tables (accounts, _sync_runs, etc.). Defaults to schemaName. */
   syncTablesSchemaName?: string
+  /** Directory to write the generated OpenAPI migration SQL file into. Skipped when not set. */
+  openApiMigrationOutputDir?: string
 }
 
 function quoteIdentifier(identifier: string): string {
@@ -500,6 +503,20 @@ async function applyOpenApiSchema(
     accountSchema: syncSchema,
   })
   const statements = adapter.buildAllStatements(parsedSpec.tables)
+
+  if (config.openApiMigrationOutputDir) {
+    const outputDir = config.openApiMigrationOutputDir
+    const fileName = `openapi_migration_${apiVersion}_${fingerprint}.sql`
+    const outputPath = path.join(outputDir, fileName)
+    try {
+      await fs.promises.mkdir(outputDir, { recursive: true })
+      await fs.promises.writeFile(outputPath, statements.join('\n\n') + '\n', 'utf8')
+      config.logger?.info({ outputPath }, 'Wrote OpenAPI migration SQL to disk')
+    } catch (err) {
+      config.logger?.warn({ outputPath, err }, 'Failed to write OpenAPI migration SQL to disk')
+    }
+  }
+
   for (const statement of statements) {
     await runSqlAdditive(client, statement, config.logger)
   }
@@ -576,7 +593,12 @@ export async function runMigrations(config: MigrationConfig): Promise<void> {
     config.logger?.info({ migrationsDirectory }, 'Running SQL migrations from directory')
     await connectAndMigrate(client, migrationsDirectory, syncSchema, config, true)
 
-    await applyOpenApiSchema(client, config, dataSchema, syncSchema)
+    await syncEntitySchemas({
+      databaseUrl: config.databaseUrl,
+      ssl: config.ssl,
+      schemaName: dataSchema,
+      logger: config.logger,
+    })
 
     if (config.enableSigma) {
       await migrateSigmaSchema(client, config, 'sigma', syncSchema)
@@ -760,7 +782,12 @@ export async function runMigrationsFromContent(
       config.logger?.info(`Successfully applied ${pendingMigrations.length} migration(s)`)
     }
 
-    await applyOpenApiSchema(client, config, dataSchema, syncSchema)
+    await syncEntitySchemas({
+      databaseUrl: config.databaseUrl,
+      ssl: config.ssl,
+      schemaName: dataSchema,
+      logger: config.logger,
+    })
 
     if (config.enableSigma) {
       await migrateSigmaSchema(client, config, 'sigma', syncSchema)

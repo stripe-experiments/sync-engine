@@ -405,6 +405,7 @@ export async function fullSyncCommand(
         stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
         schemaName,
         syncTablesSchemaName,
+        openApiMigrationOutputDir: './migration',
       })
     } catch (migrationError) {
       console.error(chalk.red('Failed to run migrations:'))
@@ -711,3 +712,5 @@ export async function uninstallCommand(options: DeployOptions): Promise<void> {
     process.exit(1)
   }
 }
+
+export { generateSchemaCommand, type GenerateSchemaOptions } from './generateSchema'
