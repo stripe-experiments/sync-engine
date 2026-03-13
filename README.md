@@ -1,7 +1,7 @@
 # Stripe Sync Engine Monorepo
 
 ![GitHub License](https://img.shields.io/github/license/stripe-experiments/sync-engine)
-![NPM Version](https://img.shields.io/npm/v/@stripe/sync-engine)
+![NPM Version](https://img.shields.io/npm/v/@stripe%2Fsync-engine)
 
 This monorepo contains packages for synchronizing your Stripe account with a PostgreSQL database:
 
