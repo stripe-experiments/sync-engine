@@ -82,11 +82,12 @@ For iterative development with automatic rebuilds on file changes:
 
 ```sh
 cd packages/sync-engine
+pnpm run build:functions   # one-time: generate edge function bundles + migrations-embedded.ts
 STRIPE_API_KEY=<key> DATABASE_URL=<url> pnpm dev
 ```
 
-This uses `tsup --watch` to incrementally rebuild the TypeScript source (~300ms)
-and re-runs the sync command on every change.
+This uses `tsup --watch` to incrementally rebuild the TypeScript source (~300ms),
+copies SQL migrations into `dist/`, and re-runs the sync command on every change.
 
 **Why not `tsx` or `node --experimental-strip-types` directly?**
 
