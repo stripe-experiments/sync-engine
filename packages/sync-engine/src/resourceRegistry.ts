@@ -315,7 +315,6 @@ export const STRIPE_OBJECT_TO_SYNC_OBJECT_ALIASES: Record<string, StripeObject> 
   'checkout.session': 'checkout_sessions',
   'radar.early_fraud_warning': 'early_fraud_warning',
   'entitlements.active_entitlement': 'active_entitlements',
-  'entitlements.active_entitlement_summary': 'active_entitlements',
   'entitlements.feature': 'active_entitlements',
   subscription_schedule: 'subscription_schedules',
 }

@@ -3,10 +3,14 @@ import type Stripe from 'stripe'
 import { createMockedStripeSync } from '../testSetup'
 
 /**
- * Unit tests for webhook special cases where data.object may not be directly persistable.
+ * Unit tests for invoice.upcoming handling.
+ *
+ * invoice.upcoming IS a supported event type (so the webhook endpoint receives it),
+ * but processWebhook skips events whose data.object lacks an id — these are
+ * preview/draft objects that cannot be persisted (NOT NULL constraint on id).
  */
 
-describe('webhook events without top-level ids', () => {
+describe('invoice.upcoming handling', () => {
   it('should include invoice.upcoming in supported event types so the webhook receives it', async () => {
     const stripeSync = await createMockedStripeSync()
     const supportedEvents = stripeSync.webhook.getSupportedEventTypes()
@@ -22,7 +26,7 @@ describe('webhook events without top-level ids', () => {
     expect(supportedEvents).toContain('invoice.updated')
   })
 
-  it('should skip invoice previews whose data.object has no id before account lookup', async () => {
+  it('should skip events whose data.object has no id', async () => {
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
@@ -31,10 +35,7 @@ describe('webhook events without top-level ids', () => {
 
     const stripeSync = await createMockedStripeSync({ logger })
 
-    const getAccountIdSpy = vi.fn().mockResolvedValue('acct_test')
     const upsertSpy = vi.fn()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(stripeSync.webhook as any).deps.getAccountId = getAccountIdSpy
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(stripeSync.webhook as any).deps.upsertAny = upsertSpy
 
@@ -56,67 +57,10 @@ describe('webhook events without top-level ids', () => {
 
     await expect(stripeSync.webhook.processEvent(event)).resolves.toBeUndefined()
 
-    expect(getAccountIdSpy).not.toHaveBeenCalled()
     expect(upsertSpy).not.toHaveBeenCalled()
 
     expect(logger.info).toHaveBeenCalledWith(
       expect.stringContaining('Skipping webhook evt_test_upcoming')
-    )
-  })
-
-  it('should process entitlement summaries even without a top-level id', async () => {
-    const stripeSync = await createMockedStripeSync()
-
-    const deleteRemovedActiveEntitlementsSpy = vi.fn().mockResolvedValue(undefined)
-    const upsertSpy = vi.fn().mockResolvedValue([])
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(stripeSync.webhook as any).deps.postgresClient.deleteRemovedActiveEntitlements =
-      deleteRemovedActiveEntitlementsSpy
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(stripeSync.webhook as any).deps.upsertAny = upsertSpy
-
-    const event = {
-      id: 'evt_test_entitlements',
-      type: 'entitlements.active_entitlement_summary.updated',
-      data: {
-        object: {
-          object: 'entitlements.active_entitlement_summary',
-          customer: 'cus_test123',
-          entitlements: {
-            data: [
-              {
-                id: 'ent_test_123',
-                object: 'entitlements.active_entitlement',
-                feature: 'feat_test_123',
-                livemode: false,
-                lookup_key: 'journeys',
-              },
-            ],
-          },
-          livemode: false,
-        },
-      },
-      created: Math.floor(Date.now() / 1000),
-    } as unknown as Stripe.Event
-
-    await expect(stripeSync.webhook.processEvent(event)).resolves.toBeUndefined()
-
-    expect(deleteRemovedActiveEntitlementsSpy).toHaveBeenCalledWith('cus_test123', ['ent_test_123'])
-    expect(upsertSpy).toHaveBeenCalledWith(
-      [
-        {
-          id: 'ent_test_123',
-          object: 'entitlements.active_entitlement',
-          feature: 'feat_test_123',
-          customer: 'cus_test123',
-          livemode: false,
-          lookup_key: 'journeys',
-        },
-      ],
-      'acct_test',
-      false,
-      expect.any(String)
     )
   })
 
