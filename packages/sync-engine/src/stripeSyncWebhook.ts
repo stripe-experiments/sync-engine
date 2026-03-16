@@ -27,6 +27,9 @@ export type StripeSyncWebhookDeps = {
 }
 
 export class StripeSyncWebhook {
+  private static readonly ACTIVE_ENTITLEMENT_SUMMARY_EVENT =
+    'entitlements.active_entitlement_summary.updated'
+
   private _allowedObjects: Set<string> | null = null
 
   constructor(private readonly deps: StripeSyncWebhookDeps) {}
@@ -82,31 +85,41 @@ export class StripeSyncWebhook {
   }
 
   async processEvent(event: Stripe.Event) {
+    const isEntitlementSummaryEvent =
+      event.type === StripeSyncWebhook.ACTIVE_ENTITLEMENT_SUMMARY_EVENT
+    const dataObject =
+      event.data?.object && typeof event.data.object === 'object'
+        ? (event.data.object as { id?: string; object?: string; account?: string })
+        : undefined
+    const rawObjectType = dataObject?.object
+    const objectType = rawObjectType ? normalizeStripeObjectName(rawObjectType) : undefined
+
+    if (rawObjectType && !this.deps.resourceRegistry[objectType!] && !isEntitlementSummaryEvent) {
+      this.deps.config.logger?.info(
+        `Skipping webhook ${event.id}: ${event.type} — object type "${rawObjectType}" is not supported`
+      )
+      return
+    }
+
     if (this._allowedObjects) {
-      const objectType = (event.data?.object as { object?: string })?.object
-      if (objectType && !this._allowedObjects.has(normalizeStripeObjectName(objectType))) {
+      if (objectType && !this._allowedObjects.has(objectType)) {
         this.deps.config.logger?.info(
-          `Skipping webhook ${event.id}: ${event.type} — object type "${objectType}" not in sync filter`
+          `Skipping webhook ${event.id}: ${event.type} — object type "${rawObjectType}" not in sync filter`
         )
         return
       }
     }
 
-    const objectAccountId =
-      event.data?.object && typeof event.data.object === 'object' && 'account' in event.data.object
-        ? (event.data.object as { account?: string }).account
-        : undefined
-    const accountId = await this.deps.getAccountId(objectAccountId)
-
-    // Skip events whose data.object lacks an id — these are preview/draft objects
-    // (e.g. invoice.upcoming) that cannot be persisted due to NOT NULL constraint on id
-    const dataObject = event.data?.object as { id?: string } | undefined
-    if (dataObject && typeof dataObject === 'object' && !dataObject.id) {
+    // Skip preview/draft objects that cannot be persisted due to the NOT NULL id constraint.
+    // Active entitlement summaries are handled by a dedicated path and do not carry a top-level id.
+    if (dataObject && !dataObject.id && !isEntitlementSummaryEvent) {
       this.deps.config.logger?.info(
         `Skipping webhook ${event.id}: ${event.type} — data.object has no id (preview/draft object)`
       )
       return
     }
+
+    const accountId = await this.deps.getAccountId(dataObject?.account)
     await this.handleAnyEvent(event, accountId)
   }
 
@@ -215,7 +228,7 @@ export class StripeSyncWebhook {
   }
 
   async handleAnyEvent(event: Stripe.Event, accountId: string): Promise<void> {
-    if (event.type === 'entitlements.active_entitlement_summary.updated') {
+    if (event.type === StripeSyncWebhook.ACTIVE_ENTITLEMENT_SUMMARY_EVENT) {
       await this.handleEntitlementSummaryEvent(event, accountId)
     } else if (this.isDeleteEvent(event)) {
       await this.handleDeletedEvent(event, accountId)
