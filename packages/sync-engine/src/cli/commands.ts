@@ -145,15 +145,20 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
     // Check if sigma is enabled via CLI option or env var
     const enableSigma = options.enableSigma ?? process.env.ENABLE_SIGMA === 'true'
 
-    console.log(chalk.blue("Running database migrations in 'stripe' schema..."))
+    const schemaName = process.env.SYNC_SCHEMA_NAME
+    const syncTablesSchemaName = process.env.SYNC_TABLES_SCHEMA_NAME
+
+    console.log(
+      chalk.blue(
+        `Running database migrations in '${schemaName ?? 'stripe'}' schema...`
+      )
+    )
     console.log(chalk.gray(`Database: ${databaseUrl.replace(/:[^:@]+@/, ':****@')}`))
     if (enableSigma) {
       console.log(chalk.blue('Sigma tables enabled'))
     }
 
     try {
-      const schemaName = process.env.SYNC_SCHEMA_NAME ?? undefined
-      const syncTablesSchemaName = process.env.SYNC_TABLES_SCHEMA_NAME ?? undefined
       await runMigrations({
         databaseUrl,
         enableSigma,
@@ -624,9 +629,12 @@ export async function installCommand(options: DeployOptions): Promise<void> {
     console.log(chalk.cyan('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
     console.log(chalk.cyan.bold('  Installation Complete!'))
     console.log(chalk.cyan('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
+    const syncSchemaName = process.env.SYNC_SCHEMA_NAME ?? 'stripe'
     console.log(chalk.gray('\n  Your Stripe data will stay in sync to your Supabase database.'))
     console.log(
-      chalk.gray('  View your data in the Supabase dashboard under the "stripe" schema.\n')
+      chalk.gray(
+        `  View your data in the Supabase dashboard under the "${syncSchemaName}" schema.\n`
+      )
     )
   } catch (error) {
     if (error instanceof Error) {
