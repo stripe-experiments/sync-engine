@@ -150,9 +150,7 @@ export function discoverNestedEndpoints(
     if (!parentEndpoint) continue
 
     const params = getOp.parameters ?? []
-    const supportsPagination = params.some(
-      (p: { name?: string }) => p.name === 'limit'
-    )
+    const supportsPagination = params.some((p: { name?: string }) => p.name === 'limit')
 
     nested.push({
       tableName: resolveTableName(resourceId, aliases),
@@ -196,9 +194,7 @@ function resolveStripeResource(stripe: Stripe, segments: string[], apiPath: stri
   for (const segment of segments) {
     resource = resource?.[segment]
     if (!resource) {
-      throw new Error(
-        `Stripe SDK has no property "${segment}" when resolving path "${apiPath}"`
-      )
+      throw new Error(`Stripe SDK has no property "${segment}" when resolving path "${apiPath}"`)
     }
   }
   return resource
@@ -331,4 +327,3 @@ export function buildV2RetrieveFn(apiKey: string, apiPath: string): RetrieveFn {
     return (await response.json()) as Stripe.Response<unknown>
   }
 }
-

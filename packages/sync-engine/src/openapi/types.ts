@@ -34,7 +34,12 @@ export type OpenApiResponse = {
 
 export type OpenApiOperationObject = {
   operationId?: string
-  parameters?: { name?: string; in?: string; required?: boolean; schema?: OpenApiSchemaOrReference }[]
+  parameters?: {
+    name?: string
+    in?: string
+    required?: boolean
+    schema?: OpenApiSchemaOrReference
+  }[]
   responses?: Record<string, OpenApiResponse>
 }
 

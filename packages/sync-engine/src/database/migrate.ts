@@ -513,10 +513,7 @@ async function populateSyncNestedObjects(
     params
   )
 
-  logger?.info(
-    { count: nestedEndpoints.length },
-    'Populated _sync_nested_objects table'
-  )
+  logger?.info({ count: nestedEndpoints.length }, 'Populated _sync_nested_objects table')
 }
 
 async function applyOpenApiSchema(
@@ -598,7 +595,11 @@ async function applyOpenApiSchema(
   await insertMigrationMarker(client, syncSchema, markerColumn, marker, fingerprint)
 
   const endpoints = discoverListEndpoints(resolvedSpec.spec, OPENAPI_RESOURCE_TABLE_ALIASES)
-  const nestedEndpoints = discoverNestedEndpoints(resolvedSpec.spec, endpoints, OPENAPI_RESOURCE_TABLE_ALIASES)
+  const nestedEndpoints = discoverNestedEndpoints(
+    resolvedSpec.spec,
+    endpoints,
+    OPENAPI_RESOURCE_TABLE_ALIASES
+  )
   await populateSyncNestedObjects(client, dataSchema, nestedEndpoints, config.logger)
 
   const planner = new WritePathPlanner()

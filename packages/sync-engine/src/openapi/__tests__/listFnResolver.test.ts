@@ -132,4 +132,3 @@ describe('buildListFn', () => {
     await expect(() => listFn({ limit: 1 })).toThrow(/Stripe SDK has no property/)
   })
 })
-

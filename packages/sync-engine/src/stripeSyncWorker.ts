@@ -130,7 +130,7 @@ export class StripeSyncWorker {
     }
 
     // Fetch from Stripe
-    const response = await config.listFn(listParams)
+    const response = await config.listFn!(listParams)
     return response
   }
 

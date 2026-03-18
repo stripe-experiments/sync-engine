@@ -337,10 +337,8 @@ describe('SpecParser', () => {
       const specWithLimitedPaths: OpenApiSpec = {
         ...minimalStripeOpenApiSpec,
         paths: {
-          '/v1/customers':
-            minimalStripeOpenApiSpec.paths!['/v1/customers'],
-          '/v1/products':
-            minimalStripeOpenApiSpec.paths!['/v1/products'],
+          '/v1/customers': minimalStripeOpenApiSpec.paths!['/v1/customers'],
+          '/v1/products': minimalStripeOpenApiSpec.paths!['/v1/products'],
         },
       }
       const parsed = parser.parse(specWithLimitedPaths)

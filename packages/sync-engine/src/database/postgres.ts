@@ -355,7 +355,7 @@ export class PostgresClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getAccountByApiKeyHash(apiKeyHash: string): Promise<any | null> {
     const result = await this.query(
-        `SELECT _raw_data FROM "${this.syncSchema}"."_accounts"
+      `SELECT _raw_data FROM "${this.syncSchema}"."_accounts"
        WHERE $1 = ANY(api_key_hashes)
        LIMIT 1`,
       [apiKeyHash]
