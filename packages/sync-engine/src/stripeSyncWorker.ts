@@ -279,7 +279,6 @@ export class StripeSyncWorker {
           .filter((id): id is string => !!id)
 
         for (const nested of listConfig.nestedResources) {
-          if (nested.tableName !== 'persons') continue
           synced_nested.push({ object: nested.tableName, count: 0 })
           for (const parentId of parentIds) {
             try {
