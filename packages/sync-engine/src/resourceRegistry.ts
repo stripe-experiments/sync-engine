@@ -12,17 +12,6 @@ import {
 } from './openapi/listFnResolver'
 
 /**
- * Resources where the Stripe API does not support the `created` filter for pagination.
- * Everything else defaults to true.
- */
-const NO_CREATED_FILTER: ReadonlySet<string> = new Set([
-  'payment_method',
-  'payment_methods',
-  'tax_id',
-  'tax_ids',
-])
-
-/**
  * The default set of table names synced when no explicit selection is made.
  * These correspond to the resources that were previously hardcoded with sync: true.
  */
@@ -88,7 +77,6 @@ export function buildResourceRegistry(
   const endpoints = discoverListEndpoints(spec)
   const nestedEndpoints = discoverNestedEndpoints(spec, endpoints)
   const registry: Record<string, ResourceConfig> = {}
-  let order = 0
   const seenNested = new Set<string>()
 
   for (const [tableName, endpoint] of endpoints) {
@@ -105,11 +93,11 @@ export function buildResourceRegistry(
         supportsPagination: n.supportsPagination,
       }))
 
-    order += 1
     const config: StripeListResourceConfig = {
-      order,
+      order: 1,
       tableName,
-      supportsCreatedFilter: v2 ? false : !NO_CREATED_FILTER.has(tableName),
+      supportsCreatedFilter: !v2 && endpoint.supportsCreatedFilter,
+      supportsLimit: endpoint.supportsLimit,
       sync: true,
       dependencies: [],
       listFn: buildListFn(stripe, endpoint.apiPath, apiKey),
@@ -129,11 +117,11 @@ export function buildResourceRegistry(
     }
     seenNested.add(nested.tableName)
 
-    order += 1
     const config: StripeListResourceConfig = {
-      order,
+      order: 2,
       tableName: nested.tableName,
       supportsCreatedFilter: false,
+      supportsLimit: nested.supportsPagination,
       sync: false,
       dependencies: [],
       listFn: undefined,

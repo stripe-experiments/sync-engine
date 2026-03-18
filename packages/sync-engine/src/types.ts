@@ -268,6 +268,8 @@ export type BaseResourceConfig = {
   tableName: string
   /** Whether this resource supports incremental sync via 'created' filter or cursor */
   supportsCreatedFilter: boolean
+  /** Whether this resource supports the 'limit' query parameter for pagination */
+  supportsLimit: boolean
   /** Whether this resource is included in sync runs by default. Default: true */
   sync?: boolean
   /** Resource types that must be backfilled before this one (e.g. price depends on product) */

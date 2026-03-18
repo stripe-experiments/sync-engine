@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS "stripe"."_sync_obj_runs" (
   "created_gte" integer NOT NULL DEFAULT 0,
   "created_lte" integer NOT NULL DEFAULT 0,
   "priority" integer NOT NULL DEFAULT 0,
+  "nested" boolean NOT NULL DEFAULT false,
   "error_message" text,
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("_account_id", "run_started_at", "object", "created_gte", "created_lte")
@@ -142,6 +143,8 @@ ALTER TABLE "stripe"."_sync_obj_runs"
   ADD COLUMN IF NOT EXISTS "priority" integer NOT NULL DEFAULT 0;
 ALTER TABLE "stripe"."_sync_obj_runs"
   ADD COLUMN IF NOT EXISTS "error_message" text;
+ALTER TABLE "stripe"."_sync_obj_runs"
+  ADD COLUMN IF NOT EXISTS "nested" boolean NOT NULL DEFAULT false;
 ALTER TABLE "stripe"."_sync_obj_runs"
   DROP CONSTRAINT IF EXISTS "fk_sync_obj_runs_parent";
 ALTER TABLE "stripe"."_sync_obj_runs"

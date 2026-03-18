@@ -12,6 +12,8 @@ export type ListEndpoint = {
   tableName: string
   resourceId: string
   apiPath: string
+  supportsCreatedFilter: boolean
+  supportsLimit: boolean
 }
 
 export type NestedEndpoint = {
@@ -91,7 +93,33 @@ export function discoverListEndpoints(
 
     const tableName = resolveTableName(resourceId, aliases)
     if (!endpoints.has(tableName)) {
-      endpoints.set(tableName, { tableName, resourceId, apiPath })
+      const params = getOp.parameters ?? []
+      const PAGINATION_PARAMS = new Set([
+        'limit',
+        'starting_after',
+        'ending_before',
+        'created',
+        'expand',
+      ])
+      const hasRequiredQueryParams = params.some(
+        (p: { name?: string; in?: string; required?: boolean }) =>
+          p.required === true && p.in === 'query' && !PAGINATION_PARAMS.has(p.name ?? '')
+      )
+      if (hasRequiredQueryParams) continue
+
+      const supportsCreatedFilter = params.some(
+        (p: { name?: string; in?: string }) => p.name === 'created' && p.in === 'query'
+      )
+      const supportsLimit = params.some(
+        (p: { name?: string; in?: string }) => p.name === 'limit' && p.in === 'query'
+      )
+      endpoints.set(tableName, {
+        tableName,
+        resourceId,
+        apiPath,
+        supportsCreatedFilter,
+        supportsLimit,
+      })
     }
   }
 
@@ -223,7 +251,7 @@ export function canResolveSdkResource(stripe: Stripe, apiPath: string): boolean 
  * the API path segments converted from snake_case to camelCase.
  * Path parameters (e.g. `{customer}`) are stripped automatically.
  */
-export function buildListFn(stripe: Stripe, apiPath: string, apiKey: string): ListFn {
+export function buildListFn(stripe: Stripe, apiPath: string, apiKey: string = ''): ListFn {
   const v2 = isV2Path(apiPath)
   if (v2) {
     return buildV2ListFn(apiKey, apiPath)
@@ -293,16 +321,16 @@ export function buildV2ListFn(apiKey: string, apiPath: string): ListFn {
     qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
     if (params.starting_after) qs.set('page', params.starting_after)
     const url = `https://api.stripe.com${apiPath}?${qs.toString()}`
-    console.log('[v2-list] GET', url)
+
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Stripe-Version': '2026-02-25.clover',
       },
     })
-    console.log('[v2-list] status:', response.status)
+
     const raw = await response.text()
-    console.log('[v2-list] body:', raw.slice(0, 1000))
+
     const body = JSON.parse(raw) as {
       data: unknown[]
       next_page_url?: string | null

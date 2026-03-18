@@ -7,6 +7,7 @@ import {
   StripeSyncConfig,
 } from './types'
 import { SigmaSyncProcessor } from './sigma/sigmaSyncProcessor'
+import { isV2Path } from './openapi/listFnResolver'
 import { RunKey } from './stripeSync'
 
 export type SyncTask = {
@@ -76,6 +77,20 @@ export class StripeSyncWorker {
             `Rate limited on claimNextTask, backing off ${Math.round(randomWait)}ms`
           )
           await new Promise((r) => setTimeout(r, randomWait))
+        } else if (
+          task &&
+          err instanceof Stripe.errors.StripeInvalidRequestError &&
+          (/not set up to use|Unrecognized request URL|Have you onboarded|not enabled for testmode/i.test(err.message) ||
+            err.code === 'parameter_missing')
+        ) {
+          await this.postgresClient.updateSyncObject(
+            this.accountId,
+            this.runKey.runStartedAt,
+            task.object,
+            task.created_gte,
+            task.created_lte,
+            { status: 'complete', processedCount: 0 }
+          )
         } else {
           if (task) {
             await this.postgresClient.updateSyncObject(
@@ -111,8 +126,9 @@ export class StripeSyncWorker {
   ) {
     if (config.sigma)
       throw new Error(`Sigma sync not supported in worker (config: ${JSON.stringify(config)})`)
-    const listParams: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam } = {
-      limit: 100,
+    const listParams: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam } = {}
+    if (config.supportsLimit) {
+      listParams.limit = 100
     }
     if (config.supportsCreatedFilter) {
       const lte = cursor ? Number.parseInt(cursor, 10) : created_lte
@@ -130,6 +146,7 @@ export class StripeSyncWorker {
     }
 
     // Fetch from Stripe
+    await this.postgresClient.waitForRateLimit(this.rateLimit)
     const response = await config.listFn!(listParams)
     return response
   }
@@ -144,6 +161,7 @@ export class StripeSyncWorker {
     const object = claimed.object
 
     const config = this.getConfigForTaskObject(object)
+
     if (config?.sigma) {
       return {
         object,
@@ -247,6 +265,7 @@ export class StripeSyncWorker {
     }
     const synced_nested: Array<{ object: string; count: number }> = []
     // Core Stripe API resources
+
     const {
       data,
       has_more,
@@ -289,7 +308,8 @@ export class StripeSyncWorker {
               while (hasMore) {
                 let url = nestedPath
                 if (nested.supportsPagination) {
-                  const qs = new URLSearchParams({ limit: '100' })
+                  const pageLimit = isV2Path(nested.apiPath) ? '20' : '100'
+                  const qs = new URLSearchParams({ limit: pageLimit })
                   if (startingAfter) qs.set('starting_after', startingAfter)
                   url = `${nestedPath}?${qs.toString()}`
                 }

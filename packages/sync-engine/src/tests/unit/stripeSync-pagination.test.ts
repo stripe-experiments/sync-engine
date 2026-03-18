@@ -22,25 +22,27 @@ describe('Pagination regression tests', () => {
       expect(registry.credit_note.supportsCreatedFilter).toBe(true)
     })
 
-    it('should have supportsCreatedFilter: true for all core Stripe objects except payment_method and tax_id', async () => {
+    it('supportsCreatedFilter should be derived from the OpenAPI spec', async () => {
       const sync = await createMockedStripeSync()
       const registry = sync.resourceRegistry
 
-      const coreObjectsExpectedFalse = ['payment_method', 'payment_methods', 'tax_id', 'tax_ids']
+      const knownTrue = ['credit_note', 'customer', 'charge', 'invoice']
+      const knownFalse = ['payment_method', 'payment_methods', 'tax_id', 'tax_ids']
 
-      for (const [objectName, config] of Object.entries(registry)) {
-        const resourceConfig = config as { supportsCreatedFilter: boolean }
-
-        if (coreObjectsExpectedFalse.includes(objectName)) {
+      for (const name of knownTrue) {
+        if (registry[name]) {
           expect(
-            resourceConfig.supportsCreatedFilter,
-            `${objectName} should have supportsCreatedFilter: false`
-          ).toBe(false)
-        } else {
-          expect(
-            resourceConfig.supportsCreatedFilter,
-            `${objectName} should have supportsCreatedFilter: true to prevent infinite pagination`
+            registry[name].supportsCreatedFilter,
+            `${name} should have supportsCreatedFilter: true (spec has created param)`
           ).toBe(true)
+        }
+      }
+      for (const name of knownFalse) {
+        if (registry[name]) {
+          expect(
+            registry[name].supportsCreatedFilter,
+            `${name} should have supportsCreatedFilter: false (spec has no created param)`
+          ).toBe(false)
         }
       }
     })
@@ -63,16 +65,20 @@ describe('Pagination regression tests', () => {
         tableName: 'credit_notes',
         order: 0,
         supportsCreatedFilter: true,
+        supportsLimit: true,
         listFn: mockCreditNotesList,
       } as unknown as ResourceConfig
     })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockPostgres = { waitForRateLimit: vi.fn().mockResolvedValue(undefined) } as any
 
     it('should pass created filter when supportsCreatedFilter is true and cursor exists', async () => {
       const worker = new StripeSyncWorker(
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        mockPostgres,
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -96,7 +102,7 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        mockPostgres,
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -115,7 +121,7 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        mockPostgres,
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -138,7 +144,7 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        mockPostgres,
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -163,7 +169,7 @@ describe('Pagination regression tests', () => {
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        mockPostgres,
         'acct_test',
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         {} as any, // eslint-disable-line @typescript-eslint/no-explicit-any

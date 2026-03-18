@@ -912,21 +912,24 @@ export class PostgresClient {
     accountId: string,
     runStartedAt: Date,
     resourceNames: string[],
-    priorities?: Record<string, number>
+    priorities?: Record<string, number>,
+    nestedTables?: Set<string>
   ): Promise<void> {
     if (resourceNames.length === 0) return
 
-    const params: (string | Date | number)[] = [accountId, runStartedAt]
+    const params: (string | Date | number | boolean)[] = [accountId, runStartedAt]
     const valueClauses = resourceNames.map((name) => {
       const nameIdx = params.length + 1
       params.push(name)
       const prioIdx = params.length + 1
       params.push(priorities?.[name] ?? 0)
-      return `($1, $2, $${nameIdx}, $${prioIdx})`
+      const nestedIdx = params.length + 1
+      params.push(nestedTables?.has(name) ?? false)
+      return `($1, $2, $${nameIdx}, $${prioIdx}, $${nestedIdx})`
     })
 
     await this.query(
-      `INSERT INTO "${this.syncSchema}"."_sync_obj_runs" ("_account_id", run_started_at, object, priority)
+      `INSERT INTO "${this.syncSchema}"."_sync_obj_runs" ("_account_id", run_started_at, object, priority, nested)
        VALUES ${valueClauses.join(', ')}
        ON CONFLICT ("_account_id", run_started_at, object, created_gte, created_lte) DO NOTHING`,
       params
@@ -937,21 +940,23 @@ export class PostgresClient {
     accountId: string,
     runStartedAt: Date,
     chunkCursors: Record<string, number[]>,
-    priorities?: Record<string, number>
+    priorities?: Record<string, number>,
+    nestedTables?: Set<string>
   ): Promise<void> {
-    const params: (string | Date | number | null)[] = [accountId, runStartedAt]
+    const params: (string | Date | number | boolean | null)[] = [accountId, runStartedAt]
     const valueClauses: string[] = []
 
     for (const [tableName, timestamps] of Object.entries(chunkCursors)) {
       const priority = priorities?.[tableName] ?? 0
+      const nested = nestedTables?.has(tableName) ?? false
       for (let i = 0; i < timestamps.length; i++) {
         const gte = timestamps[i]
         const lte = i < timestamps.length - 1 ? timestamps[i + 1] : Math.floor(Date.now() / 1000)
         const baseIdx = params.length + 1
         valueClauses.push(
-          `($1, $2, $${baseIdx}, $${baseIdx + 1}, $${baseIdx + 2}, $${baseIdx + 3})`
+          `($1, $2, $${baseIdx}, $${baseIdx + 1}, $${baseIdx + 2}, $${baseIdx + 3}, $${baseIdx + 4})`
         )
-        params.push(tableName, gte, lte, priority)
+        params.push(tableName, gte, lte, priority, nested)
       }
     }
 
@@ -959,7 +964,7 @@ export class PostgresClient {
 
     await this.query(
       `INSERT INTO "${this.syncSchema}"."_sync_obj_runs"
-         ("_account_id", run_started_at, object, created_gte, created_lte, priority)
+         ("_account_id", run_started_at, object, created_gte, created_lte, priority, nested)
        VALUES ${valueClauses.join(', ')}
        ON CONFLICT ("_account_id", run_started_at, object, created_gte, created_lte) DO NOTHING`,
       params
@@ -1018,11 +1023,11 @@ export class PostgresClient {
     const run = await this.getSyncRun(accountId, runStartedAt)
     if (!run) return null
 
-    await this.query(`SELECT "${this.syncSchema}".check_rate_limit($1, $2, $3)`, [
-      'stripe',
-      rateLimit,
-      1,
-    ])
+    // await this.query(`SELECT "${this.syncSchema}".check_rate_limit($1, $2, $3)`, [
+    //   'stripe',
+    //   rateLimit,
+    //   1,
+    // ])
 
     const result = await this.query(
       `UPDATE "${this.syncSchema}"."_sync_obj_runs"
@@ -1033,6 +1038,7 @@ export class PostgresClient {
            WHERE "_account_id" = $1
              AND run_started_at = $2
              AND status = 'pending'
+             AND nested = false
            ORDER BY priority, object, created_gte
            LIMIT 1
            FOR UPDATE SKIP LOCKED
@@ -1548,7 +1554,7 @@ export class PostgresClient {
   }
 
   async waitForRateLimit(maxRequests: number): Promise<void> {
-    const sleepMs = 50
+    const sleepMs = Math.floor(Math.random() * 31) + 20
     while (true) {
       try {
         await this.query(`SELECT "${this.syncSchema}".check_rate_limit($1, $2, $3)`, [

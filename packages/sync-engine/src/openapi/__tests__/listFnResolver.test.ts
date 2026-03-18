@@ -28,16 +28,22 @@ describe('discoverListEndpoints', () => {
       tableName: 'customers',
       resourceId: 'customer',
       apiPath: '/v1/customers',
+      supportsCreatedFilter: true,
+      supportsLimit: true,
     })
     expect(endpoints.get('checkout_sessions')).toEqual({
       tableName: 'checkout_sessions',
       resourceId: 'checkout.session',
       apiPath: '/v1/checkout/sessions',
+      supportsCreatedFilter: true,
+      supportsLimit: true,
     })
     expect(endpoints.get('early_fraud_warnings')).toEqual({
       tableName: 'early_fraud_warnings',
       resourceId: 'radar.early_fraud_warning',
       apiPath: '/v1/radar/early_fraud_warnings',
+      supportsCreatedFilter: true,
+      supportsLimit: true,
     })
   })
 
@@ -48,11 +54,15 @@ describe('discoverListEndpoints', () => {
       tableName: 'v2_core_accounts',
       resourceId: 'v2.core.account',
       apiPath: '/v2/core/accounts',
+      supportsCreatedFilter: false,
+      supportsLimit: false,
     })
     expect(endpoints.get('v2_core_event_destinations')).toEqual({
       tableName: 'v2_core_event_destinations',
       resourceId: 'v2.core.event_destination',
       apiPath: '/v2/core/event_destinations',
+      supportsCreatedFilter: false,
+      supportsLimit: false,
     })
   })
 

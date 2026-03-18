@@ -1,8 +1,19 @@
 import type { OpenApiSpec, OpenApiPathItem } from '../../types'
 
-function listPath(schemaRef: string): OpenApiPathItem {
+function listPath(
+  schemaRef: string,
+  opts: { supportsCreatedFilter?: boolean; supportsLimit?: boolean } = {}
+): OpenApiPathItem {
+  const parameters: { name: string; in: string }[] = []
+  if (opts.supportsCreatedFilter) {
+    parameters.push({ name: 'created', in: 'query' })
+  }
+  if (opts.supportsLimit !== false) {
+    parameters.push({ name: 'limit', in: 'query' })
+  }
   return {
     get: {
+      parameters,
       responses: {
         '200': {
           content: {
@@ -53,13 +64,15 @@ export const minimalStripeOpenApiSpec: OpenApiSpec = {
     version: '2020-08-27',
   },
   paths: {
-    '/v1/customers': listPath('customer'),
-    '/v1/plans': listPath('plan'),
-    '/v1/prices': listPath('price'),
-    '/v1/products': listPath('product'),
+    '/v1/customers': listPath('customer', { supportsCreatedFilter: true }),
+    '/v1/plans': listPath('plan', { supportsCreatedFilter: true }),
+    '/v1/prices': listPath('price', { supportsCreatedFilter: true }),
+    '/v1/products': listPath('product', { supportsCreatedFilter: true }),
     '/v1/subscription_items': listPath('subscription_item'),
-    '/v1/checkout/sessions': listPath('checkout_session'),
-    '/v1/radar/early_fraud_warnings': listPath('early_fraud_warning'),
+    '/v1/checkout/sessions': listPath('checkout_session', { supportsCreatedFilter: true }),
+    '/v1/radar/early_fraud_warnings': listPath('early_fraud_warning', {
+      supportsCreatedFilter: true,
+    }),
     '/v1/entitlements/active_entitlements': listPath('active_entitlement'),
     '/v1/entitlements/features': listPath('entitlements_feature'),
     '/v2/core/accounts': v2ListPath('v2_core_account'),

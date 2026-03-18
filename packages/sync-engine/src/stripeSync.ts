@@ -271,23 +271,21 @@ export class StripeSync {
 
     while (lo <= hi) {
       const mid = Math.floor((lo + hi) / 2)
-
+      await this.postgresClient.waitForRateLimit(20)
       const page = await listfn({
         limit: 1,
         created: { lte: mid },
       })
 
       if (page.data.length > 0) {
-        // There exists a customer at/before mid; try earlier
         best = mid
         hi = mid - 1
       } else {
-        // No customers that early; try later
         lo = mid + 1
       }
     }
 
-    return best // earliest second where at least one customer exists
+    return best
   }
 
   async createChunks(
@@ -312,11 +310,15 @@ export class StripeSync {
             if (oldest === null) return null
             return { object: obj, oldest }
           } catch (err) {
+            if (
+              err instanceof Stripe.errors.StripeInvalidRequestError &&
+              (/not set up to use|Unrecognized request URL|Have you onboarded|not enabled for testmode/i.test(err.message) ||
+                err.code === 'parameter_missing')
+            ) {
+              failedObjectKeys.add(obj)
+              return null
+            }
             const tableName = getTableName(obj, this.getRegistryForObject(obj))
-            this.config.logger?.warn(
-              { err, object: obj },
-              'Failed to probe oldest item for object during initialization; marking as errored'
-            )
             failedObjectKeys.add(obj)
             failedObjects.push({ tableName, error: String(err) })
             return null
@@ -376,6 +378,17 @@ export class StripeSync {
     return priorities
   }
 
+  private buildNestedTableSet(objects: StripeObject[]): Set<string> {
+    const nested = new Set<string>()
+    for (const obj of objects) {
+      const config = this.getRegistryForObject(obj)[obj] as StripeListResourceConfig | undefined
+      if (config?.parentParamName) {
+        nested.add(config.tableName)
+      }
+    }
+    return nested
+  }
+
   async initializeSegment(
     runKey: RunKey,
     objects: StripeObject[],
@@ -386,18 +399,21 @@ export class StripeSync {
       workerCount
     )
     const priorities = this.buildPriorityMap(objects)
+    const nestedTables = this.buildNestedTableSet(objects)
     await this.postgresClient.createChunkedObjectRuns(
       runKey.accountId,
       runKey.runStartedAt,
       chunkCursors,
-      priorities
+      priorities,
+      nestedTables
     )
     if (nonChunkTables.length > 0) {
       await this.postgresClient.createObjectRuns(
         runKey.accountId,
         runKey.runStartedAt,
         nonChunkTables,
-        priorities
+        priorities,
+        nestedTables
       )
     }
     for (const { tableName, error } of failedObjects) {
@@ -405,7 +421,8 @@ export class StripeSync {
         runKey.accountId,
         runKey.runStartedAt,
         [tableName],
-        priorities
+        priorities,
+        nestedTables
       )
       await this.postgresClient.failObjectSync(
         runKey.accountId,
@@ -744,7 +761,7 @@ export class StripeSync {
         const pct = Number(row.pct_complete ?? 0)
         const bar = buildProgressBar(pct, 20)
         lines.push(
-          `  ${row.object.padEnd(24)} ${bar} ${String(pct.toFixed(1)).padStart(5)}%  (${row.processed} rows)`
+          `  ${row.object.padEnd(36)} ${bar} ${String(pct.toFixed(1)).padStart(5)}%  (${row.processed} rows)`
         )
       }
     }

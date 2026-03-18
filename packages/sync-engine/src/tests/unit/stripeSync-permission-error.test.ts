@@ -135,14 +135,16 @@ describe('permission error isolation in sync initialization', () => {
         runKey.accountId,
         runKey.runStartedAt,
         ['customers'],
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Set)
       )
       // Second call: failed object (coupons), to create the run before marking it errored
       expect(mockCreateObjectRuns).toHaveBeenCalledWith(
         runKey.accountId,
         runKey.runStartedAt,
         ['coupons'],
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Set)
       )
 
       // failObjectSync should be called for the failed object
