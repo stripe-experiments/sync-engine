@@ -558,11 +558,15 @@ export class SupabaseSetupClient {
       // Set final version comment
       await this.updateComment({ status: 'installed', oldVersion })
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const originalErrorMessage = error instanceof Error ? error.message : String(error)
       try {
-        await this.updateComment({ status: 'install error', errorMessage })
-      } catch {
-        // Schema may not exist if early steps failed -- don't mask the original error
+        await this.updateComment({ status: 'install error', errorMessage: originalErrorMessage })
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(
+          `Error while updating comment: ${errorMessage}. Original error message: ${originalErrorMessage}`
+        )
+        throw error
       }
       throw error
     }
