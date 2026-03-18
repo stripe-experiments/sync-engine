@@ -7,8 +7,10 @@ const DEFAULT_CACHE_DIR = path.join(os.tmpdir(), 'stripe-sync-openapi-cache')
 
 export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<ResolvedOpenApiSpec> {
   const apiVersion = config.apiVersion
-  if (!apiVersion || !/^\d{4}-\d{2}-\d{2}$/.test(apiVersion)) {
-    throw new Error(`Invalid Stripe API version "${apiVersion}". Expected YYYY-MM-DD.`)
+  if (!apiVersion || !/^\d{4}-\d{2}-\d{2}(\.\w+)?$/.test(apiVersion)) {
+    throw new Error(
+      `Invalid Stripe API version "${apiVersion}". Expected YYYY-MM-DD or YYYY-MM-DD.codename.`
+    )
   }
 
   if (config.openApiSpecPath) {
@@ -92,8 +94,13 @@ function getCachePath(cacheDir: string, apiVersion: string): string {
   return path.join(cacheDir, `${safeVersion}.spec3.sdk.json`)
 }
 
+function extractDatePart(apiVersion: string): string {
+  const match = apiVersion.match(/^(\d{4}-\d{2}-\d{2})/)
+  return match ? match[1] : apiVersion
+}
+
 async function resolveCommitShaForApiVersion(apiVersion: string): Promise<string | null> {
-  const until = `${apiVersion}T23:59:59Z`
+  const until = `${extractDatePart(apiVersion)}T23:59:59Z`
   const url = new URL('https://api.github.com/repos/stripe/openapi/commits')
   url.searchParams.set('path', 'latest/openapi.spec3.sdk.json')
   url.searchParams.set('until', until)

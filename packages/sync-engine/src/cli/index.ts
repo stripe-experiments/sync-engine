@@ -40,7 +40,7 @@ program
   )
   .option(
     '--api-version <version>',
-    'Stripe API version (YYYY-MM-DD, or STRIPE_API_VERSION env, default: 2020-08-27)'
+    'Stripe API version (YYYY-MM-DD, or STRIPE_API_VERSION env, default: 2026-02-25.clover)'
   )
   .option('--spec-path <path>', 'Path to a local spec3.json file (skips GitHub fetch)')
   .option(
@@ -61,7 +61,7 @@ program
   .description(
     'Scan the OpenAPI spec and output a JSON file of all list endpoints (top-level vs nested, SDK resolution status)'
   )
-  .option('--api-version <version>', 'Stripe API version (YYYY-MM-DD, default: 2020-08-27)')
+  .option('--api-version <version>', 'Stripe API version (YYYY-MM-DD, default: 2026-02-25.clover)')
   .option('--spec-path <path>', 'Path to a local spec file (skips GitHub fetch)')
   .option('--output <path>', 'Output file path (default: src/openapi/stripe-resources.json)')
   .option('--stripe-key <key>', 'Stripe API key to test SDK resolution (or STRIPE_API_KEY env)')

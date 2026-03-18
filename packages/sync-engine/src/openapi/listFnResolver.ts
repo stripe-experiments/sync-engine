@@ -1,12 +1,12 @@
 import type Stripe from 'stripe'
-import type { OpenApiSpec } from './types'
+import type { OpenApiSchemaObject, OpenApiSpec } from './types'
 import { OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
 
 type ListFn = (
   params: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam }
-) => Promise<{ data: unknown[]; has_more: boolean }>
+) => Promise<{ data: unknown[]; has_more: boolean; pageCursor?: string }>
 
 export type ListEndpoint = {
   tableName: string
@@ -35,8 +35,26 @@ function resolveTableName(resourceId: string, aliases: Record<string, string>): 
 }
 
 /**
+ * Detect whether a response schema describes a list endpoint.
+ * v1 lists have `object: enum ["list"]` with a `data` array.
+ * v2 lists have a `data` array with `next_page_url`.
+ */
+function isListResponseSchema(schema: OpenApiSchemaObject): boolean {
+  const dataProp = schema.properties?.data
+  if (!dataProp || !('type' in dataProp) || dataProp.type !== 'array') return false
+
+  const objectProp = schema.properties?.object
+  if (objectProp && 'enum' in objectProp && objectProp.enum?.includes('list')) return true
+
+  if (schema.properties?.next_page_url) return true
+
+  return false
+}
+
+/**
  * Scan the spec for list endpoints (GET paths that return a Stripe list object)
  * and return one entry per table. Prefers top-level paths over nested ones.
+ * Supports both v1 (object: "list") and v2 (next_page_url) response formats.
  */
 export function discoverListEndpoints(
   spec: OpenApiSpec,
@@ -55,8 +73,7 @@ export function discoverListEndpoints(
     const responseSchema = getOp.responses['200']?.content?.['application/json']?.schema
     if (!responseSchema) continue
 
-    const objectProp = responseSchema.properties?.object
-    if (!objectProp || !('enum' in objectProp) || !objectProp.enum?.includes('list')) continue
+    if (!isListResponseSchema(responseSchema)) continue
 
     const dataProp = responseSchema.properties?.data
     if (!dataProp || !('type' in dataProp) || dataProp.type !== 'array') continue
@@ -108,8 +125,7 @@ export function discoverNestedEndpoints(
     const responseSchema = getOp.responses['200']?.content?.['application/json']?.schema
     if (!responseSchema) continue
 
-    const objectProp = responseSchema.properties?.object
-    if (!objectProp || !('enum' in objectProp) || !objectProp.enum?.includes('list')) continue
+    if (!isListResponseSchema(responseSchema)) continue
 
     const dataProp = responseSchema.properties?.data
     if (!dataProp || !('type' in dataProp) || dataProp.type !== 'array') continue
@@ -151,7 +167,21 @@ export function discoverNestedEndpoints(
   return nested
 }
 
+export function isV2Path(apiPath: string): boolean {
+  return apiPath.startsWith('/v2/')
+}
+
 function pathToSdkSegments(apiPath: string): string[] {
+  if (isV2Path(apiPath)) {
+    return [
+      'v2',
+      ...apiPath
+        .replace(/^\/v2\//, '')
+        .split('/')
+        .filter((s) => !s.startsWith('{'))
+        .map(snakeToCamel),
+    ]
+  }
   return apiPath
     .replace(/^\/v[12]\//, '')
     .split('/')
@@ -175,13 +205,17 @@ function resolveStripeResource(stripe: Stripe, segments: string[], apiPath: stri
 }
 
 /**
- * Check whether an API path can be resolved to a Stripe SDK resource
- * that has both `.list()` and `.retrieve()` methods.
+ * Check whether an API path can be resolved to a Stripe SDK resource.
+ * v1 requires both `.list()` and `.retrieve()`.
+ * v2 only requires `.list()` (retrieve may not be available on all v2 resources).
  */
 export function canResolveSdkResource(stripe: Stripe, apiPath: string): boolean {
   try {
     const segments = pathToSdkSegments(apiPath)
     const resource = resolveStripeResource(stripe, segments, apiPath)
+    if (isV2Path(apiPath)) {
+      return typeof resource.list === 'function'
+    }
     return typeof resource.list === 'function' && typeof resource.retrieve === 'function'
   } catch {
     return false
@@ -193,7 +227,11 @@ export function canResolveSdkResource(stripe: Stripe, apiPath: string): boolean 
  * the API path segments converted from snake_case to camelCase.
  * Path parameters (e.g. `{customer}`) are stripped automatically.
  */
-export function buildListFn(stripe: Stripe, apiPath: string): ListFn {
+export function buildListFn(stripe: Stripe, apiPath: string, apiKey: string): ListFn {
+  const v2 = isV2Path(apiPath)
+  if (v2) {
+    return buildV2ListFn(apiKey, apiPath)
+  }
   const segments = pathToSdkSegments(apiPath)
   return (params) => {
     const resource = resolveStripeResource(stripe, segments, apiPath)
@@ -211,7 +249,11 @@ type RetrieveFn = (id: string) => Promise<Stripe.Response<unknown>>
  * the API path segments converted from snake_case to camelCase.
  * Path parameters (e.g. `{customer}`) are stripped automatically.
  */
-export function buildRetrieveFn(stripe: Stripe, apiPath: string): RetrieveFn {
+export function buildRetrieveFn(stripe: Stripe, apiPath: string, apiKey: string): RetrieveFn {
+  const v2 = isV2Path(apiPath)
+  if (v2) {
+    return buildV2RetrieveFn(apiKey, apiPath)
+  }
   const segments = pathToSdkSegments(apiPath)
   return (id: string) => {
     const resource = resolveStripeResource(stripe, segments, apiPath)
@@ -219,25 +261,6 @@ export function buildRetrieveFn(stripe: Stripe, apiPath: string): RetrieveFn {
       throw new Error(`Stripe SDK resource at "${apiPath}" has no retrieve() method`)
     }
     return resource.retrieve(id)
-  }
-}
-
-/**
- * Build a list function for nested resources that must be fetched by parent ID.
- * This path is not directly callable without parent context.
- */
-export function buildUnsupportedListFn(apiPath: string): ListFn {
-  return () => {
-    throw new Error(`Cannot list nested resource at "${apiPath}" without parent context`)
-  }
-}
-
-/**
- * Build a retrieve function for nested resources that need additional path context.
- */
-export function buildUnsupportedRetrieveFn(apiPath: string): RetrieveFn {
-  return () => {
-    throw new Error(`Cannot retrieve nested resource at "${apiPath}" without parent context`)
   }
 }
 
@@ -253,20 +276,59 @@ export function buildRawRequestListFn(stripe: Stripe, apiPath: string): ListFn {
     }>
 }
 
-/**
- * Return a callable list function for a given table name by looking up its
- * API path from the OpenAPI spec and resolving it against the Stripe SDK.
- */
-export function getListFn(
-  stripe: Stripe,
-  tableName: string,
-  spec: OpenApiSpec,
-  aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
-): ListFn {
-  const endpoints = discoverListEndpoints(spec, aliases)
-  const endpoint = endpoints.get(tableName)
-  if (!endpoint) {
-    throw new Error(`No list endpoint found for table "${tableName}"`)
+function extractPageToken(nextPageUrl: string | null | undefined): string | undefined {
+  if (!nextPageUrl) return undefined
+  try {
+    const url = new URL(nextPageUrl, 'https://api.stripe.com')
+    return url.searchParams.get('page') ?? undefined
+  } catch {
+    return undefined
   }
-  return buildListFn(stripe, endpoint.apiPath)
 }
+
+/**
+ * Build a list function for v2 API endpoints.
+ * V2 uses `page` token pagination and returns `next_page_url` instead of `has_more`.
+ * The response is normalized to the v1 shape so the sync worker can process it uniformly.
+ */
+export function buildV2ListFn(apiKey: string, apiPath: string): ListFn {
+  return async (params) => {
+    const qs = new URLSearchParams()
+    qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
+    if (params.starting_after) qs.set('page', params.starting_after)
+    const url = `https://api.stripe.com${apiPath}?${qs.toString()}`
+    console.log('[v2-list] GET', url)
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Stripe-Version': '2026-02-25.clover',
+      },
+    })
+    console.log('[v2-list] status:', response.status)
+    const raw = await response.text()
+    console.log('[v2-list] body:', raw.slice(0, 1000))
+    const body = JSON.parse(raw) as {
+      data: unknown[]
+      next_page_url?: string | null
+    }
+    const nextToken = extractPageToken(body.next_page_url)
+    return {
+      data: body.data ?? [],
+      has_more: !!body.next_page_url,
+      pageCursor: nextToken,
+    }
+  }
+}
+
+export function buildV2RetrieveFn(apiKey: string, apiPath: string): RetrieveFn {
+  return async (id: string) => {
+    const response = await fetch(`https://api.stripe.com${apiPath}/${id}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Stripe-Version': '2026-02-25.clover',
+      },
+    })
+    return (await response.json()) as Stripe.Response<unknown>
+  }
+}
+

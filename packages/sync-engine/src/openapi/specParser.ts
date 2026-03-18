@@ -169,7 +169,7 @@ export class SpecParser {
 
   /**
    * Extract x-resourceId values for every schema that is returned by a list
-   * endpoint (GET with a response whose `object` enum is `["list"]`).
+   * endpoint. Supports both v1 (object: "list") and v2 (next_page_url) formats.
    */
   discoverListableResourceIds(
     spec: OpenApiSpec,
@@ -190,8 +190,7 @@ export class SpecParser {
       const responseSchema = getOp.responses['200']?.content?.['application/json']?.schema
       if (!responseSchema) continue
 
-      const objectProp = responseSchema.properties?.object
-      if (!objectProp || !('enum' in objectProp) || !objectProp.enum?.includes('list')) continue
+      if (!this.isListResponseSchema(responseSchema)) continue
 
       const dataProp = responseSchema.properties?.data
       if (!dataProp || !('type' in dataProp) || dataProp.type !== 'array') continue
@@ -211,6 +210,23 @@ export class SpecParser {
     }
 
     return resourceIds
+  }
+
+  /**
+   * Detect whether a response schema describes a list endpoint.
+   * v1 lists have `object: enum ["list"]` with a `data` array.
+   * v2 lists have a `data` array with `next_page_url`.
+   */
+  private isListResponseSchema(schema: OpenApiSchemaObject): boolean {
+    const dataProp = schema.properties?.data
+    if (!dataProp || !('type' in dataProp) || dataProp.type !== 'array') return false
+
+    const objectProp = schema.properties?.object
+    if (objectProp && 'enum' in objectProp && objectProp.enum?.includes('list')) return true
+
+    if (schema.properties?.next_page_url) return true
+
+    return false
   }
 
   private resolveTableName(resourceId: string, aliases: Record<string, string>): string {

@@ -167,7 +167,8 @@ export class StripeSyncWorker {
     task: SyncTask,
     data: Stripe.Response<Stripe.ApiList<unknown>>['data'],
     has_more: boolean,
-    nested: Array<{ object: string; count: number }> = []
+    nested: Array<{ object: string; count: number }> = [],
+    responseCursor?: string
   ) {
     const minCreate = Math.min(...data.map((i) => (i as { created?: number }).created || 0))
     const cursor = minCreate > 0 ? String(minCreate) : null
@@ -180,7 +181,8 @@ export class StripeSyncWorker {
       task.created_gte > 0 && lastItemCreated > 0 && lastItemCreated < task.created_gte
     const complete = !has_more || pastBoundary
     const lastId =
-      has_more && data.length > 0 ? (data[data.length - 1] as { id: string }).id : undefined
+      responseCursor ??
+      (has_more && data.length > 0 ? (data[data.length - 1] as { id: string }).id : undefined)
 
     await this.postgresClient.updateSyncObject(
       this.accountId,
@@ -245,7 +247,11 @@ export class StripeSyncWorker {
     }
     const synced_nested: Array<{ object: string; count: number }> = []
     // Core Stripe API resources
-    const { data, has_more } = await this.fetchOnePage(
+    const {
+      data,
+      has_more,
+      pageCursor: responseCursor,
+    } = await this.fetchOnePage(
       task.object,
       task.cursor,
       task.pageCursor,
@@ -289,7 +295,7 @@ export class StripeSyncWorker {
                   url = `${nestedPath}?${qs.toString()}`
                 }
                 await this.postgresClient.waitForRateLimit(this.rateLimit)
-                const body = (await this.stripe.rawRequest('GET', url, undefined)) as unknown as {
+                const body = (await this.stripe.rawRequest('GET', url)) as unknown as {
                   data: { id?: string; object?: string }[]
                   has_more: boolean
                 }
@@ -318,7 +324,7 @@ export class StripeSyncWorker {
         }
       }
     }
-    await this.updateTaskProgress(task, data, has_more, synced_nested)
+    await this.updateTaskProgress(task, data, has_more, synced_nested, responseCursor)
     return { hasMore: has_more, processed: data.length, runStartedAt: this.runKey.runStartedAt }
   }
 

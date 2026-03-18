@@ -143,9 +143,9 @@ export class StripeSync {
     const instance = new StripeSync(config)
 
     const { spec } = await resolveOpenApiSpec({
-      apiVersion: config.stripeApiVersion ?? '2020-08-27',
+      apiVersion: config.stripeApiVersion ?? '2026-02-25.clover',
     })
-    instance.resourceRegistry = buildResourceRegistry(instance.stripe, spec)
+    instance.resourceRegistry = buildResourceRegistry(instance.stripe, spec, config.stripeSecretKey)
     instance.sigmaRegistry = buildSigmaRegistry(instance.sigma, instance.resourceRegistry)
     if (config.stripeAccountId) {
       instance.accountId = config.stripeAccountId

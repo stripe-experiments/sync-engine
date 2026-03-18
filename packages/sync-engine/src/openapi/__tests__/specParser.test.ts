@@ -145,6 +145,8 @@ describe('SpecParser', () => {
           'radar.early_fraud_warning',
           'entitlements.active_entitlement',
           'entitlements.feature',
+          'v2.core.account',
+          'v2.core.event_destination',
         ])
       )
     })
@@ -268,6 +270,8 @@ describe('SpecParser', () => {
         'prices',
         'products',
         'subscription_items',
+        'v2_core_accounts',
+        'v2_core_event_destinations',
       ])
     })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { discoverListEndpoints, buildListFn, getListFn } from '../listFnResolver'
+import { discoverListEndpoints, buildListFn } from '../listFnResolver'
 import { minimalStripeOpenApiSpec } from './fixtures/minimalSpec'
 import type Stripe from 'stripe'
 
@@ -38,6 +38,21 @@ describe('discoverListEndpoints', () => {
       tableName: 'early_fraud_warnings',
       resourceId: 'radar.early_fraud_warning',
       apiPath: '/v1/radar/early_fraud_warnings',
+    })
+  })
+
+  it('discovers v2 list endpoints using next_page_url format', () => {
+    const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
+
+    expect(endpoints.get('v2_core_accounts')).toEqual({
+      tableName: 'v2_core_accounts',
+      resourceId: 'v2.core.account',
+      apiPath: '/v2/core/accounts',
+    })
+    expect(endpoints.get('v2_core_event_destinations')).toEqual({
+      tableName: 'v2_core_event_destinations',
+      resourceId: 'v2.core.event_destination',
+      apiPath: '/v2/core/event_destinations',
     })
   })
 
@@ -118,23 +133,3 @@ describe('buildListFn', () => {
   })
 })
 
-describe('getListFn', () => {
-  it('returns a callable list function for a table name', async () => {
-    const mock = mockStripe()
-    const listFn = getListFn(
-      mock as unknown as Stripe,
-      'early_fraud_warnings',
-      minimalStripeOpenApiSpec
-    )
-    const result = await listFn({ limit: 100 })
-    expect(result).toEqual({ data: [], has_more: false })
-    expect(mock._listFn).toHaveBeenCalledWith({ limit: 100 })
-  })
-
-  it('throws for an unknown table name', () => {
-    const mock = mockStripe()
-    expect(() =>
-      getListFn(mock as unknown as Stripe, 'nonexistent', minimalStripeOpenApiSpec)
-    ).toThrow(/No list endpoint found for table "nonexistent"/)
-  })
-})

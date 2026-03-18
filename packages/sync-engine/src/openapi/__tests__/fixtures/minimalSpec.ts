@@ -24,6 +24,29 @@ function listPath(schemaRef: string): OpenApiPathItem {
   }
 }
 
+function v2ListPath(schemaRef: string): OpenApiPathItem {
+  return {
+    get: {
+      responses: {
+        '200': {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: { type: 'array', items: { $ref: `#/components/schemas/${schemaRef}` } },
+                  next_page_url: { type: 'string', nullable: true },
+                  previous_page_url: { type: 'string', nullable: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+}
+
 export const minimalStripeOpenApiSpec: OpenApiSpec = {
   openapi: '3.0.0',
   info: {
@@ -39,6 +62,8 @@ export const minimalStripeOpenApiSpec: OpenApiSpec = {
     '/v1/radar/early_fraud_warnings': listPath('early_fraud_warning'),
     '/v1/entitlements/active_entitlements': listPath('active_entitlement'),
     '/v1/entitlements/features': listPath('entitlements_feature'),
+    '/v2/core/accounts': v2ListPath('v2_core_account'),
+    '/v2/core/event_destinations': v2ListPath('v2_core_event_destination'),
   },
   components: {
     schemas: {
@@ -131,6 +156,26 @@ export const minimalStripeOpenApiSpec: OpenApiSpec = {
         properties: {
           id: { type: 'string' },
           lookup_key: { type: 'string' },
+        },
+      },
+      v2_core_account: {
+        'x-resourceId': 'v2.core.account',
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          display_name: { type: 'string' },
+          contact_email: { type: 'string', nullable: true },
+          created: { type: 'string', format: 'date-time' },
+        },
+      },
+      v2_core_event_destination: {
+        'x-resourceId': 'v2.core.event_destination',
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          enabled_events: { type: 'array', items: { type: 'string' } },
+          livemode: { type: 'boolean' },
         },
       },
     },

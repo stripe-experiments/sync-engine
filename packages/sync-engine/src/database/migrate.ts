@@ -22,7 +22,7 @@ import {
 import type { NestedEndpoint } from '../openapi'
 import type { EmbeddedMigration } from './migrations-embedded'
 
-const DEFAULT_STRIPE_API_VERSION = '2020-08-27'
+const DEFAULT_STRIPE_API_VERSION = '2026-02-25.clover'
 const SIGMA_BASE_COLUMNS = ['_raw_data', '_last_synced_at', '_updated_at', '_account_id'] as const
 // Postgres identifiers are capped at 63 bytes; long Sigma column names can collide after truncation.
 const PG_IDENTIFIER_MAX_BYTES = 63
@@ -455,12 +455,50 @@ async function populateSyncNestedObjects(
 
   if (nestedEndpoints.length === 0) return
 
+  const seen = new Map<string, NestedEndpoint>()
+  for (const ep of nestedEndpoints) {
+    const key = `${ep.parentTableName}::${ep.tableName}`
+    if (seen.has(key)) {
+      logger?.warn(
+        {
+          parent: ep.parentTableName,
+          nested: ep.tableName,
+          apiPath: ep.apiPath,
+          existingApiPath: seen.get(key)!.apiPath,
+        },
+        'Duplicate nested endpoint — skipping'
+      )
+    } else {
+      seen.set(key, ep)
+    }
+  }
+  const deduplicated = Array.from(seen.values())
+
+  logger?.info(
+    {
+      total: nestedEndpoints.length,
+      unique: deduplicated.length,
+      endpoints: deduplicated.map((ep) => ({
+        parent: ep.parentTableName,
+        nested: ep.tableName,
+        apiPath: ep.apiPath,
+      })),
+    },
+    'Nested endpoints for _sync_nested_objects'
+  )
+
   const values: string[] = []
   const params: unknown[] = []
   let idx = 1
-  for (const ep of nestedEndpoints) {
+  for (const ep of deduplicated) {
     values.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4})`)
-    params.push(ep.parentTableName, ep.tableName, ep.apiPath, ep.parentParamName, ep.supportsPagination)
+    params.push(
+      ep.parentTableName,
+      ep.tableName,
+      ep.apiPath,
+      ep.parentParamName,
+      ep.supportsPagination
+    )
     idx += 5
   }
 

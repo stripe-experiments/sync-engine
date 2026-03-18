@@ -61,7 +61,7 @@ export type StripeSyncConfig = {
   /** Stripe webhook signing secret for validating webhook signatures. Required if not using managed webhooks. */
   stripeWebhookSecret?: string
 
-  /** Stripe API version for the webhooks, defaults to 2020-08-27 */
+  /** Stripe API version for the webhooks, defaults to 2026-01-28.clover */
   stripeApiVersion?: string
 
   /**
@@ -287,13 +287,14 @@ export type NestedResource = {
 
 export type StripeListResourceConfig = BaseResourceConfig & {
   /** Function to list items from Stripe API */
-  listFn: (params: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam }) => Promise<{
+  listFn?: (params: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam }) => Promise<{
     data: unknown[]
     has_more: boolean
+    pageCursor?: string
   }>
   /** Function to retrieve a single item by ID from Stripe API */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  retrieveFn: (id: string) => Promise<Stripe.Response<any>>
+  retrieveFn?: (id: string) => Promise<Stripe.Response<any>>
   /** Optional list of sub-resources to expand during upsert/fetching (e.g. 'refunds', 'listLineItems') */
   listExpands?: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
   /** Nested child resources discovered from the OpenAPI spec (e.g. persons under accounts) */

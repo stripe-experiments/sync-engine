@@ -11,11 +11,13 @@ export { WritePathPlanner } from './writePathPlanner'
 export { resolveOpenApiSpec } from './specFetchHelper'
 export type { DialectAdapter } from './dialectAdapter'
 export {
-  getListFn,
   buildListFn,
   buildRetrieveFn,
+  buildV2ListFn,
+  buildV2RetrieveFn,
   discoverListEndpoints,
   discoverNestedEndpoints,
   canResolveSdkResource,
+  isV2Path,
 } from './listFnResolver'
 export type { NestedEndpoint } from './listFnResolver'

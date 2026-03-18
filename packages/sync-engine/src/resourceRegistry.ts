@@ -7,9 +7,8 @@ import {
   discoverNestedEndpoints,
   buildListFn,
   buildRetrieveFn,
-  buildUnsupportedListFn,
-  buildUnsupportedRetrieveFn,
   canResolveSdkResource,
+  isV2Path,
 } from './openapi/listFnResolver'
 
 /**
@@ -83,7 +82,8 @@ export const RESOURCE_TABLE_NAME_MAP: Record<string, string> = Object.fromEntrie
  */
 export function buildResourceRegistry(
   stripe: Stripe,
-  spec: OpenApiSpec
+  spec: OpenApiSpec,
+  apiKey: string
 ): Record<string, ResourceConfig> {
   const endpoints = discoverListEndpoints(spec)
   const nestedEndpoints = discoverNestedEndpoints(spec, endpoints)
@@ -92,7 +92,8 @@ export function buildResourceRegistry(
   const seenNested = new Set<string>()
 
   for (const [tableName, endpoint] of endpoints) {
-    if (!canResolveSdkResource(stripe, endpoint.apiPath)) continue
+    const v2 = isV2Path(endpoint.apiPath)
+    if (!v2 && !canResolveSdkResource(stripe, endpoint.apiPath)) continue
 
     const children = nestedEndpoints
       .filter((n) => n.parentTableName === tableName)
@@ -108,11 +109,11 @@ export function buildResourceRegistry(
     const config: StripeListResourceConfig = {
       order,
       tableName,
-      supportsCreatedFilter: !NO_CREATED_FILTER.has(tableName),
+      supportsCreatedFilter: v2 ? false : !NO_CREATED_FILTER.has(tableName),
       sync: true,
       dependencies: [],
-      listFn: buildListFn(stripe, endpoint.apiPath),
-      retrieveFn: buildRetrieveFn(stripe, endpoint.apiPath),
+      listFn: buildListFn(stripe, endpoint.apiPath, apiKey),
+      retrieveFn: buildRetrieveFn(stripe, endpoint.apiPath, apiKey),
       nestedResources: children.length > 0 ? children : undefined,
     }
     registry[tableName] = config
@@ -135,8 +136,8 @@ export function buildResourceRegistry(
       supportsCreatedFilter: false,
       sync: false,
       dependencies: [],
-      listFn: buildUnsupportedListFn(nested.apiPath),
-      retrieveFn: buildUnsupportedRetrieveFn(nested.apiPath),
+      listFn: undefined,
+      retrieveFn: undefined,
       nestedResources: undefined,
       parentParamName: nested.parentParamName,
     }

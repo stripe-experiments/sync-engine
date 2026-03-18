@@ -366,7 +366,7 @@ Deno.serve(async (req) => {
       {
         databaseUrl: dbUrl,
         enableSigma,
-        stripeApiVersion: Deno.env.get('STRIPE_API_VERSION') ?? '2020-08-27',
+        stripeApiVersion: Deno.env.get('STRIPE_API_VERSION') ?? '2026-02-25.clover',
         schemaName,
         syncTablesSchemaName,
       },

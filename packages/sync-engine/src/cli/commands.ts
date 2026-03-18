@@ -169,7 +169,7 @@ export async function migrateCommand(options: CliOptions): Promise<void> {
       await runMigrations({
         databaseUrl,
         enableSigma,
-        stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
+        stripeApiVersion: process.env.STRIPE_API_VERSION || '2026-02-25.clover',
         schemaName,
         syncTablesSchemaName,
       })
@@ -414,7 +414,7 @@ export async function fullSyncCommand(
       await runMigrations({
         databaseUrl: config.databaseUrl,
         enableSigma: config.enableSigma,
-        stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
+        stripeApiVersion: process.env.STRIPE_API_VERSION || '2026-02-25.clover',
         schemaName,
         syncTablesSchemaName,
       })
@@ -436,7 +436,7 @@ export async function fullSyncCommand(
       databaseUrl: config.databaseUrl,
       stripeSecretKey: config.stripeApiKey,
       enableSigma: config.enableSigma,
-      stripeApiVersion: process.env.STRIPE_API_VERSION || '2020-08-27',
+      stripeApiVersion: process.env.STRIPE_API_VERSION || '2026-02-25.clover',
       autoExpandLists: process.env.AUTO_EXPAND_LISTS === 'true',
       backfillRelatedEntities: process.env.BACKFILL_RELATED_ENTITIES !== 'false',
       poolConfig,
@@ -765,7 +765,7 @@ export async function generateSchemaCommand(options: GenerateSchemaOptions): Pro
   try {
     dotenv.config()
 
-    const apiVersion = options.apiVersion || process.env.STRIPE_API_VERSION || '2020-08-27'
+    const apiVersion = options.apiVersion || process.env.STRIPE_API_VERSION || '2026-02-25.clover'
 
     console.log(chalk.blue(`Resolving OpenAPI spec for API version ${apiVersion}...`))
     const resolvedSpec = await resolveOpenApiSpec({
@@ -818,7 +818,7 @@ export async function inspectResourcesCommand(options: InspectResourcesOptions):
   try {
     dotenv.config()
 
-    const apiVersion = options.apiVersion || process.env.STRIPE_API_VERSION || '2020-08-27'
+    const apiVersion = options.apiVersion || process.env.STRIPE_API_VERSION || '2026-02-25.clover'
     const stripeKey =
       options.stripeKey || process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || ''
 
