@@ -560,9 +560,14 @@ export class SupabaseSetupClient {
       // This is done after marking the installation as completed in the comment because
       // running the `stripe-worker` might take some time and timeout the actual installation
       // if done before. This is fine because even if this invocation fails for some reason
-      // the installation is still completed and this is invoked on a a best effort basis
+      // the installation is still completed and this is invoked on a best effort basis
       // to improve UX.
-      await this.invokeFunction('stripe-worker', 'POST', this.workerSecret)
+      try {
+        await this.invokeFunction('stripe-worker', 'POST', this.workerSecret)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.warn(`Failed to invoke stripe-worker: ${errorMessage}`)
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       try {
