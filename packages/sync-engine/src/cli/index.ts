@@ -63,6 +63,7 @@ program
     'disabled'
   )
   .option('--listen-only', 'Skip the initial sync and only set up the event listener')
+  .option('--no-progress', 'Disable live terminal progress output during sync')
   .action(async (entityName, options) => {
     await fullSyncCommand(
       {
@@ -74,6 +75,7 @@ program
         rateLimit: options.rateLimit,
         listenMode: options.listenMode,
         listenOnly: options.listenOnly,
+        progress: options.progress,
       },
       entityName
     )

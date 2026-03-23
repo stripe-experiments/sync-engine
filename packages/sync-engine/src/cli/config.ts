@@ -21,6 +21,7 @@ export interface CliOptions {
   rateLimit?: number
   listenMode?: ListenMode
   listenOnly?: boolean
+  progress?: boolean
 }
 
 /**

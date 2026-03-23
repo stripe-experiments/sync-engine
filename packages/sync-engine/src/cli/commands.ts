@@ -491,12 +491,14 @@ export async function fullSyncCommand(
       }
     }
 
+    const monitorProgress = options.progress ?? true
+
     const result = await stripeSync.fullSync(
       tables,
       true,
       options.workerCount,
       options.rateLimit,
-      true,
+      monitorProgress,
       intervalSeconds
     )
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
