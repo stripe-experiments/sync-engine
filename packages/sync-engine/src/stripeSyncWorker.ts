@@ -80,7 +80,9 @@ export class StripeSyncWorker {
         } else if (
           task &&
           err instanceof Stripe.errors.StripeInvalidRequestError &&
-          (/not set up to use|Unrecognized request URL|Have you onboarded|not enabled for testmode/i.test(err.message) ||
+          (/not set up to use|Unrecognized request URL|Have you onboarded|not enabled for testmode/i.test(
+            err.message
+          ) ||
             err.code === 'parameter_missing')
         ) {
           await this.postgresClient.updateSyncObject(
