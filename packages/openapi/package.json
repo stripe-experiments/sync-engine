@@ -1,0 +1,28 @@
+{
+  "name": "@stripe/openapi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup index.ts --format esm,cjs --dts",
+    "test": "vitest --passWithNoTests"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "stripe": "^17.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.0",
+    "vitest": "^3.2.4"
+  }
+}
