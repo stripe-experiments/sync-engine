@@ -1,12 +1,20 @@
-import type Stripe from 'stripe'
 import type { OpenApiSchemaObject, OpenApiSpec } from './types'
 import { OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
 
-type ListFn = (
-  params: Stripe.PaginationParams & { created?: Stripe.RangeQueryParam }
-) => Promise<{ data: unknown[]; has_more: boolean; pageCursor?: string }>
+export type ListParams = {
+  limit?: number
+  starting_after?: string
+  ending_before?: string
+  created?: { gt?: number; gte?: number; lt?: number; lte?: number }
+}
+
+export type ListResult = { data: unknown[]; has_more: boolean; pageCursor?: string }
+
+export type ListFn = (params: ListParams) => Promise<ListResult>
+
+export type RetrieveFn = (id: string) => Promise<unknown>
 
 export type ListEndpoint = {
   tableName: string
@@ -23,10 +31,6 @@ export type NestedEndpoint = {
   parentTableName: string
   parentParamName: string
   supportsPagination: boolean
-}
-
-function snakeToCamel(s: string): string {
-  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
 }
 
 function resolveTableName(resourceId: string, aliases: Record<string, string>): string {
@@ -197,161 +201,86 @@ export function isV2Path(apiPath: string): boolean {
   return apiPath.startsWith('/v2/')
 }
 
-function pathToSdkSegments(apiPath: string): string[] {
+// ---------------------------------------------------------------------------
+// HTTP-based list / retrieve builders (no Stripe SDK dependency)
+// ---------------------------------------------------------------------------
+
+const STRIPE_API_BASE = 'https://api.stripe.com'
+const V2_STRIPE_VERSION = '2026-02-25.clover'
+
+function authHeaders(apiKey: string): Record<string, string> {
+  return { Authorization: `Bearer ${apiKey}` }
+}
+
+/**
+ * Build a callable list function that hits the Stripe HTTP API directly.
+ * Supports both v1 (has_more pagination) and v2 (next_page_url pagination).
+ */
+export function buildListFn(apiKey: string, apiPath: string): ListFn {
   if (isV2Path(apiPath)) {
-    return [
-      'v2',
-      ...apiPath
-        .replace(/^\/v2\//, '')
-        .split('/')
-        .filter((s) => !s.startsWith('{'))
-        .map(snakeToCamel),
-    ]
-  }
-  return apiPath
-    .replace(/^\/v[12]\//, '')
-    .split('/')
-    .filter((s) => !s.startsWith('{'))
-    .map(snakeToCamel)
-}
+    return async (params) => {
+      const qs = new URLSearchParams()
+      qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
+      if (params.starting_after) qs.set('page', params.starting_after)
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function resolveStripeResource(stripe: Stripe, segments: string[], apiPath: string): any {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let resource: any = stripe
-  for (const segment of segments) {
-    resource = resource?.[segment]
-    if (!resource) {
-      throw new Error(`Stripe SDK has no property "${segment}" when resolving path "${apiPath}"`)
+      const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, {
+        headers: { ...authHeaders(apiKey), 'Stripe-Version': V2_STRIPE_VERSION },
+      })
+      const body = (await response.json()) as {
+        data: unknown[]
+        next_page_url?: string | null
+      }
+      const pageCursor = extractPageToken(body.next_page_url)
+      return { data: body.data ?? [], has_more: !!body.next_page_url, pageCursor }
     }
   }
-  return resource
-}
 
-/**
- * Check whether an API path can be resolved to a Stripe SDK resource.
- * v1 requires both `.list()` and `.retrieve()`.
- * v2 only requires `.list()` (retrieve may not be available on all v2 resources).
- */
-export function canResolveSdkResource(stripe: Stripe, apiPath: string): boolean {
-  try {
-    const segments = pathToSdkSegments(apiPath)
-    const resource = resolveStripeResource(stripe, segments, apiPath)
-    if (isV2Path(apiPath)) {
-      return typeof resource.list === 'function'
+  return async (params) => {
+    const qs = new URLSearchParams()
+    if (params.limit != null) qs.set('limit', String(params.limit))
+    if (params.starting_after) qs.set('starting_after', params.starting_after)
+    if (params.ending_before) qs.set('ending_before', params.ending_before)
+    if (params.created) {
+      for (const [op, val] of Object.entries(params.created)) {
+        if (val != null) qs.set(`created[${op}]`, String(val))
+      }
     }
-    return typeof resource.list === 'function' && typeof resource.retrieve === 'function'
-  } catch {
-    return false
+
+    const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, {
+      headers: authHeaders(apiKey),
+    })
+    const body = (await response.json()) as { data: unknown[]; has_more: boolean }
+    return { data: body.data ?? [], has_more: body.has_more }
   }
 }
 
 /**
- * Build a callable list function by navigating the Stripe SDK object using
- * the API path segments converted from snake_case to camelCase.
- * Path parameters (e.g. `{customer}`) are stripped automatically.
+ * Build a callable retrieve function that hits the Stripe HTTP API directly.
  */
-export function buildListFn(stripe: Stripe, apiPath: string, apiKey: string = ''): ListFn {
-  const v2 = isV2Path(apiPath)
-  if (v2) {
-    return buildV2ListFn(apiKey, apiPath)
-  }
-  const segments = pathToSdkSegments(apiPath)
-  return (params) => {
-    const resource = resolveStripeResource(stripe, segments, apiPath)
-    if (typeof resource.list !== 'function') {
-      throw new Error(`Stripe SDK resource at "${apiPath}" has no list() method`)
+export function buildRetrieveFn(apiKey: string, apiPath: string): RetrieveFn {
+  if (isV2Path(apiPath)) {
+    return async (id) => {
+      const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, {
+        headers: { ...authHeaders(apiKey), 'Stripe-Version': V2_STRIPE_VERSION },
+      })
+      return await response.json()
     }
-    return resource.list(params)
   }
-}
 
-type RetrieveFn = (id: string) => Promise<Stripe.Response<unknown>>
-
-/**
- * Build a callable retrieve function by navigating the Stripe SDK object using
- * the API path segments converted from snake_case to camelCase.
- * Path parameters (e.g. `{customer}`) are stripped automatically.
- */
-export function buildRetrieveFn(stripe: Stripe, apiPath: string, apiKey: string): RetrieveFn {
-  const v2 = isV2Path(apiPath)
-  if (v2) {
-    return buildV2RetrieveFn(apiKey, apiPath)
+  return async (id) => {
+    const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, {
+      headers: authHeaders(apiKey),
+    })
+    return await response.json()
   }
-  const segments = pathToSdkSegments(apiPath)
-  return (id: string) => {
-    const resource = resolveStripeResource(stripe, segments, apiPath)
-    if (typeof resource.retrieve !== 'function') {
-      throw new Error(`Stripe SDK resource at "${apiPath}" has no retrieve() method`)
-    }
-    return resource.retrieve(id)
-  }
-}
-
-/**
- * Build a list function that calls Stripe rawRequest directly for a fixed endpoint.
- * Useful when the Stripe SDK does not expose a matching namespace.
- */
-export function buildRawRequestListFn(stripe: Stripe, apiPath: string): ListFn {
-  return (params) =>
-    stripe.rawRequest('GET', apiPath, { ...params }) as unknown as Promise<{
-      data: unknown[]
-      has_more: boolean
-    }>
 }
 
 function extractPageToken(nextPageUrl: string | null | undefined): string | undefined {
   if (!nextPageUrl) return undefined
   try {
-    const url = new URL(nextPageUrl, 'https://api.stripe.com')
+    const url = new URL(nextPageUrl, STRIPE_API_BASE)
     return url.searchParams.get('page') ?? undefined
   } catch {
     return undefined
-  }
-}
-
-/**
- * Build a list function for v2 API endpoints.
- * V2 uses `page` token pagination and returns `next_page_url` instead of `has_more`.
- * The response is normalized to the v1 shape so the sync worker can process it uniformly.
- */
-export function buildV2ListFn(apiKey: string, apiPath: string): ListFn {
-  return async (params) => {
-    const qs = new URLSearchParams()
-    qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
-    if (params.starting_after) qs.set('page', params.starting_after)
-    const url = `https://api.stripe.com${apiPath}?${qs.toString()}`
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Stripe-Version': '2026-02-25.clover',
-      },
-    })
-
-    const raw = await response.text()
-
-    const body = JSON.parse(raw) as {
-      data: unknown[]
-      next_page_url?: string | null
-    }
-    const nextToken = extractPageToken(body.next_page_url)
-    return {
-      data: body.data ?? [],
-      has_more: !!body.next_page_url,
-      pageCursor: nextToken,
-    }
-  }
-}
-
-export function buildV2RetrieveFn(apiKey: string, apiPath: string): RetrieveFn {
-  return async (id: string) => {
-    const response = await fetch(`https://api.stripe.com${apiPath}/${id}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Stripe-Version': '2026-02-25.clover',
-      },
-    })
-    return (await response.json()) as Stripe.Response<unknown>
   }
 }

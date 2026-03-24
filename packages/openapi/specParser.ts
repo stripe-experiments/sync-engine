@@ -24,8 +24,6 @@ const RESERVED_COLUMNS = new Set([
 ])
 
 export { RUNTIME_REQUIRED_TABLES, OPENAPI_RESOURCE_TABLE_ALIASES }
-/** @deprecated Use OPENAPI_RESOURCE_TABLE_ALIASES instead. */
-export const RUNTIME_RESOURCE_ALIASES = OPENAPI_RESOURCE_TABLE_ALIASES
 
 type ColumnAccumulator = {
   type: ScalarType
