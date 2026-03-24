@@ -1,14 +1,14 @@
-export type * from './types'
+export type * from './types.js'
 export {
   SpecParser,
   OPENAPI_RESOURCE_TABLE_ALIASES,
   RUNTIME_RESOURCE_ALIASES,
-} from './specParser'
-export { OPENAPI_COMPATIBILITY_COLUMNS } from './runtimeMappings'
-export { PostgresAdapter } from './postgresAdapter'
-export { WritePathPlanner } from './writePathPlanner'
-export { resolveOpenApiSpec } from './specFetchHelper'
-export type { DialectAdapter } from './dialectAdapter'
+} from './specParser.js'
+export { OPENAPI_COMPATIBILITY_COLUMNS } from './runtimeMappings.js'
+export { PostgresAdapter } from './postgresAdapter.js'
+export { WritePathPlanner } from './writePathPlanner.js'
+export { resolveOpenApiSpec } from './specFetchHelper.js'
+export type { DialectAdapter } from './dialectAdapter.js'
 export {
   buildListFn,
   buildRetrieveFn,
@@ -18,7 +18,7 @@ export {
   discoverNestedEndpoints,
   canResolveSdkResource,
   isV2Path,
-} from './listFnResolver'
-export type { NestedEndpoint } from './listFnResolver'
-export { parsedTableToJsonSchema } from './jsonSchemaConverter'
-export { RUNTIME_REQUIRED_TABLES } from './runtimeMappings'
+} from './listFnResolver.js'
+export type { NestedEndpoint } from './listFnResolver.js'
+export { parsedTableToJsonSchema } from './jsonSchemaConverter.js'
+export { RUNTIME_REQUIRED_TABLES } from './runtimeMappings.js'

@@ -119,9 +119,11 @@ const source = {
   },
 
   async discover({ config }) {
-    const registry = buildResourceRegistry(makeClient(config))
+    const resolved = await resolveOpenApiSpec({
+      apiVersion: config.api_version ?? '2020-08-27',
+    })
+    const registry = buildResourceRegistry(makeClient(config), resolved.spec, config.api_key)
     try {
-      const resolved = await resolveOpenApiSpec({ apiVersion: '2020-08-27' })
       const parser = new SpecParser()
       const parsed = parser.parse(resolved.spec, {
         resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
@@ -172,8 +174,11 @@ const source = {
   },
 
   async *read({ config, catalog, state }, $stdin?) {
-    const registry = buildResourceRegistry(makeClient(config))
     const stripe = makeClient(config)
+    const resolved = await resolveOpenApiSpec({
+      apiVersion: config.api_version ?? '2020-08-27',
+    })
+    const registry = buildResourceRegistry(stripe, resolved.spec, config.api_key)
     const streamNames = new Set(catalog.streams.map((s) => s.stream.name))
 
     // Event-driven mode: iterate over incoming webhook inputs
