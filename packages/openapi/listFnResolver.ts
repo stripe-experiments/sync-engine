@@ -33,7 +33,7 @@ export type NestedEndpoint = {
   supportsPagination: boolean
 }
 
-function resolveTableName(resourceId: string, aliases: Record<string, string>): string {
+export function resolveTableName(resourceId: string, aliases: Record<string, string>): string {
   const alias = aliases[resourceId]
   if (alias) return alias
   const normalized = resourceId.toLowerCase().replace(/[.]/g, '_')
@@ -206,7 +206,6 @@ export function isV2Path(apiPath: string): boolean {
 // ---------------------------------------------------------------------------
 
 const STRIPE_API_BASE = 'https://api.stripe.com'
-const V2_STRIPE_VERSION = '2026-02-25.clover'
 
 function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` }
@@ -216,16 +215,17 @@ function authHeaders(apiKey: string): Record<string, string> {
  * Build a callable list function that hits the Stripe HTTP API directly.
  * Supports both v1 (has_more pagination) and v2 (next_page_url pagination).
  */
-export function buildListFn(apiKey: string, apiPath: string): ListFn {
+export function buildListFn(apiKey: string, apiPath: string, apiVersion?: string): ListFn {
   if (isV2Path(apiPath)) {
     return async (params) => {
       const qs = new URLSearchParams()
       qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
       if (params.starting_after) qs.set('page', params.starting_after)
 
-      const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, {
-        headers: { ...authHeaders(apiKey), 'Stripe-Version': V2_STRIPE_VERSION },
-      })
+      const headers = authHeaders(apiKey)
+      if (apiVersion) headers['Stripe-Version'] = apiVersion
+
+      const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, { headers })
       const body = (await response.json()) as {
         data: unknown[]
         next_page_url?: string | null
@@ -257,12 +257,13 @@ export function buildListFn(apiKey: string, apiPath: string): ListFn {
 /**
  * Build a callable retrieve function that hits the Stripe HTTP API directly.
  */
-export function buildRetrieveFn(apiKey: string, apiPath: string): RetrieveFn {
+export function buildRetrieveFn(apiKey: string, apiPath: string, apiVersion?: string): RetrieveFn {
   if (isV2Path(apiPath)) {
     return async (id) => {
-      const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, {
-        headers: { ...authHeaders(apiKey), 'Stripe-Version': V2_STRIPE_VERSION },
-      })
+      const headers = authHeaders(apiKey)
+      if (apiVersion) headers['Stripe-Version'] = apiVersion
+
+      const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, { headers })
       return await response.json()
     }
   }

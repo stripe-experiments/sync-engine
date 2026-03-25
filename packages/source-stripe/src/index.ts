@@ -8,12 +8,7 @@ import Stripe from 'stripe'
 import { z } from 'zod'
 import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromRegistry, catalogFromOpenApi } from './catalog.js'
-import { resolveOpenApiSpec } from './openapi/specFetchHelper.js'
-import {
-  SpecParser,
-  RUNTIME_REQUIRED_TABLES,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-} from './openapi/specParser.js'
+import { resolveOpenApiSpec, SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from '@stripe/openapi'
 import { processStripeEvent } from './process-event.js'
 import { processWebhookInput, createInputQueue, startWebhookServer } from './src-webhook.js'
 import { listApiBackfill } from './src-list-api.js'
@@ -122,12 +117,11 @@ const source = {
     const resolved = await resolveOpenApiSpec({
       apiVersion: config.api_version ?? '2020-08-27',
     })
-    const registry = buildResourceRegistry(resolved.spec, config.api_key)
+    const registry = buildResourceRegistry(resolved.spec, config.api_key, resolved.apiVersion)
     try {
       const parser = new SpecParser()
       const parsed = parser.parse(resolved.spec, {
         resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-        allowedTables: [...RUNTIME_REQUIRED_TABLES],
       })
       return catalogFromOpenApi(parsed.tables, registry)
     } catch {
@@ -178,7 +172,7 @@ const source = {
     const resolved = await resolveOpenApiSpec({
       apiVersion: config.api_version ?? '2020-08-27',
     })
-    const registry = buildResourceRegistry(resolved.spec, config.api_key)
+    const registry = buildResourceRegistry(resolved.spec, config.api_key, resolved.apiVersion)
     const streamNames = new Set(catalog.streams.map((s) => s.stream.name))
 
     // Event-driven mode: iterate over incoming webhook inputs

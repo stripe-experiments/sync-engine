@@ -7,11 +7,7 @@ import type {
   ParsedOpenApiSpec,
   ScalarType,
 } from './types'
-import {
-  RUNTIME_REQUIRED_TABLES,
-  OPENAPI_COMPATIBILITY_COLUMNS,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-} from './runtimeMappings'
+import { OPENAPI_COMPATIBILITY_COLUMNS, OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
 
@@ -23,7 +19,7 @@ const RESERVED_COLUMNS = new Set([
   '_account_id',
 ])
 
-export { RUNTIME_REQUIRED_TABLES, OPENAPI_RESOURCE_TABLE_ALIASES }
+export { OPENAPI_RESOURCE_TABLE_ALIASES }
 
 type ColumnAccumulator = {
   type: ScalarType

@@ -6,7 +6,8 @@ import {
   isV2Path,
   buildListFn,
   buildRetrieveFn,
-  RUNTIME_REQUIRED_TABLES as OPENAPI_RUNTIME_REQUIRED_TABLES,
+  resolveTableName,
+  OPENAPI_RESOURCE_TABLE_ALIASES,
 } from '@stripe/openapi'
 
 /**
@@ -52,8 +53,6 @@ export const REVALIDATE_ENTITIES = [
 ] as const
 export type RevalidateEntityName = (typeof REVALIDATE_ENTITIES)[number]
 
-export const RUNTIME_REQUIRED_TABLES: ReadonlyArray<string> = OPENAPI_RUNTIME_REQUIRED_TABLES
-
 export const RESOURCE_TABLE_NAME_MAP: Record<string, string> = Object.fromEntries(
   DEFAULT_SYNC_OBJECTS.map((t) => [t, t])
 )
@@ -64,7 +63,8 @@ export const RESOURCE_TABLE_NAME_MAP: Record<string, string> = Object.fromEntrie
  */
 export function buildResourceRegistry(
   spec: OpenApiSpec,
-  apiKey: string
+  apiKey: string,
+  apiVersion?: string
 ): Record<string, ResourceConfig> {
   const endpoints = discoverListEndpoints(spec)
   const nestedEndpoints = discoverNestedEndpoints(spec, endpoints)
@@ -91,8 +91,8 @@ export function buildResourceRegistry(
       supportsLimit: endpoint.supportsLimit,
       sync: true,
       dependencies: [],
-      listFn: buildListFn(apiKey, endpoint.apiPath),
-      retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath),
+      listFn: buildListFn(apiKey, endpoint.apiPath, apiVersion),
+      retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath, apiVersion),
       nestedResources: children.length > 0 ? children : undefined,
     }
     registry[tableName] = config

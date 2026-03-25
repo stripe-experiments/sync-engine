@@ -1,34 +1,6 @@
 import type { ParsedColumn } from './types'
 
 /**
- * Table names that must exist for runtime sync and webhook processing.
- * Includes all default sync objects plus child tables.
- */
-export const RUNTIME_REQUIRED_TABLES: ReadonlyArray<string> = [
-  'products',
-  'coupons',
-  'prices',
-  'plans',
-  'customers',
-  'subscriptions',
-  'subscription_schedules',
-  'invoices',
-  'charges',
-  'setup_intents',
-  'payment_methods',
-  'payment_intents',
-  'tax_ids',
-  'credit_notes',
-  'disputes',
-  'early_fraud_warnings',
-  'refunds',
-  'checkout_sessions',
-  'subscription_items',
-  'checkout_session_line_items',
-  'features',
-]
-
-/**
  * Overrides for x-resourceId values whose table name cannot be inferred by the
  * default pluralisation / dot-to-underscore rule in SpecParser.resolveTableName.
  */
