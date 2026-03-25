@@ -1,5 +1,5 @@
 {
-  "name": "@stripe/openapi",
+  "name": "@stripe/sync-openapi",
   "version": "0.1.0",
   "private": true,
   "type": "module",

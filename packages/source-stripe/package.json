@@ -27,7 +27,7 @@
     "src"
   ],
   "dependencies": {
-    "@stripe/openapi": "workspace:*",
+    "@stripe/sync-openapi": "workspace:*",
     "@stripe/sync-protocol": "workspace:*",
     "stripe": "^17.7.0",
     "ws": "^8.18.0",

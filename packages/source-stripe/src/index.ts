@@ -8,7 +8,11 @@ import Stripe from 'stripe'
 import { z } from 'zod'
 import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromRegistry, catalogFromOpenApi } from './catalog.js'
-import { resolveOpenApiSpec, SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from '@stripe/openapi'
+import {
+  resolveOpenApiSpec,
+  SpecParser,
+  OPENAPI_RESOURCE_TABLE_ALIASES,
+} from '@stripe/sync-openapi'
 import { processStripeEvent } from './process-event.js'
 import { processWebhookInput, createInputQueue, startWebhookServer } from './src-webhook.js'
 import { listApiBackfill } from './src-list-api.js'

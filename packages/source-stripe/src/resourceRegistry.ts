@@ -1,5 +1,5 @@
 import type { ResourceConfig } from './types.js'
-import type { OpenApiSpec, NestedEndpoint } from '@stripe/openapi'
+import type { OpenApiSpec, NestedEndpoint } from '@stripe/sync-openapi'
 import {
   discoverListEndpoints,
   discoverNestedEndpoints,
@@ -8,7 +8,7 @@ import {
   buildRetrieveFn,
   resolveTableName,
   OPENAPI_RESOURCE_TABLE_ALIASES,
-} from '@stripe/openapi'
+} from '@stripe/sync-openapi'
 
 /**
  * The default set of table names synced when no explicit selection is made.
@@ -35,16 +35,6 @@ export const DEFAULT_SYNC_OBJECTS: readonly string[] = [
   'checkout_sessions',
 ]
 
-export type StripeObject = string
-
-export const CORE_SYNC_OBJECTS = DEFAULT_SYNC_OBJECTS as readonly string[]
-
-export type CoreSyncObject = string
-
-export const SYNC_OBJECTS = ['all', 'customer_with_entitlements', ...DEFAULT_SYNC_OBJECTS] as const
-
-export type SyncObjectName = string
-
 export const REVALIDATE_ENTITIES = [
   ...DEFAULT_SYNC_OBJECTS,
   'radar.early_fraud_warning',
@@ -52,10 +42,6 @@ export const REVALIDATE_ENTITIES = [
   'entitlements',
 ] as const
 export type RevalidateEntityName = (typeof REVALIDATE_ENTITIES)[number]
-
-export const RESOURCE_TABLE_NAME_MAP: Record<string, string> = Object.fromEntries(
-  DEFAULT_SYNC_OBJECTS.map((t) => [t, t])
-)
 
 /**
  * Build a ResourceConfig for every listable resource discovered in the OpenAPI spec.

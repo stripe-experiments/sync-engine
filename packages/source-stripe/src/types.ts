@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import type { ListFn, RetrieveFn } from '@stripe/openapi'
+import type { ListFn, RetrieveFn } from '@stripe/sync-openapi'
 import type { RevalidateEntityName } from './resourceRegistry.js'
 
 /**

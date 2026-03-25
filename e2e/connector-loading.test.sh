@@ -24,6 +24,7 @@ TMPDIR_BASE=$(mktemp -d)
 cleanup() {
   rm -rf "$TMPDIR_BASE"
   rm -f "$REPO_ROOT"/stripe-sync-protocol-*.tgz
+  rm -f "$REPO_ROOT"/stripe-sync-openapi-*.tgz
   rm -f "$REPO_ROOT"/stripe-sync-engine-*.tgz
   rm -f "$REPO_ROOT"/stripe-sync-source-stripe-*.tgz
   rm -f "$REPO_ROOT"/stripe-sync-destination-postgres-*.tgz
@@ -44,7 +45,7 @@ echo ""
 echo "--- Step 1: Packing packages ---"
 
 PROTOCOL_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/sync-protocol pack 2>/dev/null | tail -1)
-OPENAPI_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/openapi pack 2>/dev/null | tail -1)
+OPENAPI_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/sync-openapi pack 2>/dev/null | tail -1)
 ENGINE_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/sync-engine pack 2>/dev/null | tail -1)
 SOURCE_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/sync-source-stripe pack 2>/dev/null | tail -1)
 DEST_TGZ=$(cd "$REPO_ROOT" && pnpm --filter @stripe/sync-destination-postgres pack 2>/dev/null | tail -1)
@@ -85,7 +86,7 @@ cat > package.json <<EOF
   "pnpm": {
     "overrides": {
       "@stripe/sync-protocol": "$PROTOCOL_TGZ",
-      "@stripe/openapi": "$OPENAPI_TGZ",
+      "@stripe/sync-openapi": "$OPENAPI_TGZ",
       "@stripe/sync-engine": "$ENGINE_TGZ",
       "@stripe/sync-source-stripe": "$SOURCE_TGZ",
       "@stripe/sync-destination-postgres": "$DEST_TGZ",
