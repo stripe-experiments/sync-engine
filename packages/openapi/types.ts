@@ -43,7 +43,16 @@ export type OpenApiOperationObject = {
   responses?: Record<string, OpenApiResponse>
 }
 
-export type OpenApiPathItem = Record<string, OpenApiOperationObject>
+export type OpenApiPathItem = {
+  get?: OpenApiOperationObject
+  put?: OpenApiOperationObject
+  post?: OpenApiOperationObject
+  delete?: OpenApiOperationObject
+  options?: OpenApiOperationObject
+  head?: OpenApiOperationObject
+  patch?: OpenApiOperationObject
+  trace?: OpenApiOperationObject
+}
 
 export type OpenApiSpec = {
   openapi: string
