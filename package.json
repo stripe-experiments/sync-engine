@@ -12,7 +12,9 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "visualizer": "pnpm --filter @supabase/stripe-sync-visualizer dev",
+    "explorer:build": "bun run scripts/explorer-build.ts"
   },
   "dependencies": {
     "pino": "^10.0.0"
