@@ -117,7 +117,12 @@ const source = {
     const resolved = await resolveOpenApiSpec({
       apiVersion: config.api_version ?? '2020-08-27',
     })
-    const registry = buildResourceRegistry(resolved.spec, config.api_key, resolved.apiVersion)
+    const registry = buildResourceRegistry(
+      resolved.spec,
+      config.api_key,
+      resolved.apiVersion,
+      config.base_url
+    )
     try {
       const parser = new SpecParser()
       const parsed = parser.parse(resolved.spec, {
@@ -172,7 +177,12 @@ const source = {
     const resolved = await resolveOpenApiSpec({
       apiVersion: config.api_version ?? '2020-08-27',
     })
-    const registry = buildResourceRegistry(resolved.spec, config.api_key, resolved.apiVersion)
+    const registry = buildResourceRegistry(
+      resolved.spec,
+      config.api_key,
+      resolved.apiVersion,
+      config.base_url
+    )
     const streamNames = new Set(catalog.streams.map((s) => s.stream.name))
 
     // Event-driven mode: iterate over incoming webhook inputs

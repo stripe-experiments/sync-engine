@@ -64,7 +64,8 @@ export const RESOURCE_TABLE_NAME_MAP: Record<string, string> = Object.fromEntrie
 export function buildResourceRegistry(
   spec: OpenApiSpec,
   apiKey: string,
-  apiVersion?: string
+  apiVersion?: string,
+  baseUrl?: string
 ): Record<string, ResourceConfig> {
   const endpoints = discoverListEndpoints(spec)
   const nestedEndpoints = discoverNestedEndpoints(spec, endpoints)
@@ -91,8 +92,8 @@ export function buildResourceRegistry(
       supportsLimit: endpoint.supportsLimit,
       sync: true,
       dependencies: [],
-      listFn: buildListFn(apiKey, endpoint.apiPath, apiVersion),
-      retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath, apiVersion),
+      listFn: buildListFn(apiKey, endpoint.apiPath, apiVersion, baseUrl),
+      retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath, apiVersion, baseUrl),
       nestedResources: children.length > 0 ? children : undefined,
     }
     registry[tableName] = config

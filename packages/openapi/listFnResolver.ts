@@ -205,7 +205,7 @@ export function isV2Path(apiPath: string): boolean {
 // HTTP-based list / retrieve builders (no Stripe SDK dependency)
 // ---------------------------------------------------------------------------
 
-const STRIPE_API_BASE = 'https://api.stripe.com'
+const DEFAULT_STRIPE_API_BASE = 'https://api.stripe.com'
 
 function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` }
@@ -215,7 +215,14 @@ function authHeaders(apiKey: string): Record<string, string> {
  * Build a callable list function that hits the Stripe HTTP API directly.
  * Supports both v1 (has_more pagination) and v2 (next_page_url pagination).
  */
-export function buildListFn(apiKey: string, apiPath: string, apiVersion?: string): ListFn {
+export function buildListFn(
+  apiKey: string,
+  apiPath: string,
+  apiVersion?: string,
+  baseUrl?: string
+): ListFn {
+  const base = baseUrl ?? DEFAULT_STRIPE_API_BASE
+
   if (isV2Path(apiPath)) {
     return async (params) => {
       const qs = new URLSearchParams()
@@ -225,7 +232,7 @@ export function buildListFn(apiKey: string, apiPath: string, apiVersion?: string
       const headers = authHeaders(apiKey)
       if (apiVersion) headers['Stripe-Version'] = apiVersion
 
-      const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, { headers })
+      const response = await fetch(`${base}${apiPath}?${qs}`, { headers })
       const body = (await response.json()) as {
         data: unknown[]
         next_page_url?: string | null
@@ -246,7 +253,7 @@ export function buildListFn(apiKey: string, apiPath: string, apiVersion?: string
       }
     }
 
-    const response = await fetch(`${STRIPE_API_BASE}${apiPath}?${qs}`, {
+    const response = await fetch(`${base}${apiPath}?${qs}`, {
       headers: authHeaders(apiKey),
     })
     const body = (await response.json()) as { data: unknown[]; has_more: boolean }
@@ -257,19 +264,26 @@ export function buildListFn(apiKey: string, apiPath: string, apiVersion?: string
 /**
  * Build a callable retrieve function that hits the Stripe HTTP API directly.
  */
-export function buildRetrieveFn(apiKey: string, apiPath: string, apiVersion?: string): RetrieveFn {
+export function buildRetrieveFn(
+  apiKey: string,
+  apiPath: string,
+  apiVersion?: string,
+  baseUrl?: string
+): RetrieveFn {
+  const base = baseUrl ?? DEFAULT_STRIPE_API_BASE
+
   if (isV2Path(apiPath)) {
     return async (id) => {
       const headers = authHeaders(apiKey)
       if (apiVersion) headers['Stripe-Version'] = apiVersion
 
-      const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, { headers })
+      const response = await fetch(`${base}${apiPath}/${id}`, { headers })
       return await response.json()
     }
   }
 
   return async (id) => {
-    const response = await fetch(`${STRIPE_API_BASE}${apiPath}/${id}`, {
+    const response = await fetch(`${base}${apiPath}/${id}`, {
       headers: authHeaders(apiKey),
     })
     return await response.json()
@@ -279,7 +293,7 @@ export function buildRetrieveFn(apiKey: string, apiPath: string, apiVersion?: st
 function extractPageToken(nextPageUrl: string | null | undefined): string | undefined {
   if (!nextPageUrl) return undefined
   try {
-    const url = new URL(nextPageUrl, STRIPE_API_BASE)
+    const url = new URL(nextPageUrl, DEFAULT_STRIPE_API_BASE)
     return url.searchParams.get('page') ?? undefined
   } catch {
     return undefined
