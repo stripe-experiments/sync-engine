@@ -5,17 +5,9 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./index.ts",
-      "import": "./index.ts",
-      "default": "./index.ts"
-    }
-  },
-  "publishConfig": {
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      }
+      "bun": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {
