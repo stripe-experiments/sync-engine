@@ -378,6 +378,9 @@ importers:
       '@stripe/sync-protocol':
         specifier: workspace:*
         version: link:../protocol
+      https-proxy-agent:
+        specifier: ^7.0.6
+        version: 7.0.6
       stripe:
         specifier: ^17.7.0
         version: 17.7.0
