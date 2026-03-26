@@ -297,7 +297,7 @@ jobs:
           bash e2e/smokescreen.test.sh
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
-          ENGINE_IMAGE: "ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          ENGINE_IMAGE: 'ghcr.io/${{ github.repository }}:${{ github.sha }}'
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
