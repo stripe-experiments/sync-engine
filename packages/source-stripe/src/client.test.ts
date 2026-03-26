@@ -1,19 +1,16 @@
 import { Agent } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import {
-  buildStripeClientOptions,
-  getStripeProxyUrl,
-  type StripeClientConfigInput,
-} from './client.js'
+import { buildStripeClientOptions, type StripeClientConfigInput } from './client.js'
+import { getProxyUrl } from './transport.js'
 
 const config: StripeClientConfigInput = {
   api_key: 'sk_test_fake',
 }
 
-describe('getStripeProxyUrl', () => {
+describe('getProxyUrl', () => {
   it('prefers HTTPS_PROXY over HTTP_PROXY', () => {
     expect(
-      getStripeProxyUrl({
+      getProxyUrl({
         HTTPS_PROXY: 'http://secure-proxy.example.test:8080',
         HTTP_PROXY: 'http://fallback-proxy.example.test:8080',
       })
@@ -21,7 +18,7 @@ describe('getStripeProxyUrl', () => {
   })
 
   it('returns undefined when no proxy env var is set', () => {
-    expect(getStripeProxyUrl({})).toBeUndefined()
+    expect(getProxyUrl({})).toBeUndefined()
   })
 })
 

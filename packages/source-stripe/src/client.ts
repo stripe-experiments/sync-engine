@@ -1,34 +1,12 @@
 import Stripe from 'stripe'
 import { HttpsProxyAgent } from 'https-proxy-agent'
-
-type StripeEnv = Record<string, string | undefined>
+import { getProxyUrl, parsePositiveInteger, type TransportEnv } from './transport.js'
 
 export type StripeClientConfigInput = {
   api_key: string
   base_url?: string
 }
-
-function parsePositiveInteger(
-  name: string,
-  value: string | undefined,
-  defaultValue: number
-): number {
-  const parsed = Number(value ?? defaultValue)
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer`)
-  }
-  return parsed
-}
-
-export function getStripeProxyUrl(env: StripeEnv = process.env): string | undefined {
-  for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) {
-    const value = env[key]?.trim()
-    if (value) {
-      return value
-    }
-  }
-  return undefined
-}
+export { getProxyUrl as getStripeProxyUrl } from './transport.js'
 
 function buildBaseUrlOptions(
   baseUrl: string
@@ -43,7 +21,7 @@ function buildBaseUrlOptions(
 
 export function buildStripeClientOptions(
   config: StripeClientConfigInput,
-  env: StripeEnv = process.env
+  env: TransportEnv = process.env
 ): Stripe.StripeConfig {
   const options: Stripe.StripeConfig = {
     timeout: parsePositiveInteger(
@@ -60,7 +38,7 @@ export function buildStripeClientOptions(
     }
   }
 
-  const proxyUrl = getStripeProxyUrl(env)
+  const proxyUrl = getProxyUrl(env)
   if (proxyUrl) {
     options.httpAgent = new HttpsProxyAgent(proxyUrl)
   }
@@ -68,7 +46,7 @@ export function buildStripeClientOptions(
   return options
 }
 
-function attachStripeRequestLogging(stripe: Stripe, env: StripeEnv = process.env): void {
+function attachStripeRequestLogging(stripe: Stripe, env: TransportEnv = process.env): void {
   if (env.STRIPE_LOG_REQUESTS !== '1') {
     return
   }
@@ -96,7 +74,10 @@ function attachStripeRequestLogging(stripe: Stripe, env: StripeEnv = process.env
   })
 }
 
-export function makeClient(config: StripeClientConfigInput, env: StripeEnv = process.env): Stripe {
+export function makeClient(
+  config: StripeClientConfigInput,
+  env: TransportEnv = process.env
+): Stripe {
   const stripe = new Stripe(config.api_key, buildStripeClientOptions(config, env))
   attachStripeRequestLogging(stripe, env)
   return stripe
