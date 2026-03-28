@@ -9,9 +9,9 @@
  *   STRIPE_API_KEY
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import Stripe from 'stripe'
 import { SupabaseSetupClient } from '../supabase.js'
 import { describeWithEnv } from '../../../../e2e/test-helpers.js'
+import { stripeDelete, stripePost } from '../../../../e2e/stripe-helpers.js'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -22,14 +22,12 @@ describeWithEnv(
   ['SUPABASE_PROJECT_ID', 'SUPABASE_PERSONAL_ACCESS_TOKEN', 'STRIPE_API_KEY'],
   ({ SUPABASE_PROJECT_ID, SUPABASE_PERSONAL_ACCESS_TOKEN, STRIPE_API_KEY }) => {
     let client: SupabaseSetupClient
-    let stripe: Stripe
 
     beforeAll(async () => {
       client = new SupabaseSetupClient({
         accessToken: SUPABASE_PERSONAL_ACCESS_TOKEN,
         projectRef: SUPABASE_PROJECT_ID,
       })
-      stripe = new Stripe(STRIPE_API_KEY)
 
       // Ensure clean slate
       try {
@@ -60,7 +58,7 @@ describeWithEnv(
         // Clean up test customer
         if (customerId) {
           try {
-            await stripe.customers.del(customerId)
+            await stripeDelete(STRIPE_API_KEY, `/v1/customers/${customerId}`)
           } catch {}
         }
       })
@@ -89,7 +87,7 @@ describeWithEnv(
 
       it('should receive customer.created webhook', async () => {
         const testName = `Supabase E2E ${Date.now()}`
-        const customer = await stripe.customers.create({
+        const customer = await stripePost<{ id: string }>(STRIPE_API_KEY, '/v1/customers', {
           name: testName,
           email: 'supabase-e2e@test.local',
         })
@@ -116,7 +114,7 @@ describeWithEnv(
         expect(customerId).toBeDefined()
 
         const updatedName = `Updated Supabase E2E ${Date.now()}`
-        await stripe.customers.update(customerId!, { name: updatedName })
+        await stripePost(STRIPE_API_KEY, `/v1/customers/${customerId!}`, { name: updatedName })
 
         // Poll until the update arrives (up to 60s)
         let found = false

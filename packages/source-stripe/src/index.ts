@@ -4,7 +4,6 @@ import type {
   Message,
   Source,
 } from '@stripe/sync-protocol'
-import Stripe from 'stripe'
 import { z } from 'zod'
 import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromRegistry, catalogFromOpenApi } from './catalog.js'
@@ -20,9 +19,16 @@ import { pollEvents } from './src-events-api.js'
 import type { StripeWebSocketClient, StripeWebhookEvent } from './src-websocket.js'
 import { createStripeWebSocketClient } from './src-websocket.js'
 import type { ResourceConfig } from './types.js'
-import { makeClient } from './client.js'
 import type { RateLimiter } from './rate-limiter.js'
 import { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
+import type { StripeEvent } from './stripe-types.js'
+import type { StripeClientConfig } from './stripe-api.js'
+import {
+  retrieveAccount,
+  listWebhookEndpoints,
+  createWebhookEndpoint,
+  deleteWebhookEndpoint,
+} from './stripe-api.js'
 
 // MARK: - Spec
 
@@ -80,6 +86,10 @@ export const spec = z.object({
 
 export type Config = z.infer<typeof spec>
 
+function clientConfig(config: Config): StripeClientConfig {
+  return { apiKey: config.api_key, baseUrl: config.base_url }
+}
+
 /** Raw webhook payload requiring signature verification. */
 export type WebhookInput = {
   body: string | Buffer
@@ -126,7 +136,7 @@ export type StripeSourceDeps = {
 
 export function createStripeSource(
   deps?: StripeSourceDeps
-): Source<Config, StripeStreamState, WebhookInput | Stripe.Event> {
+): Source<Config, StripeStreamState, WebhookInput | StripeEvent> {
   const externalRateLimiter = deps?.rateLimiter
 
   return {
@@ -139,8 +149,7 @@ export function createStripeSource(
 
     async check({ config }) {
       try {
-        const s = makeClient(config)
-        await s.accounts.retrieve()
+        await retrieveAccount(clientConfig(config))
         return { status: 'succeeded' }
       } catch (err: any) {
         return { status: 'failed', message: err.message }
@@ -170,8 +179,8 @@ export function createStripeSource(
 
     async setup({ config, catalog }) {
       if (config.webhook_url) {
-        const stripe = makeClient(config)
-        const existing = await stripe.webhookEndpoints.list({ limit: 100 })
+        const sc = clientConfig(config)
+        const existing = await listWebhookEndpoints(sc, { limit: 100 })
         const managed = existing.data.find(
           (wh) => wh.url === config.webhook_url && wh.metadata?.managed_by === 'stripe-sync'
         )
@@ -185,7 +194,7 @@ export function createStripeSource(
           // for the same account, each sync filters events by its own catalog
           // inside processStripeEvent(), keeping endpoint usage constant
           // regardless of how many syncs are configured.
-          await stripe.webhookEndpoints.create({
+          await createWebhookEndpoint(sc, {
             url: config.webhook_url,
             enabled_events: ['*'],
             metadata: { managed_by: 'stripe-sync' },
@@ -196,11 +205,11 @@ export function createStripeSource(
 
     async teardown({ config }) {
       if (config.webhook_url) {
-        const stripe = makeClient(config)
-        const existing = await stripe.webhookEndpoints.list({ limit: 100 })
+        const sc = clientConfig(config)
+        const existing = await listWebhookEndpoints(sc, { limit: 100 })
         for (const wh of existing.data) {
           if (wh.metadata?.managed_by === 'stripe-sync') {
-            await stripe.webhookEndpoints.del(wh.id)
+            await deleteWebhookEndpoint(sc, wh.id)
           }
         }
       }
@@ -209,7 +218,6 @@ export function createStripeSource(
     async *read({ config, catalog, state }, $stdin?) {
       const rateLimiter =
         externalRateLimiter ?? createInMemoryRateLimiter(config.rate_limit ?? DEFAULT_MAX_RPS)
-      const stripe = makeClient(config)
       const resolved = await resolveOpenApiSpec({
         apiVersion: config.api_version ?? '2020-08-27',
       })
@@ -225,23 +233,9 @@ export function createStripeSource(
       if ($stdin) {
         for await (const input of $stdin) {
           if ('body' in (input as object)) {
-            yield* processWebhookInput(
-              input as WebhookInput,
-              config,
-              stripe,
-              catalog,
-              registry,
-              streamNames
-            )
+            yield* processWebhookInput(input as WebhookInput, config, catalog, registry, streamNames)
           } else {
-            yield* processStripeEvent(
-              input as Stripe.Event,
-              config,
-              stripe,
-              catalog,
-              registry,
-              streamNames
-            )
+            yield* processStripeEvent(input as StripeEvent, config, catalog, registry, streamNames)
           }
         }
         return
@@ -254,7 +248,7 @@ export function createStripeSource(
         wsClient = await createStripeWebSocketClient({
           stripeApiKey: config.api_key,
           onEvent: (wsEvent: StripeWebhookEvent) => {
-            const event = JSON.parse(wsEvent.event_payload) as Stripe.Event
+            const event = JSON.parse(wsEvent.event_payload) as StripeEvent
             inputQueue.push({ data: event })
           },
         })
@@ -270,17 +264,14 @@ export function createStripeSource(
           catalog,
           state,
           registry,
-          stripe,
-          rateLimiter,
           backfillLimit: config.backfill_limit,
-          backfillConcurrency: config.backfill_concurrency,
           drainQueue: wsClient
-            ? () => inputQueue.drain(config, stripe, catalog, registry, streamNames)
+            ? () => inputQueue.drain(config, catalog, registry, streamNames)
             : undefined,
         })
 
         // Events polling: incremental sync via /v1/events after backfill
-        yield* pollEvents({ config, stripe, catalog, registry, streamNames, state, startTimestamp })
+        yield* pollEvents({ config, catalog, registry, streamNames, state, startTimestamp })
 
         // Start HTTP server for live mode if configured
         if (config.webhook_port) {
@@ -290,30 +281,16 @@ export function createStripeSource(
         // After backfill: stream live events from WebSocket and/or HTTP
         if (wsClient || httpServer) {
           // Drain anything that arrived during backfill
-          yield* inputQueue.drain(config, stripe, catalog, registry, streamNames)
+          yield* inputQueue.drain(config, catalog, registry, streamNames)
 
           // Block on new events (infinite loop until all live sources close)
           while (wsClient || httpServer) {
             const queued = await inputQueue.wait()
             try {
               if ('body' in queued.data) {
-                yield* processWebhookInput(
-                  queued.data,
-                  config,
-                  stripe,
-                  catalog,
-                  registry,
-                  streamNames
-                )
+                yield* processWebhookInput(queued.data, config, catalog, registry, streamNames)
               } else {
-                yield* processStripeEvent(
-                  queued.data,
-                  config,
-                  stripe,
-                  catalog,
-                  registry,
-                  streamNames
-                )
+                yield* processStripeEvent(queued.data, config, catalog, registry, streamNames)
               }
               queued.resolve?.()
             } catch (err) {
@@ -345,3 +322,11 @@ export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from './openapi/specParser
 export type { ParsedResourceTable, ParsedOpenApiSpec } from './openapi/types.js'
 export type { RateLimiter } from './rate-limiter.js'
 export { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
+export type {
+  StripeEvent,
+  StripeList,
+  StripeAccount,
+  StripeWebhookEndpoint,
+} from './stripe-types.js'
+export type { StripeClientConfig } from './stripe-api.js'
+export { verifyWebhookSignature, retrieveAccount, listAllEvents } from './stripe-api.js'

@@ -1,9 +1,9 @@
-import Stripe from 'stripe'
+import type { StripeList } from '../stripe-types.js'
 import { expandEntity } from '../utils/expandEntity.js'
 
 export async function expandLists(opts: {
   items: Record<string, any>[] // eslint-disable-line @typescript-eslint/no-explicit-any
-  listExpands: Record<string, (id: string) => Promise<Stripe.ApiList<{ id?: string }>>>[]
+  listExpands: Record<string, (id: string) => Promise<StripeList<{ id?: string }>>>[]
 }): Promise<void> {
   for (const expandEntry of opts.listExpands) {
     for (const [property, expandFn] of Object.entries(expandEntry)) {

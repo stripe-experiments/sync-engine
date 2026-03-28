@@ -1,17 +1,14 @@
-import Stripe from 'stripe'
+import type { StripeList } from '../stripe-types.js'
 
-/**
- * Stripe only sends the first 10 entries by default, the option will actively fetch all entries.
- * Uses manual pagination - each fetch() gets automatic retry protection.
- */
+/** Expand truncated list fields by paginating until `has_more` is false. */
 export async function expandEntity<
   K extends { id?: string },
   P extends keyof T,
-  T extends { id?: string } & { [key in P]?: Stripe.ApiList<K> | null },
+  T extends { id?: string } & { [key in P]?: StripeList<K> | null },
 >(
   entities: T[],
   property: P,
-  listFn: (id: string, params?: { starting_after?: string }) => Promise<Stripe.ApiList<K>>
+  listFn: (id: string, params?: { starting_after?: string }) => Promise<StripeList<K>>
 ) {
   for (const entity of entities) {
     const existingList = entity[property]

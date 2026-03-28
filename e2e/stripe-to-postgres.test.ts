@@ -1,11 +1,11 @@
 import pg from 'pg'
-import Stripe from 'stripe'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import source from '@stripe/sync-source-stripe'
 import destination from '@stripe/sync-destination-postgres'
 import { createEngine, noopStateStore } from '@stripe/sync-engine'
 import type { StateMessage, DestinationOutput } from '@stripe/sync-protocol'
 import { describeWithEnv } from './test-helpers.js'
+import { stripeGet, stripePost } from './stripe-helpers.js'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -39,7 +39,6 @@ async function collectStates(iter: AsyncIterable<DestinationOutput>): Promise<St
 
 describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY }) => {
   let pool: pg.Pool
-  let stripe: Stripe
 
   function makeEngine(opts: { websocket?: boolean } = {}) {
     return createEngine(
@@ -61,8 +60,7 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: POSTGRES_URL })
     await pool.query('SELECT 1')
-    stripe = new Stripe(STRIPE_API_KEY)
-    const account = await stripe.accounts.retrieve()
+    const account = await stripeGet<{ id: string }>(STRIPE_API_KEY, '/v1/account')
     const isTest = STRIPE_API_KEY.startsWith('sk_test_')
     const dashPrefix = isTest ? 'dashboard.stripe.com/test' : 'dashboard.stripe.com'
     console.log(`\n  Stripe:   ${account.id} → https://${dashPrefix}/developers`)
@@ -112,11 +110,14 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
       console.log('    Backfill complete, sending product update…')
 
       // Phase 2: update a product via Stripe API
-      const products = await stripe.products.list({ limit: 1 })
+      const products = await stripeGet<{ data: { id: string }[] }>(
+        STRIPE_API_KEY,
+        '/v1/products?limit=1'
+      )
       expect(products.data.length).toBeGreaterThan(0)
       const product = products.data[0]
       const newName = `e2e-test-${Date.now()}`
-      await stripe.products.update(product.id, { name: newName })
+      await stripePost(STRIPE_API_KEY, `/v1/products/${product.id}`, { name: newName })
 
       // Phase 3: consume until we see a live event state for product
       const deadline = Date.now() + 30_000

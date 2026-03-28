@@ -64,7 +64,7 @@ interface Source<TConfig, TState, TInput = never> {
   discover(): Promise<ConfiguredCatalog>
   setup(): Promise<void>
   read(params: SyncParams, $stdin?: AsyncIterable<TInput>): AsyncIterable<Message>
-  teardown(): Promise<void>
+  teardown(opts?: { remove_shared_resources?: boolean }): Promise<void>
 }
 
 interface Destination<TConfig, TState> {

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type Stripe from 'stripe'
+import type { StripeEvent } from './stripe-types.js'
 import type {
   ConfiguredCatalog,
   ErrorMessage,
@@ -90,13 +90,13 @@ function getAllTsFiles(dir: string): string[] {
   return results
 }
 
-/** Create a minimal Stripe.Event for testing fromWebhookEvent(). */
+/** Create a minimal StripeEvent for testing fromWebhookEvent(). */
 function makeEvent(overrides: {
   id?: string
   type?: string
   created?: number
   dataObject: Record<string, unknown>
-}): Stripe.Event {
+}): StripeEvent {
   return {
     id: overrides.id ?? 'evt_test_123',
     object: 'event',
@@ -107,9 +107,9 @@ function makeEvent(overrides: {
     pending_webhooks: 0,
     request: null,
     data: {
-      object: overrides.dataObject as Stripe.Event.Data['object'],
+      object: overrides.dataObject as StripeEvent['data']['object'],
     },
-  } as Stripe.Event
+  }
 }
 
 const config = { api_key: 'sk_test_fake' }
@@ -472,8 +472,8 @@ describe('StripeSource', () => {
 
     it('WebSocket mode uses same fromWebhookEvent conversion as webhook mode', () => {
       // WebSocket is a transport concern — the conversion is identical.
-      // The same Stripe.Event structure is received regardless of transport.
-      // This test verifies fromWebhookEvent works for any Stripe.Event input.
+      // The same StripeEvent structure is received regardless of transport.
+      // This test verifies fromWebhookEvent works for any StripeEvent input.
       const registry: Record<string, ResourceConfig> = {
         invoices: makeConfig({ order: 1, tableName: 'invoices' }),
       }
@@ -703,7 +703,7 @@ describe('StripeSource', () => {
     })
 
     it('stream via websocket (input): same code path as webhook', async () => {
-      // WebSocket is a transport concern — the Stripe.Event is identical.
+      // WebSocket is a transport concern — the StripeEvent is identical.
       // read() with input= behaves the same regardless of transport.
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
       const event = makeEvent({
@@ -1145,7 +1145,7 @@ describe('StripeSource', () => {
     }
 
     /** Push a synthetic event through the captured onEvent callback. */
-    function pushWsEvent(event: Stripe.Event) {
+    function pushWsEvent(event: StripeEvent) {
       capturedOnEvent!({
         type: 'webhook_event',
         webhook_id: 'wh_' + event.id,

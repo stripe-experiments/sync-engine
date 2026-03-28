@@ -1,6 +1,6 @@
 import type { ConfiguredCatalog, Message, RecordMessage, StateMessage } from '@stripe/sync-protocol'
 import { toRecordMessage } from '@stripe/sync-protocol'
-import type Stripe from 'stripe'
+import type { StripeEvent } from './stripe-types.js'
 import type { Config } from './index.js'
 import type { ResourceConfig } from './types.js'
 import { normalizeStripeObjectName } from './resourceRegistry.js'
@@ -17,7 +17,7 @@ const RESOURCE_DELETE_EVENTS: ReadonlySet<string> = new Set([
   'customer.tax_id.deleted',
 ])
 
-function isDeleteEvent(event: Stripe.Event): boolean {
+function isDeleteEvent(event: StripeEvent): boolean {
   if (
     'deleted' in event.data.object &&
     (event.data.object as { deleted?: boolean }).deleted === true
@@ -39,7 +39,7 @@ function isDeleteEvent(event: Stripe.Event): boolean {
  * pushes events in; this method converts them to protocol messages.
  */
 export function fromWebhookEvent(
-  event: Stripe.Event,
+  event: StripeEvent,
   registry: Record<string, ResourceConfig>
 ): { record: RecordMessage; state: StateMessage } | null {
   const dataObject = event.data?.object as unknown as
@@ -70,17 +70,16 @@ export function fromWebhookEvent(
 // MARK: - processStripeEvent
 
 /**
- * Process a single verified Stripe.Event through the full pipeline:
+ * Process a single verified StripeEvent through the full pipeline:
  * entitlements, registry filter, delete detection, revalidation,
  * subscription items.
  *
  * This is the canonical function — all event paths (webhook, events API,
- * WebSocket) converge here once a Stripe.Event is in hand.
+ * WebSocket) converge here once a StripeEvent is in hand.
  */
 export async function* processStripeEvent(
-  event: Stripe.Event,
+  event: StripeEvent,
   config: Config,
-  stripe: Stripe,
   catalog: ConfiguredCatalog,
   registry: Record<string, ResourceConfig>,
   streamNames: Set<string>

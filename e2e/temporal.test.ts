@@ -4,8 +4,8 @@ import { NativeConnection, Worker } from '@temporalio/worker'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import pg from 'pg'
-import Stripe from 'stripe'
 import { google } from 'googleapis'
+import { stripeGet, stripePost } from './stripe-helpers.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -162,11 +162,9 @@ function createTestInfra() {
 describeWithEnv('temporal e2e: stripe → postgres', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY }) => {
   const infra = createTestInfra()
   const schema = schemaName()
-  let stripe: Stripe
 
   beforeAll(async () => {
     await infra.setup()
-    stripe = new Stripe(STRIPE_API_KEY)
     console.log(`  Schema: ${schema}`)
   }, 60_000)
 
@@ -235,14 +233,20 @@ describeWithEnv('temporal e2e: stripe → postgres', ['STRIPE_API_KEY'], ({ STRI
       console.log(`  Sample: ${sampleRows[0].id} → ${sampleRows[0].name}`)
 
       // --- Live event via stripe_event signal ---
-      const products = await stripe.products.list({ limit: 1 })
+      const products = await stripeGet<{ data: { id: string }[] }>(
+        STRIPE_API_KEY,
+        '/v1/products?limit=1'
+      )
       const product = products.data[0]
       const newName = `temporal-e2e-${Date.now()}`
-      await stripe.products.update(product.id, { name: newName })
+      await stripePost(STRIPE_API_KEY, `/v1/products/${product.id}`, { name: newName })
       console.log(`  Updated product ${product.id} → "${newName}"`)
 
       await new Promise((r) => setTimeout(r, 2000))
-      const events = await stripe.events.list({ limit: 5, type: 'product.updated' })
+      const events = await stripeGet<{ data: { id: string; type: string }[] }>(
+        STRIPE_API_KEY,
+        '/v1/events?limit=5&type=product.updated'
+      )
       const event = events.data[0]
       console.log(`  Fetched event ${event.id} (${event.type})`)
       await handle.signal('stripe_event', event)

@@ -1,5 +1,6 @@
 import type { ConfiguredCatalog, LogMessage, Message, StateMessage } from '@stripe/sync-protocol'
-import type Stripe from 'stripe'
+import type { StripeEvent } from './stripe-types.js'
+import { listAllEvents } from './stripe-api.js'
 import type { Config, StripeStreamState } from './index.js'
 import type { ResourceConfig } from './types.js'
 import { processStripeEvent } from './process-event.js'
@@ -10,14 +11,13 @@ const EVENTS_MAX_AGE_DAYS = 25
 
 export async function* pollEvents(opts: {
   config: Config
-  stripe: Stripe
   catalog: ConfiguredCatalog
   registry: Record<string, ResourceConfig>
   streamNames: Set<string>
   state: Record<string, StripeStreamState> | undefined
   startTimestamp: number
 }): AsyncGenerator<Message> {
-  const { config, stripe, catalog, registry, streamNames, state, startTimestamp } = opts
+  const { config, catalog, registry, streamNames, state, startTimestamp } = opts
 
   if (!config.poll_events) return
 
@@ -62,8 +62,9 @@ export async function* pollEvents(opts: {
   }
 
   // Fetch events since cursor (API returns newest-first)
-  const events: Stripe.Event[] = []
-  for await (const event of stripe.events.list({ created: { gt: cursor } })) {
+  const events: StripeEvent[] = []
+  const sc = { apiKey: config.api_key, baseUrl: config.base_url }
+  for await (const event of listAllEvents(sc, { created: { gt: cursor } })) {
     events.push(event)
   }
 
@@ -71,14 +72,7 @@ export async function* pollEvents(opts: {
   events.reverse()
 
   for (const event of events) {
-    for await (const msg of processStripeEvent(
-      event,
-      config,
-      stripe,
-      catalog,
-      registry,
-      streamNames
-    )) {
+    for await (const msg of processStripeEvent(event, config, catalog, registry, streamNames)) {
       if (msg.type === 'state') {
         // Intercept state messages to preserve complete status + update events_cursor
         const existing = state?.[msg.stream]
