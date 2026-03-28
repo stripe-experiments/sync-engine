@@ -122,10 +122,7 @@ function matchesNoProxyRule(hostname: string, rawRule: string): boolean {
   return hostname.endsWith(suffixRule)
 }
 
-export function shouldBypassProxy(
-  target: ProxyTarget,
-  env: TransportEnv = process.env
-): boolean {
+export function shouldBypassProxy(target: ProxyTarget, env: TransportEnv = process.env): boolean {
   const url = parseTargetUrl(target)
   if (!url) {
     return false
