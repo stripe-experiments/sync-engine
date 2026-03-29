@@ -7,6 +7,7 @@ import type {
 import { toRecordMessage } from '@stripe/sync-protocol'
 import type { ResourceConfig } from './types.js'
 import type { SegmentState } from './index.js'
+import type { RateLimiter } from './rate-limiter.js'
 import type Stripe from 'stripe'
 
 const SKIPPABLE_ERROR_PATTERNS = [
@@ -18,48 +19,6 @@ const SKIPPABLE_ERROR_PATTERNS = [
 ]
 
 const NUM_SEGMENTS = 200
-const DEFAULT_REQUESTS_PER_SECOND = 25
-
-function getMaxRequestsPerSecond(): number {
-  const env = process.env.RATE_LIMIT
-  if (env) {
-    const parsed = parseInt(env, 10)
-    if (Number.isFinite(parsed) && parsed > 0) return parsed
-  }
-  return DEFAULT_REQUESTS_PER_SECOND
-}
-
-// MARK: - Token-bucket rate limiter
-
-function createRateLimiter(rps: number) {
-  let tokens = rps
-  let lastRefill = Date.now()
-
-  return async function acquire(): Promise<void> {
-    while (true) {
-      const now = Date.now()
-      const elapsed = now - lastRefill
-      if (elapsed >= 1000) {
-        tokens = rps
-        lastRefill = now
-      } else {
-        const refill = Math.floor((elapsed / 1000) * rps)
-        if (refill > 0) {
-          tokens = Math.min(rps, tokens + refill)
-          lastRefill = now
-        }
-      }
-
-      if (tokens > 0) {
-        tokens--
-        return
-      }
-
-      const waitMs = Math.ceil(((1 - tokens / rps) * 1000) / rps)
-      await new Promise((r) => setTimeout(r, Math.max(waitMs, 10)))
-    }
-  }
-}
 
 function isSkippableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
@@ -147,7 +106,7 @@ async function* paginateSegment(opts: {
   supportsLimit: boolean
   backfillLimit?: number
   totalEmitted: { count: number }
-  acquireToken: () => Promise<void>
+  rateLimiter: RateLimiter
 }): AsyncGenerator<Message> {
   const {
     listFn,
@@ -157,7 +116,7 @@ async function* paginateSegment(opts: {
     supportsLimit,
     backfillLimit,
     totalEmitted,
-    acquireToken,
+    rateLimiter,
   } = opts
 
   let pageCursor: string | null = segment.pageCursor
@@ -174,7 +133,8 @@ async function* paginateSegment(opts: {
       params.starting_after = pageCursor
     }
 
-    await acquireToken()
+    const wait = await rateLimiter()
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait * 1000))
     console.error({
       msg: 'Starting Stripe list page',
       stream: streamName,
@@ -302,13 +262,13 @@ export async function* listApiBackfill(opts: {
     | undefined
   registry: Record<string, ResourceConfig>
   stripe: Stripe
+  rateLimiter: RateLimiter
   backfillLimit?: number
   drainQueue?: () => AsyncGenerator<Message>
 }): AsyncGenerator<Message> {
-  const { catalog, state, registry, stripe, backfillLimit, drainQueue } = opts
+  const { catalog, state, registry, stripe, rateLimiter, backfillLimit, drainQueue } = opts
 
   let accountCreated: number | null = null
-  const acquireToken = createRateLimiter(getMaxRequestsPerSecond())
 
   for (const configuredStream of catalog.streams) {
     const stream = configuredStream.stream
@@ -363,7 +323,7 @@ export async function* listApiBackfill(opts: {
               supportsLimit: resourceConfig.supportsLimit !== false,
               backfillLimit,
               totalEmitted,
-              acquireToken,
+              rateLimiter,
             })
           )
 
