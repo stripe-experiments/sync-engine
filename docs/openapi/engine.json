@@ -615,12 +615,7 @@
           },
           "failure_type": {
             "type": "string",
-            "enum": [
-              "config_error",
-              "system_error",
-              "transient_error",
-              "auth_error"
-            ]
+            "enum": ["config_error", "system_error", "transient_error", "auth_error"]
           },
           "message": {
             "type": "string"
@@ -820,12 +815,7 @@
           },
           "failure_type": {
             "type": "string",
-            "enum": [
-              "config_error",
-              "system_error",
-              "transient_error",
-              "auth_error"
-            ]
+            "enum": ["config_error", "system_error", "transient_error", "auth_error"]
           },
           "message": {
             "type": "string"
