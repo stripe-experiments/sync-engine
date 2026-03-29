@@ -1,7 +1,19 @@
 import { Client } from 'pg'
+import type { ClientConfig } from 'pg'
 import crypto from 'node:crypto'
 import type { ConnectionOptions } from 'node:tls'
 import { sql, withPgConnectProxy } from '@stripe/sync-util-postgres'
+
+function sslConfigFromConnectionString(connStr: string): ClientConfig['ssl'] {
+  try {
+    const sslmode = new URL(connStr).searchParams.get('sslmode')
+    if (sslmode === 'disable') return false
+    if (sslmode === 'verify-ca' || sslmode === 'verify-full') return true
+    return { rejectUnauthorized: false }
+  } catch {
+    return { rejectUnauthorized: false }
+  }
+}
 import { renderMigrationTemplate } from './migrationTemplate.js'
 import type { Migration } from './migrations/index.js'
 import { migrations as allMigrations } from './migrations/index.js'
@@ -176,8 +188,7 @@ async function runMigrationsWithContent(
   const client = new Client(
     withPgConnectProxy({
       connectionString: config.databaseUrl,
-      // TODO: Preserve connection-string sslmode semantics here instead of forcing TLS.
-      ssl: config.ssl ?? { rejectUnauthorized: false },
+      ssl: config.ssl ?? sslConfigFromConnectionString(config.databaseUrl),
       connectionTimeoutMillis: 10_000,
     })
   )
