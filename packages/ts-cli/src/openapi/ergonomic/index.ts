@@ -57,7 +57,7 @@ export function createErgonomicCli(opts: CreateErgonomicCliOptions): CommandDef 
   } = opts
 
   const operations = parseSpec(spec).filter(
-    (op) => !op.operationId || !exclude.includes(op.operationId),
+    (op) => !op.operationId || !exclude.includes(op.operationId)
   )
 
   const subCommands: Record<string, CommandDef> = {}
@@ -88,7 +88,7 @@ export function createErgonomicCli(opts: CreateErgonomicCliOptions): CommandDef 
           baseUrl,
           nameOperation,
           ndjsonBodyStream,
-          envPrefixes,
+          envPrefixes
         )
       }
       subCommands[toCliFlag(tag)] = defineCommand({
@@ -106,7 +106,7 @@ export function createErgonomicCli(opts: CreateErgonomicCliOptions): CommandDef 
         baseUrl,
         nameOperation,
         ndjsonBodyStream,
-        envPrefixes,
+        envPrefixes
       )
     }
   } else {
@@ -119,7 +119,7 @@ export function createErgonomicCli(opts: CreateErgonomicCliOptions): CommandDef 
         baseUrl,
         nameOperation,
         ndjsonBodyStream,
-        envPrefixes,
+        envPrefixes
       )
     }
   }
@@ -135,7 +135,7 @@ export function createErgonomicCli(opts: CreateErgonomicCliOptions): CommandDef 
 
 function getOpName(
   op: ParsedOperation,
-  nameOverride?: (method: string, path: string, op: OpenAPIOperation) => string,
+  nameOverride?: (method: string, path: string, op: OpenAPIOperation) => string
 ): string {
   const rawOp = toRawOp(op)
   return nameOverride
@@ -165,7 +165,7 @@ function buildErgonomicCommand(
   baseUrl: string,
   nameOverride: CreateErgonomicCliOptions['nameOperation'],
   ndjsonBodyStream: CreateErgonomicCliOptions['ndjsonBodyStream'],
-  envPrefixes: Record<string, string>,
+  envPrefixes: Record<string, string>
 ): CommandDef {
   const rawOp = toRawOp(operation)
   const name = nameOverride
@@ -235,7 +235,7 @@ function buildErgonomicCommand(
     args,
     async run({ args: cmdArgs }) {
       const positionals = operation.pathParams.map(
-        (p) => (cmdArgs as Record<string, string>)[p.name],
+        (p) => (cmdArgs as Record<string, string>)[p.name]
       )
       const opts = cmdArgs as Record<string, string | undefined>
 

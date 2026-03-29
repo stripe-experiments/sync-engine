@@ -37,10 +37,7 @@ export interface DecomposedParam {
 }
 
 /** Decompose a single header parameter into ergonomic CLI flags. */
-export function decomposeHeaderParam(
-  param: OpenAPIParameter,
-  spec: OpenAPISpec,
-): DecomposedParam {
+export function decomposeHeaderParam(param: OpenAPIParameter, spec: OpenAPISpec): DecomposedParam {
   if (!isJsonHeaderParam(param)) {
     // Non-JSON header: single flag, strip x- prefix
     const flagCliName = stripXPrefix(param.name)
@@ -78,10 +75,7 @@ export function decomposeHeaderParam(
 }
 
 /** Decompose a resolved content schema into individual CLI flags. */
-function decomposeSchema(
-  schema: ExtendedSchema,
-  param: OpenAPIParameter,
-): DecomposedFlag[] {
+function decomposeSchema(schema: ExtendedSchema, param: OpenAPIParameter): DecomposedFlag[] {
   const flags: DecomposedFlag[] = []
   const requiredProps = schema.required ?? []
 

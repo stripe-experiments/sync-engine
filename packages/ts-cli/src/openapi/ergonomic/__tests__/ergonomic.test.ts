@@ -18,7 +18,7 @@ const specPath = join(
   '..',
   'docs',
   'openapi',
-  'engine.json',
+  'engine.json'
 )
 const engineSpec: OpenAPISpec = JSON.parse(readFileSync(specPath, 'utf-8'))
 
@@ -165,7 +165,7 @@ describe('ergonomic CLI handler integration', () => {
       return Promise.resolve(
         new Response('{"type":"state","stream":"a","data":{}}\n', {
           headers: { 'content-type': 'application/x-ndjson' },
-        }),
+        })
       )
     })
 

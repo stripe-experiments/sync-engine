@@ -7,7 +7,7 @@ import { assembleJsonHeader } from '../assemble.js'
 
 // Helper to create a minimal flag
 function flag(
-  overrides: Partial<DecomposedFlag> & { name: string; role: DecomposedFlag['role'] },
+  overrides: Partial<DecomposedFlag> & { name: string; role: DecomposedFlag['role'] }
 ): DecomposedFlag {
   return {
     cliFlag: '--' + overrides.name,
@@ -116,7 +116,7 @@ describe('assembleJsonHeader', () => {
         source: { name: 'stripe', api_key: 'sk_from_file' },
         destination: { name: 'postgres' },
         streams: [{ name: 'accounts' }],
-      }),
+      })
     )
 
     const flags: DecomposedFlag[] = [
@@ -156,7 +156,7 @@ describe('assembleJsonHeader', () => {
       configPath,
       JSON.stringify({
         source: { name: 'from-file', api_key: 'from-file', base_url: 'from-file' },
-      }),
+      })
     )
 
     const flags: DecomposedFlag[] = [
