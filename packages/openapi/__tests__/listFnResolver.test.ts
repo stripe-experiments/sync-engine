@@ -3,7 +3,6 @@ import { buildListFn, buildRetrieveFn, discoverListEndpoints } from '../listFnRe
 import { minimalStripeOpenApiSpec } from './fixtures/minimalSpec'
 
 describe('discoverListEndpoints', () => {
-
   it('maps table names to their API paths', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
 
@@ -90,8 +89,8 @@ describe('discoverListEndpoints', () => {
   })
 
   it('uses the injected fetch for list and retrieve calls', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 })
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 })
     )
     const list = buildListFn('sk_test_fake', '/v1/customers', fetchMock)
     const retrieve = buildRetrieveFn('sk_test_fake', '/v1/customers', fetchMock)
@@ -101,10 +100,16 @@ describe('discoverListEndpoints', () => {
   })
 
   it('uses the injected fetch for localhost base URLs', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 })
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 })
     )
-    const list = buildListFn('sk_test_fake', '/v1/customers', fetchMock, undefined, 'http://localhost:12111')
+    const list = buildListFn(
+      'sk_test_fake',
+      '/v1/customers',
+      fetchMock,
+      undefined,
+      'http://localhost:12111'
+    )
     await list({ limit: 1 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(

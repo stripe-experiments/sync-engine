@@ -123,9 +123,7 @@ function extractDatePart(apiVersion: string): string {
   return match ? match[1] : apiVersion
 }
 
-async function resolveLatestCommitSha(
-  fetch: typeof globalThis.fetch
-): Promise<string | null> {
+async function resolveLatestCommitSha(fetch: typeof globalThis.fetch): Promise<string | null> {
   const url = new URL('https://api.github.com/repos/stripe/openapi/commits')
   url.searchParams.set('path', 'latest/openapi.spec3.sdk.json')
   url.searchParams.set('per_page', '1')

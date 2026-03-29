@@ -7,9 +7,9 @@ direct `fetch` calls in `specFetchHelper.ts` and `listFnResolver.ts`. This cause
 of proxy logic between `openapi/transport.ts` and `source-stripe/src/transport.ts` when proxy
 support was added in commit `e4149eef`.
 
-The package should be a pure Stripe OpenAPI utility — it may know *what* to fetch (Stripe-specific
+The package should be a pure Stripe OpenAPI utility — it may know _what_ to fetch (Stripe-specific
 GitHub URLs, commit SHA resolution, version mapping, pagination patterns) but it should not own
-*how* to make HTTP calls (proxy config, undici, NO_PROXY logic).
+_how_ to make HTTP calls (proxy config, undici, NO_PROXY logic).
 
 ## Decision
 
