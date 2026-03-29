@@ -9,9 +9,10 @@ function sslConfigFromConnectionString(connStr: string): ClientConfig['ssl'] {
     const sslmode = new URL(connStr).searchParams.get('sslmode')
     if (sslmode === 'disable') return false
     if (sslmode === 'verify-ca' || sslmode === 'verify-full') return true
-    return { rejectUnauthorized: false }
+    if (sslmode === 'require') return { rejectUnauthorized: false }
+    return false
   } catch {
-    return { rejectUnauthorized: false }
+    return false
   }
 }
 import { renderMigrationTemplate } from './migrationTemplate.js'

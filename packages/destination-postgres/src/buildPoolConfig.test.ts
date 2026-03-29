@@ -20,7 +20,7 @@ describe('buildPoolConfig', () => {
     vi.unstubAllEnvs()
   })
 
-  it('connection_string without sslmode → ssl: { rejectUnauthorized: false }', async () => {
+  it('connection_string without sslmode → ssl: false', async () => {
     const config: Config = {
       connection_string: 'postgres://user:pass@localhost:5432/mydb',
       port: 5432,
@@ -31,7 +31,7 @@ describe('buildPoolConfig', () => {
     const result = await buildPoolConfig(config)
     expect(result).toEqual({
       connectionString: 'postgres://user:pass@localhost:5432/mydb',
-      ssl: { rejectUnauthorized: false },
+      ssl: false,
     })
     expect(mockBuild).not.toHaveBeenCalled()
   })
@@ -82,7 +82,7 @@ describe('buildPoolConfig', () => {
     const result = await buildPoolConfig(config)
 
     expect(result.connectionString).toBe('postgres://user:pass@localhost:5432/mydb')
-    expect(result.ssl).toEqual({ rejectUnauthorized: false })
+    expect(result.ssl).toBe(false)
     expect(typeof result.stream).toBe('function')
   })
 

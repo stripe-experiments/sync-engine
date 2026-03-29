@@ -30,18 +30,18 @@ export type Config = z.infer<typeof spec>
 
 /**
  * Map the `sslmode` query parameter from a Postgres connection string to a pg
- * `ssl` option. Falls back to `{ rejectUnauthorized: false }` when no sslmode
- * is present — safe default for proxied connections where the server cert may
- * not be verifiable from the client side.
+ * `ssl` option. Defaults to `false` (no SSL) when no sslmode is present — SSL
+ * must be opted into explicitly via `sslmode=require` (or `verify-ca`/`verify-full`).
  */
 function sslConfigFromConnectionString(connStr: string): PoolConfig['ssl'] {
   try {
     const sslmode = new URL(connStr).searchParams.get('sslmode')
     if (sslmode === 'disable') return false
     if (sslmode === 'verify-ca' || sslmode === 'verify-full') return true
-    return { rejectUnauthorized: false }
+    if (sslmode === 'require') return { rejectUnauthorized: false }
+    return false
   } catch {
-    return { rejectUnauthorized: false }
+    return false
   }
 }
 
