@@ -74,16 +74,34 @@ export type WebhookInput = {
 
 // MARK: - Stream state
 
+export type SegmentState = {
+  index: number
+  gte: number
+  lt: number
+  pageCursor: string | null
+  status: 'pending' | 'complete'
+}
+
 export type StripeStreamState = {
   pageCursor: string | null
   status: 'pending' | 'complete'
   events_cursor?: number
+  segments?: SegmentState[]
 }
+
+const segmentStateSpec = z.object({
+  index: z.number(),
+  gte: z.number(),
+  lt: z.number(),
+  pageCursor: z.string().nullable(),
+  status: z.enum(['pending', 'complete']),
+})
 
 const streamStateSpec = z.object({
   pageCursor: z.string().nullable(),
   status: z.enum(['pending', 'complete']),
   events_cursor: z.number().optional(),
+  segments: z.array(segmentStateSpec).optional(),
 })
 
 // MARK: - Source
@@ -227,6 +245,7 @@ const source = {
         catalog,
         state,
         registry,
+        stripe,
         backfillLimit: config.backfill_limit,
         drainQueue: wsClient
           ? () => inputQueue.drain(config, stripe, catalog, registry, streamNames)
