@@ -1,6 +1,9 @@
-import { Agent } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { buildStripeClientOptions, type StripeClientConfigInput } from './client.js'
+import {
+  buildTransportOptions,
+  makeClientConfig,
+  type StripeClientConfigInput,
+} from './client.js'
 import { getProxyUrl } from './transport.js'
 
 const config: StripeClientConfigInput = {
@@ -22,61 +25,64 @@ describe('getProxyUrl', () => {
   })
 })
 
-describe('buildStripeClientOptions', () => {
-  it('adds a proxy agent and default timeout when HTTPS_PROXY is set', () => {
-    const options = buildStripeClientOptions(config, {
-      HTTPS_PROXY: 'http://proxy.example.test:8080',
-    })
+describe('buildTransportOptions', () => {
+  it('returns default timeout and api.stripe.com base when no overrides', () => {
+    const options = buildTransportOptions(config, {})
 
-    expect(options.timeout).toBe(10_000)
-    expect(options.httpAgent).toBeInstanceOf(Agent)
+    expect(options.timeout_ms).toBe(10_000)
+    expect(options.base_url).toBe('https://api.stripe.com')
+    expect(options.host).toBe('api.stripe.com')
+    expect(options.port).toBe(443)
+    expect(options.protocol).toBe('https')
   })
 
   it('uses the configured timeout override', () => {
-    const options = buildStripeClientOptions(config, {
-      HTTPS_PROXY: 'http://proxy.example.test:8080',
+    const options = buildTransportOptions(config, {
       STRIPE_REQUEST_TIMEOUT_MS: '2500',
     })
 
-    expect(options.timeout).toBe(2500)
+    expect(options.timeout_ms).toBe(2500)
   })
 
-  it('bypasses the proxy for localhost base_url overrides', () => {
-    const options = buildStripeClientOptions(
-      {
-        ...config,
-        base_url: 'http://localhost:12111',
-      },
-      {
-        HTTPS_PROXY: 'http://proxy.example.test:8080',
-      }
+  it('decomposes a localhost base_url', () => {
+    const options = buildTransportOptions(
+      { ...config, base_url: 'http://localhost:12111' },
+      {}
     )
 
     expect(options.host).toBe('localhost')
     expect(options.port).toBe(12111)
     expect(options.protocol).toBe('http')
-    expect(options.httpAgent).toBeUndefined()
-  })
-
-  it('keeps the proxy for external base_url overrides', () => {
-    const options = buildStripeClientOptions(
-      {
-        ...config,
-        base_url: 'https://api.stripe.com',
-      },
-      {
-        HTTPS_PROXY: 'http://proxy.example.test:8080',
-      }
-    )
-
-    expect(options.httpAgent).toBeInstanceOf(Agent)
   })
 
   it('throws on an invalid timeout override', () => {
     expect(() =>
-      buildStripeClientOptions(config, {
+      buildTransportOptions(config, {
         STRIPE_REQUEST_TIMEOUT_MS: '0',
       })
     ).toThrow('STRIPE_REQUEST_TIMEOUT_MS must be a positive integer')
+  })
+})
+
+describe('makeClientConfig', () => {
+  it('maps snake_case input to camelCase StripeClientConfig', () => {
+    const result = makeClientConfig({
+      api_key: 'sk_test_123',
+      base_url: 'http://localhost:12111',
+    })
+
+    expect(result).toEqual({
+      apiKey: 'sk_test_123',
+      baseUrl: 'http://localhost:12111',
+    })
+  })
+
+  it('omits baseUrl when base_url is not provided', () => {
+    const result = makeClientConfig({ api_key: 'sk_test_123' })
+
+    expect(result).toEqual({
+      apiKey: 'sk_test_123',
+      baseUrl: undefined,
+    })
   })
 })
