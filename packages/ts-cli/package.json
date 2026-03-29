@@ -23,6 +23,11 @@
       "bun": "./src/openapi/index.ts",
       "types": "./dist/openapi/index.d.ts",
       "import": "./dist/openapi/index.js"
+    },
+    "./openapi/ergonomic": {
+      "bun": "./src/openapi/ergonomic/index.ts",
+      "types": "./dist/openapi/ergonomic/index.d.ts",
+      "import": "./dist/openapi/ergonomic/index.js"
     }
   },
   "scripts": {
