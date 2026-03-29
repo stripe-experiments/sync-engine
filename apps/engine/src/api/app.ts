@@ -20,7 +20,7 @@ import {
 import { takeStateCheckpoints } from '../lib/pipeline.js'
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
 import { logger } from '../logger.js'
-import { createStripeSource } from '@stripe/sync-source-stripe'
+import { createStripeSource, DEFAULT_MAX_RPS } from '@stripe/sync-source-stripe'
 import type { RateLimiter } from '@stripe/sync-source-stripe'
 import { acquire, createRateLimiterTable } from '@stripe/sync-util-postgres'
 
@@ -44,8 +44,6 @@ function syncRequestContext(params: SyncParams) {
     configuredStreams: params.pipeline.streams?.map((stream) => stream.name) ?? [],
   }
 }
-
-const DEFAULT_MAX_RPS = 25
 
 /**
  * When the destination is Postgres, create a distributed rate limiter backed
@@ -163,6 +161,32 @@ export function createApp(resolver: ConnectorResolver) {
     }
   }
 
+  /** Resolve connectors, optionally wrapping the source with a Postgres-backed rate limiter. */
+  async function resolveEngineWithRateLimiter(
+    pipeline: PipelineConfig,
+    stateStore: Parameters<typeof createEngine>[2],
+    state?: Record<string, unknown>
+  ) {
+    const rl = await createPgRateLimiter(pipeline)
+
+    const sourceName = pipeline.source.name
+    const destName = pipeline.destination.name
+    const [resolvedSource, destination] = await Promise.all([
+      resolver.resolveSource(sourceName),
+      resolver.resolveDestination(destName),
+    ])
+    const source = rl ? createStripeSource({ rateLimiter: rl.rateLimiter }) : resolvedSource
+    const engine = createEngine(
+      pipeline,
+      { source, destination },
+      stateStore,
+      { sourceName, destinationName: destName },
+      state
+    )
+
+    return { engine, close: () => rl?.close() }
+  }
+
   // ── Routes ─────────────────────────────────────────────────────
 
   app.get('/health', (c) => c.json({ ok: true }))
@@ -206,20 +230,9 @@ export function createApp(resolver: ConnectorResolver) {
     const context = { path: '/read', inputPresent, ...syncRequestContext(params) }
     const startedAt = Date.now()
     logger.info(context, 'Engine API /read started')
-    const rl = await createPgRateLimiter(params.pipeline)
-
-    const sourceName = params.pipeline.source.name
-    const destName = params.pipeline.destination.name
-    const [resolvedSource, destination] = await Promise.all([
-      resolver.resolveSource(sourceName),
-      resolver.resolveDestination(destName),
-    ])
-    const source = rl ? createStripeSource({ rateLimiter: rl.rateLimiter }) : resolvedSource
-    const engine = createEngine(
+    const { engine, close } = await resolveEngineWithRateLimiter(
       params.pipeline,
-      { source, destination },
       noopStateStore(),
-      { sourceName, destinationName: destName },
       params.state
     )
 
@@ -229,7 +242,7 @@ export function createApp(resolver: ConnectorResolver) {
       output = takeStateCheckpoints<Message>(params.stateCheckpointLimit)(output)
     }
     return ndjsonResponse(
-      closeAfter(logApiStream('Engine API /read', output, context, startedAt), () => rl?.close())
+      closeAfter(logApiStream('Engine API /read', output, context, startedAt), () => close())
     )
   })
 
@@ -256,20 +269,9 @@ export function createApp(resolver: ConnectorResolver) {
   app.post('/sync', async (c) => {
     const params = parseSyncParams(c)
     const stateStore = await selectStateStore(params.pipeline)
-    const rl = await createPgRateLimiter(params.pipeline)
-
-    const sourceName = params.pipeline.source.name
-    const destName = params.pipeline.destination.name
-    const [resolvedSource, destination] = await Promise.all([
-      resolver.resolveSource(sourceName),
-      resolver.resolveDestination(destName),
-    ])
-    const source = rl ? createStripeSource({ rateLimiter: rl.rateLimiter }) : resolvedSource
-    const engine = createEngine(
+    const { engine, close } = await resolveEngineWithRateLimiter(
       params.pipeline,
-      { source, destination },
       stateStore,
-      { sourceName, destinationName: destName },
       params.state
     )
 
@@ -281,7 +283,7 @@ export function createApp(resolver: ConnectorResolver) {
     return ndjsonResponse(
       closeAfter(output, async () => {
         await stateStore.close?.()
-        await rl?.close()
+        await close()
       })
     )
   })

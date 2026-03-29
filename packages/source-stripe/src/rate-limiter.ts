@@ -5,6 +5,8 @@
  * This contract matches `util-postgres`'s `acquire()` return value so a
  * Postgres-backed implementation can be used as a drop-in replacement.
  */
+export const DEFAULT_MAX_RPS = 25
+
 export type RateLimiter = (cost?: number) => Promise<number>
 
 /**

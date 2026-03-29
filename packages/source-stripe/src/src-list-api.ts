@@ -18,7 +18,7 @@ const SKIPPABLE_ERROR_PATTERNS = [
   'Missing required param',
 ]
 
-const NUM_SEGMENTS = 200
+const DEFAULT_BACKFILL_CONCURRENCY = 200
 
 function isSkippableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
@@ -81,14 +81,18 @@ async function getAccountCreatedTimestamp(stripe: Stripe): Promise<number> {
 
 // MARK: - Segment creation
 
-function buildSegments(startTimestamp: number, endTimestamp: number): SegmentState[] {
+function buildSegments(
+  startTimestamp: number,
+  endTimestamp: number,
+  numSegments = DEFAULT_BACKFILL_CONCURRENCY
+): SegmentState[] {
   const range = endTimestamp - startTimestamp
-  const segmentSize = Math.max(1, Math.ceil(range / NUM_SEGMENTS))
+  const segmentSize = Math.max(1, Math.ceil(range / numSegments))
   const segments: SegmentState[] = []
 
-  for (let i = 0; i < NUM_SEGMENTS; i++) {
+  for (let i = 0; i < numSegments; i++) {
     const gte = startTimestamp + i * segmentSize
-    const lt = i === NUM_SEGMENTS - 1 ? endTimestamp + 1 : startTimestamp + (i + 1) * segmentSize
+    const lt = i === numSegments - 1 ? endTimestamp + 1 : startTimestamp + (i + 1) * segmentSize
     if (gte >= endTimestamp + 1) break
     segments.push({ index: i, gte, lt, pageCursor: null, status: 'pending' })
   }
@@ -192,9 +196,10 @@ async function* sequentialBackfillStream(opts: {
   streamName: string
   pageCursor: string | null
   backfillLimit?: number
+  rateLimiter: RateLimiter
   drainQueue?: () => AsyncGenerator<Message>
 }): AsyncGenerator<Message> {
-  const { resourceConfig, streamName, backfillLimit, drainQueue } = opts
+  const { resourceConfig, streamName, backfillLimit, rateLimiter, drainQueue } = opts
   let pageCursor = opts.pageCursor
   let hasMore = true
   let totalEmitted = 0
@@ -210,6 +215,8 @@ async function* sequentialBackfillStream(opts: {
       params.starting_after = pageCursor
     }
 
+    const wait = await rateLimiter()
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait * 1000))
     console.error({
       msg: 'Starting Stripe list page',
       stream: streamName,
@@ -264,9 +271,19 @@ export async function* listApiBackfill(opts: {
   stripe: Stripe
   rateLimiter: RateLimiter
   backfillLimit?: number
+  backfillConcurrency?: number
   drainQueue?: () => AsyncGenerator<Message>
 }): AsyncGenerator<Message> {
-  const { catalog, state, registry, stripe, rateLimiter, backfillLimit, drainQueue } = opts
+  const {
+    catalog,
+    state,
+    registry,
+    stripe,
+    rateLimiter,
+    backfillLimit,
+    backfillConcurrency = DEFAULT_BACKFILL_CONCURRENCY,
+    drainQueue,
+  } = opts
 
   let accountCreated: number | null = null
 
@@ -308,7 +325,7 @@ export async function* listApiBackfill(opts: {
             accountCreated = await getAccountCreatedTimestamp(stripe)
           }
           const now = Math.floor(Date.now() / 1000)
-          segments = buildSegments(accountCreated, now)
+          segments = buildSegments(accountCreated, now, backfillConcurrency)
         }
 
         const incompleteSegments = segments.filter((s) => s.status !== 'complete')
@@ -327,7 +344,7 @@ export async function* listApiBackfill(opts: {
             })
           )
 
-          yield* mergeAsync(generators, NUM_SEGMENTS)
+          yield* mergeAsync(generators, backfillConcurrency)
         }
       } else {
         // Sequential path: no created filter support
@@ -337,6 +354,7 @@ export async function* listApiBackfill(opts: {
           streamName: stream.name,
           pageCursor,
           backfillLimit,
+          rateLimiter,
           drainQueue,
         })
       }

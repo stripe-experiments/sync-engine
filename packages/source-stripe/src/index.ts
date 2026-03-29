@@ -22,9 +22,7 @@ import { createStripeWebSocketClient } from './src-websocket.js'
 import type { ResourceConfig } from './types.js'
 import { makeClient } from './client.js'
 import type { RateLimiter } from './rate-limiter.js'
-import { createInMemoryRateLimiter } from './rate-limiter.js'
-
-const DEFAULT_REQUESTS_PER_SECOND = 25
+import { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
 
 // MARK: - Spec
 
@@ -72,6 +70,12 @@ export const spec = z.object({
     .positive()
     .optional()
     .describe('Max Stripe API requests per second (default: 25)'),
+  backfill_concurrency: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Number of time-range segments for parallel backfill (default: 200)'),
 })
 
 export type Config = z.infer<typeof spec>
@@ -204,8 +208,7 @@ export function createStripeSource(
 
     async *read({ config, catalog, state }, $stdin?) {
       const rateLimiter =
-        externalRateLimiter ??
-        createInMemoryRateLimiter(config.rate_limit ?? DEFAULT_REQUESTS_PER_SECOND)
+        externalRateLimiter ?? createInMemoryRateLimiter(config.rate_limit ?? DEFAULT_MAX_RPS)
       const stripe = makeClient(config)
       const resolved = await resolveOpenApiSpec({
         apiVersion: config.api_version ?? '2020-08-27',
@@ -270,6 +273,7 @@ export function createStripeSource(
           stripe,
           rateLimiter,
           backfillLimit: config.backfill_limit,
+          backfillConcurrency: config.backfill_concurrency,
           drainQueue: wsClient
             ? () => inputQueue.drain(config, stripe, catalog, registry, streamNames)
             : undefined,
@@ -340,4 +344,4 @@ export { catalogFromRegistry } from './catalog.js'
 export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from './openapi/specParser.js'
 export type { ParsedResourceTable, ParsedOpenApiSpec } from './openapi/types.js'
 export type { RateLimiter } from './rate-limiter.js'
-export { createInMemoryRateLimiter } from './rate-limiter.js'
+export { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
