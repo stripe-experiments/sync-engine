@@ -88,7 +88,14 @@ docker run -d --name "$ENGINE_CONTAINER" \
 
 for i in $(seq 1 20); do
   curl -sf "http://localhost:${ENGINE_PORT}/health" >/dev/null && break
-  [ "$i" -eq 20 ] && { echo "FAIL: engine health check timed out"; exit 1; }
+  [ "$i" -eq 20 ] && {
+    echo "FAIL: engine health check timed out"
+    echo "==> Engine container logs:"
+    docker logs "$ENGINE_CONTAINER" 2>&1 || true
+    echo "==> Engine container inspect (State):"
+    docker inspect "$ENGINE_CONTAINER" --format '{{json .State}}' 2>&1 || true
+    exit 1
+  }
   sleep 0.5
 done
 echo "    Engine ready on :${ENGINE_PORT}"
