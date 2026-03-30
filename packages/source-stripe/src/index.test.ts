@@ -45,7 +45,7 @@ function makeConfig(
   overrides: Partial<ResourceConfig> & { order: number; tableName: string }
 ): ResourceConfig {
   return {
-    supportsCreatedFilter: true,
+    supportsCreatedFilter: false,
     listFn: (() => Promise.resolve({ data: [], has_more: false })) as ResourceConfig['listFn'],
     retrieveFn: (() => Promise.resolve({})) as ResourceConfig['retrieveFn'],
     ...overrides,
