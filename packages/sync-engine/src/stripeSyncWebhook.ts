@@ -165,20 +165,46 @@ export class StripeSyncWebhook {
   }
 
   async handleEntitlementSummaryEvent(event: Stripe.Event, accountId: string): Promise<void> {
+    type EntitlementItem = {
+      id: string
+      object: string
+      feature: string | { id: string }
+      livemode: boolean
+      lookup_key: string
+    }
     const summary = event.data.object as {
       customer: string
       entitlements: {
-        data: Array<{
-          id: string
-          object: string
-          feature: string | { id: string }
-          livemode: boolean
-          lookup_key: string
-        }>
+        data: EntitlementItem[]
+        has_more: boolean
       }
     }
     const customerId = summary.customer
-    const activeEntitlements = summary.entitlements.data.map((entitlement) => ({
+
+    let entitlementItems: EntitlementItem[] = summary.entitlements.data
+    let fetched = false
+
+    if (summary.entitlements.has_more) {
+      // Webhook body is truncated — page through all active entitlements for this customer
+      entitlementItems = []
+      let page = await this.deps.stripe.entitlements.activeEntitlements.list({
+        customer: customerId,
+        limit: 100,
+      } as Stripe.Entitlements.ActiveEntitlementListParams)
+      entitlementItems.push(...(page.data as EntitlementItem[]))
+      while (page.has_more) {
+        const lastId = page.data[page.data.length - 1].id
+        page = await this.deps.stripe.entitlements.activeEntitlements.list({
+          customer: customerId,
+          limit: 100,
+          starting_after: lastId,
+        } as Stripe.Entitlements.ActiveEntitlementListParams)
+        entitlementItems.push(...(page.data as EntitlementItem[]))
+      }
+      fetched = true
+    }
+
+    const activeEntitlements = entitlementItems.map((entitlement) => ({
       id: entitlement.id,
       object: entitlement.object,
       feature:
@@ -197,7 +223,7 @@ export class StripeSyncWebhook {
         activeEntitlements,
         accountId,
         false,
-        this.getSyncTimestamp(event, false)
+        this.getSyncTimestamp(event, fetched)
       )
     }
   }
