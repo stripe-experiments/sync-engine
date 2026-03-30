@@ -603,7 +603,7 @@ async function handleWebhook(req: Request): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7
-const PAGES_PER_INVOCATION = Number(Deno.env.get('PAGES_PER_INVOCATION')) || 1000
+const PAGES_PER_INVOCATION = Number(Deno.env.get('PAGES_PER_INVOCATION')) || 200
 
 async function handleSync(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
