@@ -14,7 +14,7 @@ CLI tool for syncing Stripe data to PostgreSQL with optional real-time event str
 ## Installation
 
 ```bash
-npm install -g @stripe/sync-engine
+npm install -g stripe-experiment-sync
 ```
 
 ## Commands
