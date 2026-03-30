@@ -775,6 +775,7 @@ export class PostgresClient {
        WHERE r."_account_id" = $1
          AND r.closed_at IS NOT NULL
          AND r.closed_at >= now() - make_interval(secs => $2)
+         AND r.error_message IS NULL
        LIMIT 1`,
       [accountId, intervalSeconds]
     )
