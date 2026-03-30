@@ -25,7 +25,7 @@ NET="smokescreen-isolated-${S}"
 SMOKESCREEN_CONTAINER="smokescreen-${S}"
 ENGINE_CONTAINER="engine-smokescreen-${S}"
 PG_CONTAINER="pg-smokescreen-${S}"
-ENGINE_PORT="${PORT:-3399}"
+ENGINE_URL=""  # set after container starts
 
 cleanup() {
   docker rm -f "$ENGINE_CONTAINER" "$SMOKESCREEN_CONTAINER" "$PG_CONTAINER" >/dev/null 2>&1 || true
@@ -79,17 +79,30 @@ echo "    Smokescreen ready"
 # ── Engine (isolated network ONLY — HTTPS must route through smokescreen) ────
 
 echo "==> Starting engine (HTTPS_PROXY=http://${SMOKESCREEN_CONTAINER}:4750)"
+# No -p port mapping: --internal networks block port publishing on Linux.
+# Instead, reach the engine by its container IP on the bridge (host has a
+# directly connected route to the bridge subnet even for --internal networks).
 docker run -d --name "$ENGINE_CONTAINER" \
   --network "$NET" \
-  -p "${ENGINE_PORT}:3000" \
   -e PORT=3000 \
   -e HTTPS_PROXY="http://${SMOKESCREEN_CONTAINER}:4750" \
   "$ENGINE_IMAGE"
 
+# Wait for the container to get an IP assignment
+ENGINE_IP=""
+for i in $(seq 1 10); do
+  ENGINE_IP=$(docker inspect "$ENGINE_CONTAINER" \
+    --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
+  [ -n "$ENGINE_IP" ] && break
+  sleep 0.5
+done
+[ -n "$ENGINE_IP" ] || { echo "FAIL: could not get engine container IP"; exit 1; }
+ENGINE_URL="http://${ENGINE_IP}:3000"
+
 for i in $(seq 1 20); do
-  curl -sf "http://localhost:${ENGINE_PORT}/health" >/dev/null && break
+  curl -sf "${ENGINE_URL}/health" >/dev/null && break
   [ "$i" -eq 20 ] && {
-    echo "FAIL: engine health check timed out"
+    echo "FAIL: engine health check timed out (IP: $ENGINE_IP)"
     echo "==> Engine container logs:"
     docker logs "$ENGINE_CONTAINER" 2>&1 || true
     echo "==> Engine container inspect (State):"
@@ -98,7 +111,7 @@ for i in $(seq 1 20); do
   }
   sleep 0.5
 done
-echo "    Engine ready on :${ENGINE_PORT}"
+echo "    Engine ready at $ENGINE_URL"
 
 for i in $(seq 1 20); do
   docker exec "$PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break
@@ -113,7 +126,7 @@ echo "==> src-stripe: read through smokescreen"
 READ_PARAMS=$(printf \
   '{"source":{"name":"stripe","api_key":"%s","backfill_limit":5},"destination":{"name":"postgres","url":"postgres://unused:5432/db","schema":"stripe"},"streams":[{"name":"products"}]}' \
   "$STRIPE_API_KEY")
-OUTPUT=$(curl -sf --max-time 30 -X POST "http://localhost:${ENGINE_PORT}/read" \
+OUTPUT=$(curl -sf --max-time 30 -X POST "${ENGINE_URL}/read" \
   -H "X-Pipeline: $READ_PARAMS")
 RECORD_COUNT=$(echo "$OUTPUT" | grep -c '"type":"record"' || true)
 echo "    Got $RECORD_COUNT record(s)"
@@ -125,9 +138,9 @@ echo "==> dest-pg: setup + write"
 PG_PARAMS=$(printf \
   '{"source":{"name":"stripe","api_key":"%s"},"destination":{"name":"postgres","url":"%s","schema":"stripe_smokescreen_test"}}' \
   "$STRIPE_API_KEY" "$PG_URL")
-curl -sf --max-time 30 -X POST "http://localhost:${ENGINE_PORT}/setup" \
+curl -sf --max-time 30 -X POST "${ENGINE_URL}/setup" \
   -H "X-Pipeline: $PG_PARAMS" && echo "    setup OK"
-echo "$OUTPUT" | curl -sf --max-time 60 -X POST "http://localhost:${ENGINE_PORT}/write" \
+echo "$OUTPUT" | curl -sf --max-time 60 -X POST "${ENGINE_URL}/write" \
   -H "X-Pipeline: $PG_PARAMS" \
   -H "Content-Type: application/x-ndjson" \
   --data-binary @- | head -3 || true
@@ -140,7 +153,7 @@ if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
   SHEETS_PARAMS=$(printf \
     '{"source":{"name":"stripe","api_key":"%s"},"destination":{"name":"google-sheets","client_id":"%s","client_secret":"%s","access_token":"unused","refresh_token":"%s","spreadsheet_id":"%s"}}' \
     "$STRIPE_API_KEY" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" "$GOOGLE_REFRESH_TOKEN" "$GOOGLE_SPREADSHEET_ID")
-  echo "$OUTPUT" | curl -sf --max-time 60 -X POST "http://localhost:${ENGINE_PORT}/write" \
+  echo "$OUTPUT" | curl -sf --max-time 60 -X POST "${ENGINE_URL}/write" \
     -H "X-Pipeline: $SHEETS_PARAMS" \
     -H "Content-Type: application/x-ndjson" \
     --data-binary @- | head -3 || true
