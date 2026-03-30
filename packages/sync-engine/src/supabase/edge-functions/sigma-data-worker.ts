@@ -39,11 +39,10 @@ Deno.serve(async (req) => {
     sql = postgres(dbUrl, { max: 1, prepare: false })
   } catch (error: unknown) {
     const err = error as Error
+    console.error('Failed to create postgres connection', err)
     return jsonResponse(
       {
         error: 'Failed to create postgres connection',
-        details: err.message,
-        stack: err.stack,
       },
       500
     )
@@ -83,12 +82,11 @@ Deno.serve(async (req) => {
     })
   } catch (error: unknown) {
     const err = error as Error
+    console.error('Failed to create StripeSync', err)
     await sql.end()
     return jsonResponse(
       {
         error: 'Failed to create StripeSync',
-        details: err.message,
-        stack: err.stack,
       },
       500
     )
@@ -308,8 +306,8 @@ Deno.serve(async (req) => {
     })
   } catch (error: unknown) {
     const err = error as Error
-    console.error('Sigma worker error:', error)
-    return jsonResponse({ error: err.message, stack: err.stack }, 500)
+    console.error('Sigma worker error:', err)
+    return jsonResponse({ error: 'Sigma worker encountered an unexpected error' }, 500)
   } finally {
     if (sql) await sql.end()
     if (stripeSync) await stripeSync.postgresClient.pool.end()
