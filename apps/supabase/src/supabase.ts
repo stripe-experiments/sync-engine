@@ -160,7 +160,7 @@ export class SupabaseSetupClient {
         '${schedule}',
         $$
         SELECT net.http_post(
-          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-sync/sync',
+          url := 'https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker/sync',
           headers := jsonb_build_object(
             'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'stripe_sync_worker_secret')
           )
@@ -180,7 +180,7 @@ export class SupabaseSetupClient {
    * Get the webhook URL for this project
    */
   getWebhookUrl(): string {
-    return `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-sync/webhook`
+    return `https://${this.projectRef}.${this.projectBaseUrl}/functions/v1/stripe-worker/webhook`
   }
 
   /**
@@ -388,7 +388,11 @@ export class SupabaseSetupClient {
       }
 
       // Invoke the DELETE endpoint on the consolidated stripe-sync function
-      const setupResult = await this.invokeFunction('stripe-sync/setup', 'DELETE', this.accessToken)
+      const setupResult = await this.invokeFunction(
+        'stripe-worker/setup',
+        'DELETE',
+        this.accessToken
+      )
 
       if (!setupResult.success) {
         throw new Error(`Uninstall failed: ${setupResult.error}`)
@@ -455,10 +459,10 @@ export class SupabaseSetupClient {
 
       // Deploy the single consolidated edge function
       const versionedSync = this.injectPackageVersion(syncFunctionCode, version)
-      await this.deployFunction('stripe-sync', versionedSync, false)
+      await this.deployFunction('stripe-worker', versionedSync, false)
 
       // Run setup (migrations + webhook creation) via the /setup path
-      const setupResult = await this.invokeFunction('stripe-sync/setup', 'POST', this.accessToken)
+      const setupResult = await this.invokeFunction('stripe-worker/setup', 'POST', this.accessToken)
 
       if (!setupResult.success) {
         throw new Error(`Setup failed: ${setupResult.error}`)
@@ -478,10 +482,10 @@ export class SupabaseSetupClient {
       // if done before.
       if (!skipInitialSync) {
         try {
-          await this.invokeFunction('stripe-sync/sync', 'POST', this.workerSecret)
+          await this.invokeFunction('stripe-worker/sync', 'POST', this.workerSecret)
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error)
-          console.warn(`Failed to invoke stripe-sync/sync: ${errorMessage}`)
+          console.warn(`Failed to invoke stripe-worker/sync: ${errorMessage}`)
         }
       }
     } catch (error) {

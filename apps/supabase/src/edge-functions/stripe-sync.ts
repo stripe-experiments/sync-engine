@@ -7,20 +7,19 @@
  *   GET    /setup     → status (installation status + sync runs)
  *   DELETE /setup     → uninstall (drop schema, delete webhooks/secrets/functions)
  *   POST   /webhook   → process Stripe webhook event
- *   POST   /sync      → cron coordinator (discovers streams, fans out to /backfill)
- *   POST   /backfill  → per-stream backfill worker
+ *   POST   /sync      → cron-driven pipeline (source → destination with bounded checkpoints)
  */
 
-import { runMigrationsFromContent, migrations } from '@stripe/sync-state-postgres'
+import {
+  runMigrationsFromContent,
+  migrations,
+  createScopedPgStateStore,
+} from '@stripe/sync-state-postgres'
 import sourceStripe, {
   type Config as SourceConfig,
-  buildResourceRegistry,
-  catalogFromRegistry,
+  DEFAULT_SYNC_OBJECTS,
 } from '@stripe/sync-source-stripe'
-import destinationPostgres, {
-  type Config as DestConfig,
-  upsertMany,
-} from '@stripe/sync-destination-postgres'
+import destinationPostgres, { type Config as DestConfig } from '@stripe/sync-destination-postgres'
 import Stripe from 'npm:stripe'
 import pg from 'npm:pg@8'
 
@@ -227,7 +226,7 @@ async function handleSetupPost(req: Request): Promise<Response> {
     const stripe = new Stripe(stripeKey)
 
     // Step 2: Create managed webhook endpoint via Stripe SDK
-    const webhookUrl = `${supabaseUrl}/functions/v1/stripe-sync/webhook`
+    const webhookUrl = `${supabaseUrl}/functions/v1/stripe-worker/webhook`
 
     const existing = await stripe.webhookEndpoints.list({ limit: 100 })
     const managed = existing.data.find(
@@ -502,7 +501,7 @@ async function handleSetupDelete(req: Request): Promise<Response> {
 
     // Step 3: Delete edge functions (current + legacy from before consolidation)
     for (const slug of [
-      'stripe-sync',
+      'stripe-worker',
       'stripe-setup',
       'stripe-webhook',
       'stripe-worker',
@@ -565,9 +564,13 @@ async function handleWebhook(req: Request): Promise<Response> {
     batch_size: 100,
   }
 
-  const stripe = new Stripe(stripeKey)
-  const registry = buildResourceRegistry(stripe)
-  const catalog = catalogFromRegistry(registry)
+  const catalog = {
+    streams: DEFAULT_SYNC_OBJECTS.map((name) => ({
+      stream: { name, primary_key: [['id']] },
+      sync_mode: 'full_refresh' as const,
+      destination_sync_mode: 'append_dedup' as const,
+    })),
+  }
 
   try {
     const rawBody = new Uint8Array(await req.arrayBuffer())
@@ -596,10 +599,11 @@ async function handleWebhook(req: Request): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// Route: POST /sync — cron coordinator (discovers streams, fans out to /backfill)
+// Route: POST /sync — cron-driven pipeline (source → destination with bounded checkpoints)
 // ---------------------------------------------------------------------------
 
 const SYNC_INTERVAL = Number(Deno.env.get('SYNC_INTERVAL')) || 60 * 60 * 24 * 7
+const PAGES_PER_INVOCATION = Number(Deno.env.get('PAGES_PER_INVOCATION')) || 10
 
 async function handleSync(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
@@ -613,298 +617,93 @@ async function handleSync(req: Request): Promise<Response> {
 
   const schemaName = Deno.env.get('SYNC_SCHEMA_NAME') ?? 'stripe'
   const safeSchema = schemaName.replace(/"/g, '""')
-
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')!
-  const stripe = new Stripe(stripeKey)
   const pool = new pg.Pool({ connectionString: dbUrl, max: 2 })
-  const registry = buildResourceRegistry(stripe)
 
   try {
-    // Auth: validate Bearer token against vault worker secret
     const authErr = await validateWorkerAuth(req, pool)
     if (authErr) {
       await pool.end()
       return authErr
     }
 
-    // Create state tables (idempotent)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS "${safeSchema}"._sync_runs (
-        sync_id      text PRIMARY KEY,
-        status       text NOT NULL DEFAULT 'syncing',
-        total_streams int NOT NULL,
-        started_at   timestamptz NOT NULL DEFAULT now(),
-        completed_at timestamptz
-      );
-      CREATE TABLE IF NOT EXISTS "${safeSchema}"._sync_state (
-        sync_id    text NOT NULL,
-        stream     text NOT NULL,
-        cursor     text,
-        status     text NOT NULL DEFAULT 'pending',
-        records    int  NOT NULL DEFAULT 0,
-        error      text,
-        updated_at timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY (sync_id, stream)
-      );
-    `)
+    const stateStore = createScopedPgStateStore(pool, schemaName, 'default')
+    let state = (await stateStore.get()) as
+      | Record<string, { pageCursor: string | null; status: string }>
+      | undefined
 
-    // Check for recent completed run within SYNC_INTERVAL → skip if too soon
-    const recentRun = await pool.query(
-      `SELECT sync_id, completed_at FROM "${safeSchema}"._sync_runs
-       WHERE status = 'complete'
-         AND completed_at > now() - make_interval(secs => $1)
-       ORDER BY completed_at DESC LIMIT 1`,
-      [SYNC_INTERVAL]
-    )
-    if (recentRun.rows.length > 0) {
-      const msg = `Skipping — completed run ${recentRun.rows[0].sync_id} at ${recentRun.rows[0].completed_at} (within ${SYNC_INTERVAL}s window)`
-      console.log(msg)
-      await pool.end()
-      return jsonResponse({ skipped: true, message: msg })
+    // Debounce: skip if all streams completed within SYNC_INTERVAL
+    if (state && Object.values(state).every((s) => s?.status === 'complete')) {
+      const { rows } = await pool.query(
+        `SELECT MAX(updated_at) as last_update FROM "${safeSchema}"."_sync_state" WHERE sync_id = 'default'`
+      )
+      const lastUpdate = rows[0]?.last_update
+      if (lastUpdate) {
+        const elapsed = (Date.now() - new Date(lastUpdate).getTime()) / 1000
+        if (elapsed < SYNC_INTERVAL) {
+          console.log(
+            `Skipping — all streams complete ${Math.round(elapsed)}s ago (within ${SYNC_INTERVAL}s window)`
+          )
+          await pool.end()
+          return jsonResponse({
+            skipped: true,
+            message: `All streams complete (${Math.round(elapsed)}s ago)`,
+          })
+        }
+      }
+      // Interval elapsed — clear state to start a fresh re-sync
+      await pool.query(`DELETE FROM "${safeSchema}"."_sync_state" WHERE sync_id = 'default'`)
+      state = undefined
     }
 
-    // Build catalog to discover streams
-    const catalog = catalogFromRegistry(registry)
-    const streams = catalog.streams.map((s) => s.name)
+    const sourceConfig: SourceConfig = { api_key: stripeKey }
+    const destConfig: DestConfig = {
+      connection_string: dbUrl,
+      schema: schemaName,
+      port: 5432,
+      batch_size: 100,
+    }
 
-    // Generate sync ID
-    const syncId = `sync_${Date.now()}`
+    const defaultSet = new Set(DEFAULT_SYNC_OBJECTS)
+    const discovered = await sourceStripe.discover({ config: sourceConfig })
+    const catalog = {
+      streams: discovered.streams
+        .filter((s) => defaultSet.has(s.name))
+        .map((s) => ({
+          stream: s,
+          sync_mode: 'full_refresh' as const,
+          destination_sync_mode: 'append_dedup' as const,
+        })),
+    }
 
-    // Insert run + per-stream state rows
-    await pool.query(
-      `INSERT INTO "${safeSchema}"._sync_runs (sync_id, total_streams) VALUES ($1, $2)`,
-      [syncId, streams.length]
-    )
-    for (const stream of streams) {
-      await pool.query(
-        `INSERT INTO "${safeSchema}"._sync_state (sync_id, stream) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING`,
-        [syncId, stream]
-      )
+    await destinationPostgres.setup({ config: destConfig, catalog })
+
+    const sourceMessages = sourceStripe.read({ config: sourceConfig, catalog, state })
+    const destOutput = destinationPostgres.write({ config: destConfig, catalog }, sourceMessages)
+
+    let checkpoints = 0
+    for await (const msg of destOutput) {
+      if (msg.type === 'state' && msg.stream) {
+        await stateStore.set(msg.stream, msg.data)
+        checkpoints++
+        if (checkpoints >= PAGES_PER_INVOCATION) {
+          console.log(`Reached ${PAGES_PER_INVOCATION} checkpoints, yielding to next cron tick`)
+          break
+        }
+      }
     }
 
     await pool.end()
+    console.log(`Sync pass done — ${checkpoints} checkpoints persisted`)
 
-    // Fan out: one worker per stream via /backfill route
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const backfillUrl = `${supabaseUrl}/functions/v1/stripe-sync/backfill`
-    const authHeader = req.headers.get('Authorization')!
-
-    await Promise.all(
-      streams.map((stream) =>
-        fetch(backfillUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: authHeader,
-          },
-          body: JSON.stringify({ sync_id: syncId, stream }),
-        })
-      )
-    )
-
-    console.log(`Started sync ${syncId} with ${streams.length} streams`)
-
-    return jsonResponse({ sync_id: syncId, streams: streams.length, status: 'started' })
+    return jsonResponse({ status: checkpoints > 0 ? 'syncing' : 'complete', checkpoints })
   } catch (error: unknown) {
     const err = error as Error
-    console.error('Sync coordinator error:', error)
+    console.error('Sync error:', error)
     try {
       await pool.end()
     } catch {}
     return jsonResponse({ error: err.message }, 500)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Route: POST /backfill — per-stream backfill worker
-//
-// Future optimizations:
-// - Make the initial /sync invocation in install() fire-and-forget so install
-//   returns faster (currently blocks for up to 30s waiting for coordinator).
-// - Tune PAGES_PER_INVOCATION based on observed cold-start times.
-// - Consider returning a streaming response so the caller can observe progress.
-// - Add exponential backoff on rate-limit errors instead of failing the stream.
-// - Pool pg connections across invocations (module-level singleton).
-// ---------------------------------------------------------------------------
-
-const PAGES_PER_INVOCATION = Number(Deno.env.get('PAGES_PER_INVOCATION')) || 10
-
-async function handleBackfill(req: Request): Promise<Response> {
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
-  }
-
-  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
-  if (!dbUrl) {
-    return jsonResponse({ error: 'SUPABASE_DB_URL not set' }, 500)
-  }
-
-  const schemaName = Deno.env.get('SYNC_SCHEMA_NAME') ?? 'stripe'
-  const safeSchema = schemaName.replace(/"/g, '""')
-
-  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')!
-  const stripe = new Stripe(stripeKey)
-  const pool = new pg.Pool({ connectionString: dbUrl, max: 2 })
-  const registry = buildResourceRegistry(stripe)
-
-  // Auth: validate Bearer token against vault worker secret
-  const authErr = await validateWorkerAuth(req, pool)
-  if (authErr) {
-    await pool.end()
-    return authErr
-  }
-
-  // Parse request body
-  const { sync_id: syncId, stream } = (await req.json()) as {
-    sync_id: string
-    stream: string
-  }
-  if (!syncId || !stream) {
-    await pool.end()
-    return new Response('Missing sync_id or stream', { status: 400 })
-  }
-
-  /** Find the resource config whose tableName matches the given stream name. */
-  function findConfigByTableName(name: string) {
-    const entry = Object.values(registry).find((cfg) => cfg.tableName === name)
-    if (!entry) throw new Error(`Unknown stream: ${name}`)
-    return entry
-  }
-
-  /**
-   * Barrier-based completion check.
-   * Atomically marks the sync run as complete if all streams have settled.
-   */
-  async function checkCompletion(): Promise<void> {
-    const result = await pool.query(
-      `UPDATE "${safeSchema}"._sync_runs
-       SET status = 'complete', completed_at = now()
-       WHERE sync_id = $1
-         AND status = 'syncing'
-         AND NOT EXISTS (
-           SELECT 1 FROM "${safeSchema}"._sync_state
-           WHERE sync_id = $1 AND status NOT IN ('complete', 'error')
-         )
-       RETURNING *`,
-      [syncId]
-    )
-
-    if (result.rowCount && result.rowCount > 0) {
-      console.log(`Sync ${syncId} complete — all streams settled`)
-    }
-  }
-
-  try {
-    // Load cursor from state table
-    const stateResult = await pool.query(
-      `SELECT cursor, records FROM "${safeSchema}"._sync_state
-       WHERE sync_id = $1 AND stream = $2`,
-      [syncId, stream]
-    )
-    if (stateResult.rows.length === 0) {
-      throw new Error(`No state row for sync_id=${syncId} stream=${stream}`)
-    }
-
-    const existingCursor = stateResult.rows[0].cursor as string | null
-    const existingRecords = stateResult.rows[0].records as number
-
-    // Mark as syncing
-    await pool.query(
-      `UPDATE "${safeSchema}"._sync_state
-       SET status = 'syncing', updated_at = now()
-       WHERE sync_id = $1 AND stream = $2`,
-      [syncId, stream]
-    )
-
-    // Resolve list function for this stream
-    const config = findConfigByTableName(stream)
-    const listFn = config.listFn
-
-    // Paginate bounded number of pages
-    let cursor = existingCursor
-    let hasMore = true
-    let newRecords = 0
-
-    for (let page = 0; page < PAGES_PER_INVOCATION && hasMore; page++) {
-      const params: Stripe.PaginationParams = { limit: 100 }
-      if (cursor) params.starting_after = cursor
-
-      const response = await listFn(params)
-
-      if (response.data.length > 0) {
-        await upsertMany(pool, schemaName, stream, response.data as Record<string, unknown>[])
-        newRecords += response.data.length
-        const lastItem = response.data.at(-1) as { id?: string }
-        if (lastItem?.id) {
-          cursor = lastItem.id
-        }
-      }
-
-      hasMore = response.has_more
-    }
-
-    // Save cursor + record count
-    await pool.query(
-      `UPDATE "${safeSchema}"._sync_state
-       SET cursor = $1, status = $2, records = $3, updated_at = now()
-       WHERE sync_id = $4 AND stream = $5`,
-      [cursor, hasMore ? 'syncing' : 'complete', existingRecords + newRecords, syncId, stream]
-    )
-
-    if (hasMore) {
-      // More pages — self-reinvoke (fire-and-forget)
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')
-      const backfillUrl = `${supabaseUrl}/functions/v1/stripe-sync/backfill`
-      const authHeader = req.headers.get('Authorization')!
-      fetch(backfillUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
-        body: JSON.stringify({ sync_id: syncId, stream }),
-      }).catch((err) => console.error(`Self-reinvoke failed for ${stream}:`, err))
-
-      console.log(
-        `Stream ${stream}: synced ${newRecords} records (${existingRecords + newRecords} total), continuing...`
-      )
-    } else {
-      // Stream complete — check if ALL streams are done
-      await checkCompletion()
-      console.log(`Stream ${stream}: complete — ${existingRecords + newRecords} total records`)
-    }
-
-    await pool.end()
-
-    return jsonResponse({
-      sync_id: syncId,
-      stream,
-      records: existingRecords + newRecords,
-      has_more: hasMore,
-    })
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    console.error(`Worker error for stream ${stream}:`, errorMessage)
-
-    // Mark stream as error
-    await pool
-      .query(
-        `UPDATE "${safeSchema}"._sync_state
-         SET status = 'error', error = $1, updated_at = now()
-         WHERE sync_id = $2 AND stream = $3`,
-        [errorMessage, syncId, stream]
-      )
-      .catch((e) => console.error('Failed to update error state:', e))
-
-    // Still check completion — other streams may be done
-    await checkCompletion().catch((e) => console.error('Completion check failed:', e))
-
-    try {
-      await pool.end()
-    } catch {}
-
-    return jsonResponse({ error: errorMessage }, 500)
   }
 }
 
@@ -914,7 +713,7 @@ async function handleBackfill(req: Request): Promise<Response> {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  // Last segment after /functions/v1/stripe-sync/
+  // Last segment after /functions/v1/stripe-worker/
   const path = url.pathname.split('/').pop()
 
   if (path === 'webhook') return handleWebhook(req)
@@ -927,7 +726,6 @@ Deno.serve(async (req) => {
   }
 
   if (path === 'sync') return handleSync(req)
-  if (path === 'backfill') return handleBackfill(req)
 
   return new Response('Not found', { status: 404 })
 })
