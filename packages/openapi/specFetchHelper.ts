@@ -42,6 +42,17 @@ export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<Res
     }
   }
 
+  // Try pre-generated specs from the generated-specs directory (built at Docker image time).
+  const preGenSpec = await tryLoadPreGeneratedSpec(apiVersion)
+  if (preGenSpec) {
+    return {
+      apiVersion,
+      spec: preGenSpec.spec,
+      source: 'bundled',
+      cachePath: preGenSpec.path,
+    }
+  }
+
   const cacheDir = config.cacheDir ?? DEFAULT_CACHE_DIR
   const cachePath = getCachePath(cacheDir, apiVersion)
   const cachedSpec = await tryReadCachedSpec(cachePath)
@@ -74,6 +85,41 @@ export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<Res
     source: 'github',
     cachePath,
     commitSha,
+  }
+}
+
+// Module-scope manifest cache: undefined = not yet tried, null = tried and missing
+let generatedSpecManifest: Record<string, string> | null | undefined = undefined
+
+async function tryLoadPreGeneratedSpec(
+  apiVersion: string
+): Promise<{ spec: OpenApiSpec; path: string } | null> {
+  try {
+    if (generatedSpecManifest === null) return null
+
+    const generatedDir = fileURLToPath(new URL('./generated-specs', import.meta.url))
+
+    if (generatedSpecManifest === undefined) {
+      try {
+        const manifestRaw = await fs.readFile(path.join(generatedDir, 'manifest.json'), 'utf8')
+        generatedSpecManifest = JSON.parse(manifestRaw) as Record<string, string>
+      } catch {
+        generatedSpecManifest = null
+        return null
+      }
+    }
+
+    const requestedDate = extractDatePart(apiVersion)
+    const matchedKey = Object.keys(generatedSpecManifest).find(
+      (key) => extractDatePart(key) === requestedDate
+    )
+    if (!matchedKey) return null
+
+    const specPath = path.join(generatedDir, generatedSpecManifest[matchedKey])
+    const spec = await readSpecFromPath(specPath)
+    return { spec, path: specPath }
+  } catch {
+    return null
   }
 }
 

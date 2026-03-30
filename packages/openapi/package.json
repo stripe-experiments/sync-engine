@@ -11,7 +11,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && cp bundled-spec.json dist/bundled-spec.json",
+    "build": "tsc && cp bundled-spec.json dist/bundled-spec.json && (cp -r generated-specs dist/generated-specs 2>/dev/null || true)",
     "test": "vitest --passWithNoTests"
   },
   "files": [
