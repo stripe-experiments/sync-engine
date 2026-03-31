@@ -9,8 +9,8 @@ const DEFAULT_CACHE_DIR = path.join(os.tmpdir(), 'stripe-sync-openapi-cache')
 const GENERATED_SPECS_DIR = fileURLToPath(new URL('./generated-specs', import.meta.url))
 
 // The spec bundled into this package at build time.
-// Update this constant and bundled-spec.json together when bumping.
-export const BUNDLED_API_VERSION = '2026-03-25.dahlia'
+// Update this constant and latest-spec.json together when bumping.
+export const LATEST_BUNDLED_API_VERSION = '2026-03-25.dahlia'
 
 export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<ResolvedOpenApiSpec> {
   const apiVersion = config.apiVersion
@@ -32,14 +32,14 @@ export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<Res
 
   // If the requested version matches what's bundled, serve from the filesystem
   // without any network calls or caching overhead.
-  if (extractDatePart(apiVersion) === extractDatePart(BUNDLED_API_VERSION)) {
-    const bundledPath = fileURLToPath(new URL('./bundled-spec.json', import.meta.url))
-    const spec = await readSpecFromPath(bundledPath)
+  if (extractDatePart(apiVersion) === extractDatePart(LATEST_BUNDLED_API_VERSION)) {
+    const latestPath = fileURLToPath(new URL('./latest-spec.json', import.meta.url))
+    const spec = await readSpecFromPath(latestPath)
     return {
       apiVersion,
       spec,
       source: 'bundled',
-      cachePath: bundledPath,
+      cachePath: latestPath,
     }
   }
 
