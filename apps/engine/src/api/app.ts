@@ -651,6 +651,7 @@ export function createApp(resolver: ConnectorResolver) {
   app.get('/docs', apiReference({ url: '/openapi.json' }))
 
   // ── Internal utilities ───────────────────────────────────────────────────────
+  // NOTE: no HTTP auth on /internal/* — only safe on a trusted private network.
 
   app.post('/internal/query', async (c) => {
     const { connection_string, sql } = await c.req.json<{
