@@ -90,7 +90,7 @@ export async function resolveOpenApiSpec(config: ResolveSpecConfig): Promise<Res
 }
 
 // Module-scope manifest cache: undefined = not yet tried, null = tried and missing
-let generatedSpecManifest: Record<string, string> | null | undefined = undefined
+let generatedSpecManifest: { [version: string]: string } | null | undefined = undefined
 
 async function tryLoadPreGeneratedSpec(
   apiVersion: string
@@ -104,7 +104,7 @@ async function tryLoadPreGeneratedSpec(
           path.join(GENERATED_SPECS_DIR, 'manifest.json'),
           'utf8'
         )
-        generatedSpecManifest = JSON.parse(manifestRaw) as Record<string, string>
+        generatedSpecManifest = JSON.parse(manifestRaw) as { [version: string]: string }
       } catch {
         generatedSpecManifest = null
         return null
