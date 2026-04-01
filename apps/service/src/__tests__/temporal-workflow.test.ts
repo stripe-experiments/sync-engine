@@ -8,7 +8,7 @@ import type { RunResult } from '../temporal/types.js'
 // workflowsPath must point to compiled JS (Temporal bundles it for V8 sandbox)
 const workflowsPath = path.resolve(process.cwd(), 'dist/temporal/workflows.js')
 
-const noErrors: RunResult = { errors: [] }
+const noErrors: RunResult = { errors: [], state: {} }
 
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
   return {
@@ -78,8 +78,8 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-2',
       workflowsPath,
       activities: stubActivities({
-        sync: async (pipelineId: string, input?: unknown[]) => {
-          runCalls.push({ pipelineId, input: input ?? undefined })
+        sync: async (pipelineId: string, opts?) => {
+          runCalls.push({ pipelineId, input: opts?.input ?? undefined })
           return noErrors
         },
       }),
@@ -171,7 +171,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
           await new Promise((r) => setTimeout(r, 500))
           return noErrors
         },
-        teardown: async (pipelineId: string) => {
+        teardown: async (pipelineId: string): Promise<void> => {
           teardownCalled = true
           teardownSyncId = pipelineId
         },

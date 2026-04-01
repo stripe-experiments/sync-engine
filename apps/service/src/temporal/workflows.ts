@@ -105,7 +105,7 @@ export async function realtimePipelineWorkflow(pipelineId: string, opts?: { phas
     // 1. Drain buffered events
     if (eventBuffer.length > 0) {
       const batch = eventBuffer.splice(0, EVENT_BATCH_SIZE)
-      await sync(pipelineId, batch)
+      await sync(pipelineId, { input: batch })
       await tickIteration()
       continue // Re-check for more events before reconciliation
     }

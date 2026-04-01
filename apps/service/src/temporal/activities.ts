@@ -40,14 +40,23 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
       }
     },
 
-    async sync(pipelineId: string, input?: unknown[]): Promise<RunResult> {
+    async sync(
+      pipelineId: string,
+      opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
+    ): Promise<RunResult> {
       const params = await resolveParams(serviceUrl, pipelineId)
       const headers: Record<string, string> = { 'X-Pipeline': params }
       let body: string | undefined
 
-      if (input && input.length > 0) {
+      if (opts?.state && Object.keys(opts.state).length > 0) {
+        headers['X-State'] = JSON.stringify(opts.state)
+      }
+      if (opts?.stateLimit != null) {
+        headers['X-State-Checkpoint-Limit'] = String(opts.stateLimit)
+      }
+      if (opts?.input && opts.input.length > 0) {
         headers['Content-Type'] = 'application/x-ndjson'
-        body = input.map((item) => JSON.stringify(item)).join('\n') + '\n'
+        body = opts.input.map((item) => JSON.stringify(item)).join('\n') + '\n'
       }
 
       const resp = await fetch(`${engineUrl}/sync`, {
@@ -61,6 +70,7 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
       }
 
       const errors: RunResult['errors'] = []
+      const state: Record<string, unknown> = {}
       let messageCount = 0
 
       for await (const msg of parseNdjsonStream(resp.body!)) {
@@ -76,6 +86,8 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
             failure_type: m.failure_type as string | undefined,
             stream: m.stream as string | undefined,
           })
+        } else if (m.type === 'state' && typeof m.stream === 'string') {
+          state[m.stream] = m.data
         }
 
         if (messageCount % 50 === 0) {
@@ -86,7 +98,7 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
         heartbeat({ messages: messageCount })
       }
 
-      return { errors }
+      return { errors, state }
     },
 
     async teardown(pipelineId: string): Promise<void> {
