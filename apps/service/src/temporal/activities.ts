@@ -101,6 +101,90 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
       return { errors, state }
     },
 
+    async read(
+      pipelineId: string,
+      opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
+    ): Promise<{ records: unknown[]; state: Record<string, unknown> }> {
+      const params = await resolveParams(serviceUrl, pipelineId)
+      const headers: Record<string, string> = { 'X-Pipeline': params }
+      let body: string | undefined
+
+      if (opts?.state && Object.keys(opts.state).length > 0) {
+        headers['X-State'] = JSON.stringify(opts.state)
+      }
+      if (opts?.stateLimit != null) {
+        headers['X-State-Checkpoint-Limit'] = String(opts.stateLimit)
+      }
+      if (opts?.input && opts.input.length > 0) {
+        headers['Content-Type'] = 'application/x-ndjson'
+        body = opts.input.map((item) => JSON.stringify(item)).join('\n') + '\n'
+      }
+
+      const resp = await fetch(`${engineUrl}/read`, { method: 'POST', headers, body })
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '')
+        throw new Error(`Read failed (${resp.status}): ${text}`)
+      }
+
+      const records: unknown[] = []
+      const state: Record<string, unknown> = {}
+      let messageCount = 0
+
+      for await (const msg of parseNdjsonStream(resp.body!)) {
+        const m = msg as Record<string, unknown>
+        messageCount++
+        if (m.type === 'record') {
+          records.push(m)
+        } else if (m.type === 'state' && typeof m.stream === 'string') {
+          state[m.stream] = m.data
+        }
+        if (messageCount % 50 === 0) heartbeat({ messages: messageCount })
+      }
+      if (messageCount % 50 !== 0) heartbeat({ messages: messageCount })
+
+      return { records, state }
+    },
+
+    async write(pipelineId: string, records: unknown[]): Promise<RunResult> {
+      const params = await resolveParams(serviceUrl, pipelineId)
+      const headers: Record<string, string> = {
+        'X-Pipeline': params,
+        'Content-Type': 'application/x-ndjson',
+      }
+      const body = records.map((r) => JSON.stringify(r)).join('\n') + '\n'
+
+      const resp = await fetch(`${engineUrl}/write`, { method: 'POST', headers, body })
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '')
+        throw new Error(`Write failed (${resp.status}): ${text}`)
+      }
+
+      const errors: RunResult['errors'] = []
+      const state: Record<string, unknown> = {}
+      let messageCount = 0
+
+      for await (const msg of parseNdjsonStream(resp.body!)) {
+        const m = msg as Record<string, unknown>
+        messageCount++
+        if (m.type === 'error') {
+          errors.push({
+            message:
+              (m.message as string) ||
+              ((m.data as Record<string, unknown>)?.message as string) ||
+              'Unknown error',
+            failure_type: m.failure_type as string | undefined,
+            stream: m.stream as string | undefined,
+          })
+        } else if (m.type === 'state' && typeof m.stream === 'string') {
+          state[m.stream] = m.data
+        }
+        if (messageCount % 50 === 0) heartbeat({ messages: messageCount })
+      }
+      if (messageCount % 50 !== 0) heartbeat({ messages: messageCount })
+
+      return { errors, state }
+    },
+
     async teardown(pipelineId: string): Promise<void> {
       const params = await resolveParams(serviceUrl, pipelineId)
       const resp = await fetch(`${engineUrl}/teardown`, {

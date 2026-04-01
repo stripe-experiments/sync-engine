@@ -40,8 +40,8 @@ const { setup, teardown } = proxyActivities<SyncActivities>({
   retry: retryPolicy,
 })
 
-// Run: 10m with retry and heartbeat
-const { sync } = proxyActivities<SyncActivities>({
+// Data activities: 10m with retry and heartbeat
+const { sync, read, write } = proxyActivities<SyncActivities>({
   startToCloseTimeout: '10m',
   heartbeatTimeout: '2m',
   retry: retryPolicy,
@@ -58,7 +58,7 @@ export const statusQuery = defineQuery<WorkflowStatus>('status')
 
 export async function pipelineWorkflow(
   pipelineId: string,
-  opts?: { phase?: string; state?: Record<string, unknown> }
+  opts?: { phase?: string; state?: Record<string, unknown>; mode?: 'sync' | 'read-write' }
 ): Promise<void> {
   let paused = false
   let deleted = false
@@ -104,6 +104,7 @@ export async function pipelineWorkflow(
       await continueAsNew<typeof pipelineWorkflow>(pipelineId, {
         phase: 'running',
         state: syncState,
+        mode: opts?.mode,
       })
     }
   }
@@ -135,8 +136,17 @@ export async function pipelineWorkflow(
     // 2. Reconciliation: one page at a time; done when state stops changing
     if (!reconciled) {
       const before = syncState
-      const result = await sync(pipelineId, { state: syncState, stateLimit: 1 })
-      syncState = { ...syncState, ...result.state }
+      if (opts?.mode === 'read-write') {
+        const { records, state: readState } = await read(pipelineId, {
+          state: syncState,
+          stateLimit: 1,
+        })
+        if (records.length > 0) await write(pipelineId, records)
+        syncState = { ...syncState, ...readState }
+      } else {
+        const result = await sync(pipelineId, { state: syncState, stateLimit: 1 })
+        syncState = { ...syncState, ...result.state }
+      }
       reconciled = deepEqual(syncState, before)
       await tickIteration()
       continue
