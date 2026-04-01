@@ -10,7 +10,7 @@ import {
 } from '@stripe/sync-protocol'
 import type { Destination, Source } from '@stripe/sync-protocol'
 import { enforceCatalog, filterType, log, persistState, pipe } from './pipeline.js'
-import { withCatalogFilter } from './destination-filter.js'
+import { catalogFilter, composeDestination } from './destination-filter.js'
 import type { StateStore } from './state-store.js'
 import type { ConnectorResolver } from './resolver.js'
 import { logger } from '../logger.js'
@@ -136,7 +136,7 @@ export function createEngine(
     string,
     unknown
   >
-  const destination = withCatalogFilter(connectors.destination)
+  const destination = composeDestination(connectors.destination, catalogFilter)
   const baseContext = engineLogContext(config, metadata)
 
   // Lazy-cached catalog — discover is called at most once per engine instance.

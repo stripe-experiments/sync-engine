@@ -3,9 +3,8 @@ import type {
   Destination,
   ConfiguredCatalog,
   DestinationInput,
-  DestinationOutput,
 } from '@stripe/sync-protocol'
-import { withCatalogFilter } from './destination-filter.js'
+import { catalogFilter, composeDestination } from './destination-filter.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,9 +37,6 @@ function makeCatalog(
   }
 }
 
-/**
- * Create a mock destination that captures the catalog passed to setup() and write().
- */
 function capturingDestination() {
   const captured: { setup?: ConfiguredCatalog; write?: ConfiguredCatalog } = {}
 
@@ -61,15 +57,16 @@ function capturingDestination() {
   return { dest, captured }
 }
 
+function props(catalog: ConfiguredCatalog, index = 0): Record<string, unknown> {
+  return catalog.streams[index]!.stream.json_schema!.properties as Record<string, unknown>
+}
+
 // ---------------------------------------------------------------------------
-// withCatalogFilter()
+// catalogFilter()
 // ---------------------------------------------------------------------------
 
-describe('withCatalogFilter()', () => {
-  it('prunes json_schema.properties in setup() to selected fields plus primary key', async () => {
-    const { dest, captured } = capturingDestination()
-    const wrapped = withCatalogFilter(dest)
-
+describe('catalogFilter()', () => {
+  it('prunes json_schema.properties to selected fields plus primary key', () => {
     const catalog = makeCatalog([
       {
         name: 'customers',
@@ -86,49 +83,11 @@ describe('withCatalogFilter()', () => {
       },
     ])
 
-    await wrapped.setup!({ config: {}, catalog })
-
-    const props = captured.setup!.streams[0]!.stream.json_schema!.properties as Record<
-      string,
-      unknown
-    >
-    expect(Object.keys(props)).toEqual(['id', 'name', 'email'])
+    const filtered = catalogFilter(catalog)
+    expect(Object.keys(props(filtered))).toEqual(['id', 'name', 'email'])
   })
 
-  it('prunes json_schema.properties in write() to selected fields', async () => {
-    const { dest, captured } = capturingDestination()
-    const wrapped = withCatalogFilter(dest)
-
-    const catalog = makeCatalog([
-      {
-        name: 'invoices',
-        fields: ['amount', 'currency'],
-        json_schema: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            amount: { type: 'integer' },
-            currency: { type: 'string' },
-            description: { type: 'string' },
-          },
-        },
-      },
-    ])
-
-    const input: DestinationInput[] = [{ type: 'state', stream: 'invoices', data: { cursor: '1' } }]
-    await drain(wrapped.write({ config: {}, catalog }, toAsync(input)))
-
-    const props = captured.write!.streams[0]!.stream.json_schema!.properties as Record<
-      string,
-      unknown
-    >
-    expect(Object.keys(props)).toEqual(['id', 'amount', 'currency'])
-  })
-
-  it('passes catalog through unchanged when no fields configured', async () => {
-    const { dest, captured } = capturingDestination()
-    const wrapped = withCatalogFilter(dest)
-
+  it('passes catalog through unchanged when no fields configured', () => {
     const catalog = makeCatalog([
       {
         name: 'products',
@@ -143,30 +102,17 @@ describe('withCatalogFilter()', () => {
       },
     ])
 
-    await wrapped.setup!({ config: {}, catalog })
-
-    const props = captured.setup!.streams[0]!.stream.json_schema!.properties as Record<
-      string,
-      unknown
-    >
-    expect(Object.keys(props)).toEqual(['id', 'name', 'active'])
+    const filtered = catalogFilter(catalog)
+    expect(Object.keys(props(filtered))).toEqual(['id', 'name', 'active'])
   })
 
-  it('passes stream through unchanged when json_schema is absent', async () => {
-    const { dest, captured } = capturingDestination()
-    const wrapped = withCatalogFilter(dest)
-
+  it('passes stream through unchanged when json_schema is absent', () => {
     const catalog = makeCatalog([{ name: 'events', fields: ['id', 'type'] }])
-
-    await wrapped.setup!({ config: {}, catalog })
-
-    expect(captured.setup!.streams[0]!.stream.json_schema).toBeUndefined()
+    const filtered = catalogFilter(catalog)
+    expect(filtered.streams[0]!.stream.json_schema).toBeUndefined()
   })
 
-  it('handles mixed streams: filters only those with fields set', async () => {
-    const { dest, captured } = capturingDestination()
-    const wrapped = withCatalogFilter(dest)
-
+  it('filters only streams that have fields set', () => {
     const catalog = makeCatalog([
       {
         name: 'customers',
@@ -192,19 +138,104 @@ describe('withCatalogFilter()', () => {
       },
     ])
 
+    const filtered = catalogFilter(catalog)
+    expect(Object.keys(props(filtered, 0))).toEqual(['id', 'email'])
+    expect(Object.keys(props(filtered, 1))).toEqual(['id', 'name'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// composeDestination()
+// ---------------------------------------------------------------------------
+
+describe('composeDestination()', () => {
+  it('applies catalogFilter to setup()', async () => {
+    const { dest, captured } = capturingDestination()
+    const wrapped = composeDestination(dest, catalogFilter)
+
+    const catalog = makeCatalog([
+      {
+        name: 'invoices',
+        fields: ['amount', 'currency'],
+        json_schema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            amount: { type: 'integer' },
+            currency: { type: 'string' },
+            description: { type: 'string' },
+          },
+        },
+      },
+    ])
+
     await wrapped.setup!({ config: {}, catalog })
+    expect(Object.keys(props(captured.setup!))).toEqual(['id', 'amount', 'currency'])
+  })
 
-    const customerProps = captured.setup!.streams[0]!.stream.json_schema!.properties as Record<
-      string,
-      unknown
-    >
-    expect(Object.keys(customerProps)).toEqual(['id', 'email'])
+  it('applies catalogFilter to write()', async () => {
+    const { dest, captured } = capturingDestination()
+    const wrapped = composeDestination(dest, catalogFilter)
 
-    const productProps = captured.setup!.streams[1]!.stream.json_schema!.properties as Record<
-      string,
-      unknown
-    >
-    expect(Object.keys(productProps)).toEqual(['id', 'name'])
+    const catalog = makeCatalog([
+      {
+        name: 'invoices',
+        fields: ['amount', 'currency'],
+        json_schema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            amount: { type: 'integer' },
+            currency: { type: 'string' },
+            description: { type: 'string' },
+          },
+        },
+      },
+    ])
+
+    const input: DestinationInput[] = [{ type: 'state', stream: 'invoices', data: { cursor: '1' } }]
+    await drain(wrapped.write({ config: {}, catalog }, toAsync(input)))
+    expect(Object.keys(props(captured.write!))).toEqual(['id', 'amount', 'currency'])
+  })
+
+  it('applies multiple middlewares left-to-right', async () => {
+    const { dest, captured } = capturingDestination()
+
+    const addFoo: (catalog: ConfiguredCatalog) => ConfiguredCatalog = (catalog) => ({
+      ...catalog,
+      streams: catalog.streams.map((cs) => ({
+        ...cs,
+        stream: {
+          ...cs.stream,
+          json_schema: cs.stream.json_schema
+            ? {
+                ...cs.stream.json_schema,
+                properties: {
+                  ...(cs.stream.json_schema.properties as Record<string, unknown>),
+                  foo: { type: 'string' },
+                },
+              }
+            : cs.stream.json_schema,
+        },
+      })),
+    })
+
+    const wrapped = composeDestination(dest, addFoo, catalogFilter)
+
+    const catalog = makeCatalog([
+      {
+        name: 'customers',
+        fields: ['email', 'foo'],
+        json_schema: {
+          type: 'object',
+          properties: { id: { type: 'string' }, email: { type: 'string' } },
+        },
+      },
+    ])
+
+    await wrapped.setup!({ config: {}, catalog })
+    // addFoo adds 'foo', then catalogFilter keeps only fields=['email','foo'] + pk
+    expect(Object.keys(props(captured.setup!))).toEqual(['id', 'email', 'foo'])
   })
 
   it('omits setup when underlying destination has no setup', () => {
@@ -212,13 +243,13 @@ describe('withCatalogFilter()', () => {
       spec: () => ({ config: {} }),
       check: async () => ({ status: 'succeeded' }),
       async *write(_params, $stdin) {
-        for await (const msg of $stdin) {
-          if (msg.type === 'state') yield msg
+        for await (const _ of $stdin) {
+          /* drain */
         }
       },
     }
 
-    const wrapped = withCatalogFilter(dest)
+    const wrapped = composeDestination(dest, catalogFilter)
     expect(wrapped.setup).toBeUndefined()
   })
 
@@ -234,7 +265,7 @@ describe('withCatalogFilter()', () => {
       },
     }
 
-    const wrapped = withCatalogFilter(dest)
+    const wrapped = composeDestination(dest, catalogFilter)
     expect(wrapped.spec()).toBe(spec)
   })
 
@@ -249,9 +280,8 @@ describe('withCatalogFilter()', () => {
       },
     }
 
-    const wrapped = withCatalogFilter(dest)
-    const result = await wrapped.check({ config: {} })
-    expect(result).toEqual({ status: 'failed', message: 'bad creds' })
+    const wrapped = composeDestination(dest, catalogFilter)
+    expect(await wrapped.check({ config: {} })).toEqual({ status: 'failed', message: 'bad creds' })
   })
 
   it('delegates teardown() unchanged', async () => {
@@ -269,7 +299,7 @@ describe('withCatalogFilter()', () => {
       },
     }
 
-    const wrapped = withCatalogFilter(dest)
+    const wrapped = composeDestination(dest, catalogFilter)
     await wrapped.teardown!({ config: {} })
     expect(teardownCalled).toBe(true)
   })
