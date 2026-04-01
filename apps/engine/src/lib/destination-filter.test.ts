@@ -95,7 +95,7 @@ describe('withCatalogFilter()', () => {
     expect(Object.keys(props)).toEqual(['id', 'name', 'email'])
   })
 
-  it('prunes json_schema.properties in write() to selected fields', async () => {
+  it('prunes json_schema.properties in write() to selected fields plus primary key', async () => {
     const { dest, captured } = capturingDestination()
     const wrapped = withCatalogFilter(dest)
 
