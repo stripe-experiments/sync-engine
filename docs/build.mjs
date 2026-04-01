@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname)
-const PAGES_DIR = path.join(ROOT, 'pages')
+const PAGES_DIR = ROOT
 const PUBLIC_DIR = path.join(ROOT, 'public')
 const OPENAPI_DIR = path.join(ROOT, 'openapi')
 const OUT_DIR = path.join(ROOT, 'out')

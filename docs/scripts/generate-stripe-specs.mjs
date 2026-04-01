@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * Fetches every published Stripe REST API spec version from github.com/stripe/openapi
- * and writes <version>.json + manifest.json to <outputDir>.
+ * Fetches the N most recent published Stripe REST API spec versions from
+ * github.com/stripe/openapi and writes <version>.json + manifest.json to <outputDir>.
  *
  * Usage:
- *   node generate-stripe-specs.mjs <outputDir>
+ *   node generate-stripe-specs.mjs <outputDir> [maxVersions=5]
  *
- * Uses a blobless git clone — no GitHub API rate limits, no auth required.
- * Set STRIPE_OPENAPI_REPO to a pre-cloned path to skip the clone (e.g. from CI cache).
+ * Clones stripe/openapi (single-branch) then walks history newest→oldest,
+ * stopping once maxVersions unique API versions are collected.
+ * Set STRIPE_OPENAPI_REPO to a pre-cloned path to skip the clone (e.g. CI cache).
  *
  * These are the official Stripe REST API specs (github.com/stripe/openapi), NOT
  * the Sync Engine's own OpenAPI spec (which lives at /openapi/engine.json etc.).
@@ -19,11 +20,12 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-const [outputDir] = process.argv.slice(2)
+const [outputDir, maxVersionsArg] = process.argv.slice(2)
 if (!outputDir) {
-  console.error('Usage: node generate-stripe-specs.mjs <outputDir>')
+  console.error('Usage: node generate-stripe-specs.mjs <outputDir> [maxVersions=5]')
   process.exit(1)
 }
+const MAX_VERSIONS = parseInt(maxVersionsArg ?? '3')
 
 const REPO_URL = 'https://github.com/stripe/openapi'
 // stripe/openapi uses 'latest/openapi.spec3.sdk.json' for recent specs and
@@ -34,29 +36,32 @@ function git(...args) {
   return execFileSync('git', ['-C', repoDir, ...args], { encoding: 'utf8' })
 }
 
-// Clone or use pre-cloned repo (STRIPE_OPENAPI_REPO lets CI inject a cached clone)
+// Clone or use pre-cloned repo
 const repoDir = process.env.STRIPE_OPENAPI_REPO ?? join(tmpdir(), 'stripe-openapi')
 if (!existsSync(join(repoDir, '.git'))) {
-  console.error(`Cloning ${REPO_URL} (blobless)...`)
-  execFileSync(
-    'git',
-    ['clone', '--filter=blob:none', '--no-tags', '--single-branch', REPO_URL, repoDir],
-    { stdio: 'inherit' }
-  )
+  console.error(`Cloning ${REPO_URL}...`)
+  execFileSync('git', ['clone', '--single-branch', REPO_URL, repoDir], { stdio: 'inherit' })
 } else {
   console.error(`Using pre-cloned repo at ${repoDir}`)
 }
 
-// Find all commits that touched either spec path.
-// ls-tree reads tree objects (included in blobless clone) — no network needed here.
-console.error('Finding relevant commits...')
-const commits = git('log', '--format=%H', '--', ...SPEC_PATHS).trim().split('\n').filter(Boolean)
-console.error(`  ${commits.length} commits`)
+// Walk commits newest→oldest, collect up to MAX_VERSIONS unique API versions.
+// Stops early — only fetches as many blobs as needed.
+console.error(`Collecting ${MAX_VERSIONS} most recent spec versions...`)
+const commits = git('log', '--format=%H', '--', ...SPEC_PATHS)
+  .trim()
+  .split('\n')
+  .filter(Boolean)
 
-// Collect unique blob SHAs via ls-tree (local, no network) to avoid re-fetching duplicates.
-// Two commits that share a blob SHA have identical content → only fetch once.
-const blobToPath = new Map() // blobSha -> specPath
+mkdirSync(outputDir, { recursive: true })
+
+const seen = new Map() // version -> filename
+const seenBlobs = new Set()
+
 for (const commit of commits) {
+  if (seen.size >= MAX_VERSIONS) break
+
+  let blobSha
   for (const specPath of SPEC_PATHS) {
     let ls
     try {
@@ -65,22 +70,15 @@ for (const commit of commits) {
       continue
     }
     if (!ls) continue
-    const blobSha = ls.split(/\s+/)[2]
-    if (!blobToPath.has(blobSha)) {
-      blobToPath.set(blobSha, specPath)
-    }
-    break // one spec per commit is enough
+    blobSha = ls.split(/\s+/)[2]
+    break
   }
-}
-console.error(`  ${blobToPath.size} unique blobs to fetch`)
+  if (!blobSha || seenBlobs.has(blobSha)) continue
+  seenBlobs.add(blobSha)
 
-mkdirSync(outputDir, { recursive: true })
-
-const seen = new Map() // version -> filename
-for (const [blobSha] of blobToPath) {
   let raw
   try {
-    raw = git('cat-file', 'blob', blobSha) // fetches just this blob on-demand
+    raw = git('cat-file', 'blob', blobSha)
   } catch {
     continue
   }
@@ -141,4 +139,4 @@ ${rows}
 `
 )
 
-console.error(`\nDone: ${seen.size} spec versions from ${commits.length} commits`)
+console.error(`\nDone: ${seen.size} spec versions`)
