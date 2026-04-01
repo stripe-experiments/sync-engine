@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Fetches the N most recent published Stripe REST API spec versions from
+ * Fetches all published Stripe REST API spec versions from
  * github.com/stripe/openapi and writes <version>.json + manifest.json to <outputDir>.
  *
  * Usage:
- *   node generate-stripe-specs.mjs <outputDir> [maxVersions=5]
+ *   node generate-stripe-specs.mjs <outputDir>
  *
- * Clones stripe/openapi (single-branch) then walks history newest→oldest,
- * stopping once maxVersions unique API versions are collected.
+ * Clones stripe/openapi (single-branch) then walks the full history, collecting
+ * every unique API version (deduplicated by blob SHA, then by version string).
  * Set STRIPE_OPENAPI_REPO to a pre-cloned path to skip the clone (e.g. CI cache).
  *
  * These are the official Stripe REST API specs (github.com/stripe/openapi), NOT
@@ -20,12 +20,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-const [outputDir, maxVersionsArg] = process.argv.slice(2)
+const [outputDir] = process.argv.slice(2)
 if (!outputDir) {
-  console.error('Usage: node generate-stripe-specs.mjs <outputDir> [maxVersions=5]')
+  console.error('Usage: node generate-stripe-specs.mjs <outputDir>')
   process.exit(1)
 }
-const MAX_VERSIONS = parseInt(maxVersionsArg ?? '3')
 
 const REPO_URL = 'https://github.com/stripe/openapi'
 // stripe/openapi uses 'latest/openapi.spec3.sdk.json' for recent specs and
@@ -49,9 +48,8 @@ if (!existsSync(join(repoDir, '.git'))) {
   console.error(`Using pre-cloned repo at ${repoDir}`)
 }
 
-// Walk commits newest→oldest, collect up to MAX_VERSIONS unique API versions.
-// Stops early — only fetches as many blobs as needed.
-console.error(`Collecting ${MAX_VERSIONS} most recent spec versions...`)
+// Walk commits newest→oldest, collect all unique API versions.
+console.error('Collecting all spec versions...')
 const commits = git('log', '--format=%H', '--', ...SPEC_PATHS)
   .trim()
   .split('\n')
@@ -63,8 +61,6 @@ const seen = new Map() // version -> filename
 const seenBlobs = new Set()
 
 for (const commit of commits) {
-  if (seen.size >= MAX_VERSIONS) break
-
   let blobSha
   for (const specPath of SPEC_PATHS) {
     let ls
