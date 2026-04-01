@@ -56,7 +56,7 @@ export const deleteSignal = defineSignal('delete')
 // Query
 export const statusQuery = defineQuery<WorkflowStatus>('status')
 
-export async function realtimePipelineWorkflow(
+export async function pipelineWorkflow(
   pipelineId: string,
   opts?: { phase?: string; state?: Record<string, unknown> }
 ): Promise<void> {
@@ -101,7 +101,7 @@ export async function realtimePipelineWorkflow(
   async function tickIteration() {
     iteration++
     if (iteration >= CONTINUE_AS_NEW_THRESHOLD) {
-      await continueAsNew<typeof realtimePipelineWorkflow>(pipelineId, {
+      await continueAsNew<typeof pipelineWorkflow>(pipelineId, {
         phase: 'running',
         state: syncState,
       })

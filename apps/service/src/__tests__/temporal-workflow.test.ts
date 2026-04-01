@@ -29,7 +29,7 @@ afterAll(async () => {
   await testEnv?.teardown()
 })
 
-describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
+describe('pipelineWorkflow (unit — stubbed activities)', () => {
   it('runs setup then continuous reconciliation until delete', async () => {
     let setupCalled = false
     let runCallCount = 0
@@ -50,7 +50,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
     })
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start('realtimePipelineWorkflow', {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
         args: ['sync_test_1'],
         workflowId: 'test-sync-1',
         taskQueue: 'test-queue-1',
@@ -86,7 +86,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
     })
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start('realtimePipelineWorkflow', {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
         args: ['sync_test_2'],
         workflowId: 'test-sync-2',
         taskQueue: 'test-queue-2',
@@ -137,7 +137,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
     })
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start('realtimePipelineWorkflow', {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
         args: ['sync_test_3'],
         workflowId: 'test-sync-3',
         taskQueue: 'test-queue-3',
@@ -179,7 +179,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
     })
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start('realtimePipelineWorkflow', {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
         args: ['sync_test_4'],
         workflowId: 'test-sync-4',
         taskQueue: 'test-queue-4',
@@ -209,7 +209,7 @@ describe('realtimePipelineWorkflow (unit — stubbed activities)', () => {
     })
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start('realtimePipelineWorkflow', {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
         args: ['sync_test_5', { phase: 'running' }],
         workflowId: 'test-sync-5',
         taskQueue: 'test-queue-5',
