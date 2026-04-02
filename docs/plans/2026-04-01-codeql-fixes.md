@@ -13,6 +13,7 @@
 ### Task 1: Delete dead code `hashApiKey.ts`
 
 **Files:**
+
 - Delete: `packages/source-stripe/src/utils/hashApiKey.ts`
 - Check: `packages/source-stripe/src/index.ts` (confirm no import)
 
@@ -21,6 +22,7 @@
 ```bash
 grep -r "hashApiKey" packages/ apps/ --include="*.ts" | grep -v "hashApiKey.ts" | grep -v "dist/"
 ```
+
 Expected: no output.
 
 **Step 2: Delete the file**
@@ -34,6 +36,7 @@ git rm packages/source-stripe/src/utils/hashApiKey.ts
 ```bash
 pnpm build
 ```
+
 Expected: no errors.
 
 **Step 4: Commit**
@@ -49,6 +52,7 @@ git commit -m "chore(source-stripe): remove unused hashApiKey utility"
 The current `createPgRateLimiter` in `apps/engine/src/api/app.ts` derives a bucket key by SHA-256-hashing the API key. This is wrong: Stripe rate limits are per account, not per key. Multiple restricted keys on the same account would each get their own bucket, effectively multiplying the rate limit. Fix: call `GET /v1/account` once at setup time and use the account ID directly.
 
 **Files:**
+
 - Modify: `apps/engine/src/api/app.ts`
 - Modify: `packages/source-stripe/src/index.ts` (export `fetchAccountId` helper)
 - Modify: `packages/source-stripe/src/index.ts` exports barrel
@@ -62,7 +66,9 @@ In `packages/source-stripe/src/index.ts`, add after the existing exports near th
  * Fetch the Stripe account ID for a given API key config.
  * Used by the engine to key rate-limiter buckets by account, not by key.
  */
-export async function fetchAccountId(config: Pick<Config, 'api_key' | 'base_url'>): Promise<string> {
+export async function fetchAccountId(
+  config: Pick<Config, 'api_key' | 'base_url'>
+): Promise<string> {
   const s = makeClient(config as Config)
   const account = await s.accounts.retrieve()
   return account.id
@@ -74,6 +80,7 @@ export async function fetchAccountId(config: Pick<Config, 'api_key' | 'base_url'
 ```bash
 pnpm build
 ```
+
 Expected: no errors.
 
 **Step 3: Update `createPgRateLimiter` in `apps/engine/src/api/app.ts`**
@@ -111,6 +118,7 @@ import { createHash } from 'node:crypto'
 ```bash
 pnpm build
 ```
+
 Expected: no errors. If `createHash` import is flagged as unused by TypeScript, remove it.
 
 **Step 5: Commit**
@@ -127,6 +135,7 @@ git commit -m "fix(engine): rate-limit by Stripe account ID, not API key hash"
 The patterns `/unknown command.*setup/i` and `/unknown command.*teardown/i` in `source-exec.ts` and `destination-exec.ts` use `.*` between two fixed strings, which CodeQL flags as potentially quadratic on adversarial input. Replace with plain string checks.
 
 **Files:**
+
 - Modify: `apps/engine/src/lib/source-exec.ts`
 - Modify: `apps/engine/src/lib/destination-exec.ts`
 
@@ -138,14 +147,22 @@ There are two occurrences. Replace both:
 // Before:
 if (/unknown command.*setup/i.test(String(err))) return
 // After:
-if (String(err).toLowerCase().includes('unknown command') && String(err).toLowerCase().includes('setup')) return
+if (
+  String(err).toLowerCase().includes('unknown command') &&
+  String(err).toLowerCase().includes('setup')
+)
+  return
 ```
 
 ```typescript
 // Before:
 if (/unknown command.*teardown/i.test(String(err))) return
 // After:
-if (String(err).toLowerCase().includes('unknown command') && String(err).toLowerCase().includes('teardown')) return
+if (
+  String(err).toLowerCase().includes('unknown command') &&
+  String(err).toLowerCase().includes('teardown')
+)
+  return
 ```
 
 **Step 2: Update `destination-exec.ts`**
@@ -156,14 +173,22 @@ Same two replacements (identical patterns):
 // Before:
 if (/unknown command.*setup/i.test(String(err))) return
 // After:
-if (String(err).toLowerCase().includes('unknown command') && String(err).toLowerCase().includes('setup')) return
+if (
+  String(err).toLowerCase().includes('unknown command') &&
+  String(err).toLowerCase().includes('setup')
+)
+  return
 ```
 
 ```typescript
 // Before:
 if (/unknown command.*teardown/i.test(String(err))) return
 // After:
-if (String(err).toLowerCase().includes('unknown command') && String(err).toLowerCase().includes('teardown')) return
+if (
+  String(err).toLowerCase().includes('unknown command') &&
+  String(err).toLowerCase().includes('teardown')
+)
+  return
 ```
 
 **Step 3: Run tests**
@@ -171,6 +196,7 @@ if (String(err).toLowerCase().includes('unknown command') && String(err).toLower
 ```bash
 pnpm test
 ```
+
 Expected: all tests pass.
 
 **Step 4: Commit**
@@ -187,6 +213,7 @@ git commit -m "fix(engine): replace ReDoS-flagged regexes with includes() in exe
 The `\{[^}]+\}` pattern (removes path params like `{id}`) is flagged. The input is OpenAPI spec path strings — they come from trusted spec files, not attacker-controlled input. A CLI tool user already has code execution on the machine. Suppress with a comment rather than rewriting the pattern.
 
 **Files:**
+
 - Modify: `packages/ts-cli/src/openapi/parse.ts`
 
 **Step 1: Add suppression comment**
@@ -216,6 +243,7 @@ const cleaned = path
 ```bash
 pnpm build
 ```
+
 Expected: no errors.
 
 **Step 3: Commit**
