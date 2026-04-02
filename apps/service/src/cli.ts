@@ -7,9 +7,9 @@ import { createConnectorResolver } from '@stripe/sync-engine'
 import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
-import { createApp } from '../api/app.js'
+import { createApp } from './api/app.js'
 import type { WorkflowClient } from '@temporalio/client'
-import { logger } from '../logger.js'
+import { logger } from './logger.js'
 
 const resolver = createConnectorResolver({
   sources: { stripe: sourceStripe },
@@ -94,14 +94,14 @@ const workerCmd = defineCommand({
     },
   },
   async run({ args }) {
-    const { createWorker } = await import('../temporal/worker.js')
+    const { createWorker } = await import('./temporal/worker.js')
     const taskQueue = args['temporal-task-queue'] || 'sync-engine'
     const namespace = args['temporal-namespace'] || 'default'
     const engineUrl = args['engine-url'] || 'http://localhost:4010'
     const temporalAddress = args['temporal-address']
 
     // workflowsPath: resolve relative to the package dist directory
-    const pkgDir = path.resolve(import.meta.dirname ?? process.cwd(), '../..')
+    const pkgDir = path.resolve(import.meta.dirname ?? process.cwd(), '..')
     const workflowsPath = path.resolve(pkgDir, 'dist/temporal/workflows.js')
 
     const worker = await createWorker({
@@ -139,7 +139,7 @@ const webhookCmd = defineCommand({
     },
   },
   async run({ args }) {
-    const { createWebhookApp } = await import('../api/webhook-app.js')
+    const { createWebhookApp } = await import('./api/webhook-app.js')
 
     const { client } = await createTemporalClient(
       args['temporal-address'],
