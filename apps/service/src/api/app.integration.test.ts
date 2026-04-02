@@ -6,7 +6,9 @@ import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
 import createFetchClient from 'openapi-fetch'
+import { spawn, type ChildProcess } from 'node:child_process'
 import pg from 'pg'
+import Stripe from 'stripe'
 import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import { createApp as createEngineApp, createConnectorResolver } from '@stripe/sync-engine'
@@ -19,6 +21,7 @@ import type { paths } from '../__generated__/openapi.js'
 // ---------------------------------------------------------------------------
 
 const TEMPORAL_ADDRESS = process.env['TEMPORAL_ADDRESS'] ?? 'localhost:7233'
+const STRIPE_API_KEY = process.env['STRIPE_API_KEY']!
 const STRIPE_MOCK_URL = process.env['STRIPE_MOCK_URL'] ?? 'http://localhost:12111'
 const POSTGRES_URL = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL']!
 const TASK_QUEUE = `test-app-${Date.now()}`
@@ -224,17 +227,156 @@ describe('pipelines (integration)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Webhook ingress
+// Webhook lifecycle (requires STRIPE_API_KEY — real Stripe, not stripe-mock)
 // ---------------------------------------------------------------------------
 
-describe('POST /webhooks/:pipeline_id (integration)', () => {
-  it('accepts webhook events and returns ok', async () => {
-    const { data, response } = await api().POST('/webhooks/{pipeline_id}', {
-      params: { path: { pipeline_id: 'pipe_abc123' } },
-      body: { type: 'checkout.session.completed' } as any,
-      parseAs: 'text',
-    })
-    expect(response.status).toBe(200)
-    expect(data).toBe('ok')
+async function createWebhookSiteToken(): Promise<{ uuid: string; url: string }> {
+  const res = await fetch('https://webhook.site/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      default_status: 200,
+      default_content: 'OK',
+      default_content_type: 'text/plain',
+    }),
   })
+  const data = (await res.json()) as { uuid: string }
+  return { uuid: data.uuid, url: `https://webhook.site/${data.uuid}` }
+}
+
+async function deleteWebhookSiteToken(uuid: string): Promise<void> {
+  await fetch(`https://webhook.site/token/${uuid}`, { method: 'DELETE' }).catch(() => {})
+}
+
+describe('webhook lifecycle (integration)', () => {
+  let webhookToken: { uuid: string; url: string }
+  let whcliProcess: ChildProcess | null = null
+  const webhookSchema = `webhook_${Date.now()}`
+
+  afterAll(async () => {
+    // Kill whcli forwarder
+    if (whcliProcess) {
+      whcliProcess.kill()
+      whcliProcess = null
+    }
+    // Delete webhook.site token
+    if (webhookToken?.uuid) {
+      await deleteWebhookSiteToken(webhookToken.uuid)
+    }
+    // Drop webhook test schema
+    if (!SKIP_CLEANUP) {
+      await pool?.query(`DROP SCHEMA IF EXISTS "${webhookSchema}" CASCADE`).catch(() => {})
+    }
+  })
+
+  it('setup creates webhook → live event updates row → teardown deletes webhook', async () => {
+    if (!STRIPE_API_KEY) {
+      console.log('  Skipping webhook test: STRIPE_API_KEY not set')
+      return
+    }
+
+    const c = api()
+    const stripe = new Stripe(STRIPE_API_KEY)
+
+    // 1. Create webhook.site token for public URL
+    webhookToken = await createWebhookSiteToken()
+    console.log(`  Webhook URL: ${webhookToken.url}`)
+
+    // 2. Create pipeline with webhook_url (real Stripe key)
+    const { data: created, error: createErr } = await c.POST('/pipelines', {
+      body: {
+        source: { type: 'stripe', api_key: STRIPE_API_KEY, webhook_url: webhookToken.url },
+        destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: webhookSchema },
+        streams: [{ name: 'products' }],
+      },
+    })
+    expect(createErr).toBeUndefined()
+    const pipelineId = created!.id
+    console.log(`  Pipeline: ${pipelineId}`)
+
+    // 3. Wait for setup to complete (creates Stripe webhook endpoint)
+    await new Promise((r) => setTimeout(r, 3000))
+
+    // Verify the webhook endpoint was created at Stripe
+    const endpoints = await stripe.webhookEndpoints.list({ limit: 100 })
+    const managed = endpoints.data.find(
+      (wh) => wh.url === webhookToken.url && wh.metadata?.managed_by === 'stripe-sync'
+    )
+    expect(managed).toBeDefined()
+    console.log(`  Stripe webhook endpoint: ${managed!.id}`)
+
+    // 4. Wait for backfill to land
+    await pollUntil(async () => {
+      try {
+        const r = await pool.query(
+          `SELECT count(*)::int AS n FROM "${webhookSchema}"."products"`
+        )
+        return r.rows[0].n > 0
+      } catch {
+        return false
+      }
+    })
+
+    const { rows: backfillRows } = await pool.query(
+      `SELECT count(*)::int AS n FROM "${webhookSchema}"."products"`
+    )
+    console.log(`  Backfilled ${backfillRows[0].n} products`)
+
+    // 5. Start whcli forward: webhook.site → local service webhook endpoint
+    const whcliTarget = `${serviceUrl}/webhooks/${pipelineId}`
+    console.log(`  Forwarding: ${webhookToken.url} → ${whcliTarget}`)
+    whcliProcess = spawn(
+      'pnpm',
+      ['exec', 'whcli', 'forward', `--token=${webhookToken.uuid}`, `--target=${whcliTarget}`],
+      { cwd: path.resolve(process.cwd(), '../..'), stdio: 'pipe' }
+    )
+    // Give whcli a moment to connect
+    await new Promise((r) => setTimeout(r, 2000))
+
+    // 6. Update a product via Stripe API → triggers webhook
+    const sample = await pool.query(`SELECT id FROM "${webhookSchema}"."products" LIMIT 1`)
+    const productId = sample.rows[0].id as string
+    const marker = `webhook-test-${Date.now()}`
+    console.log(`  Updating product ${productId} name → ${marker}`)
+    await stripe.products.update(productId, { name: marker })
+
+    // 7. Poll until the updated name appears in Postgres
+    await pollUntil(
+      async () => {
+        try {
+          const r = await pool.query(
+            `SELECT name FROM "${webhookSchema}"."products" WHERE id = $1`,
+            [productId]
+          )
+          return r.rows[0]?.name === marker
+        } catch {
+          return false
+        }
+      },
+      { timeout: 30_000, interval: 2000 }
+    )
+
+    const { rows: updatedRows } = await pool.query(
+      `SELECT name FROM "${webhookSchema}"."products" WHERE id = $1`,
+      [productId]
+    )
+    expect(updatedRows[0].name).toBe(marker)
+    console.log(`  Verified: product name updated via webhook`)
+
+    // 8. Delete pipeline → teardown removes Stripe webhook endpoint
+    const { error: deleteErr } = await c.DELETE('/pipelines/{id}', {
+      params: { path: { id: pipelineId } },
+    })
+    expect(deleteErr).toBeUndefined()
+
+    // Wait for workflow to complete
+    const handle = client.workflow.getHandle(pipelineId)
+    await handle.result()
+
+    // 9. Verify the specific webhook endpoint is gone
+    const endpointsAfter = await stripe.webhookEndpoints.list({ limit: 100 })
+    const stillExists = endpointsAfter.data.find((wh) => wh.id === managed!.id)
+    expect(stillExists).toBeUndefined()
+    console.log(`  Verified: webhook endpoint ${managed!.id} deleted`)
+  }, 120_000)
 })

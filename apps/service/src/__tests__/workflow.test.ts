@@ -19,7 +19,7 @@ const testPipeline = {
 
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
   return {
-    setup: async () => {},
+    setup: async () => ({}),
     syncImmediate: async () => noErrors,
     readIntoQueue: async () => ({ count: 0, state: {} }),
     writeFromQueue: async () => ({ errors: [], state: {}, written: 0 }),
@@ -50,6 +50,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       activities: stubActivities({
         setup: async () => {
           setupCalled = true
+          return {}
         },
         syncImmediate: async () => {
           runCallCount++
@@ -210,6 +211,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       activities: stubActivities({
         setup: async () => {
           setupCalled = true
+          return {}
         },
       }),
     })

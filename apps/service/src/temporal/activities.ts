@@ -1,6 +1,6 @@
 import { heartbeat } from '@temporalio/activity'
 import { createRemoteEngine } from '@stripe/sync-engine'
-import type { PipelineConfig, Message } from '@stripe/sync-engine'
+import type { PipelineConfig, Message, SetupResult } from '@stripe/sync-engine'
 import { Kafka } from 'kafkajs'
 
 export interface RunResult {
@@ -75,9 +75,9 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
   }
 
   return {
-    async setup(config: PipelineConfig): Promise<void> {
+    async setup(config: PipelineConfig): Promise<SetupResult> {
       const engine = createRemoteEngine(engineUrl, config)
-      await engine.setup()
+      return await engine.setup()
     },
 
     async syncImmediate(

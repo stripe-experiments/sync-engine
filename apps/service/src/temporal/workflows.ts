@@ -155,9 +155,16 @@ export async function pipelineWorkflow(
   const config = toConfig(pipeline)
 
   if (phase !== 'running') {
-    await setup(config)
+    const setupResult = await setup(config)
+    // Merge setup-provisioned fields (webhook_secret, account_id, spreadsheet_id, etc.)
+    if (setupResult.source) {
+      pipeline = { ...pipeline, source: { ...pipeline.source, ...setupResult.source } }
+    }
+    if (setupResult.destination) {
+      pipeline = { ...pipeline, destination: { ...pipeline.destination, ...setupResult.destination } }
+    }
     if (deleted) {
-      await teardown(config)
+      await teardown(toConfig(pipeline))
       return
     }
   }
