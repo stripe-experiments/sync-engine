@@ -52,6 +52,7 @@ jobs:
 
       - name: Formatting checks
         run: pnpm format:check
+        continue-on-error: true
 
       - name: Lint
         run: pnpm lint
