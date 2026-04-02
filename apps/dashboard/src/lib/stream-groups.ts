@@ -44,7 +44,7 @@ export function groupStreams(streams: CatalogStream[]): StreamGroup[] {
 }
 
 /** Infer a human-readable group name from a stream name. */
-function inferGroupName(streamName: string): string {
+export function inferGroupName(streamName: string): string {
   // Handle dotted names (v2.core.account → "Core")
   if (streamName.includes('.')) {
     const parts = streamName.split('.')

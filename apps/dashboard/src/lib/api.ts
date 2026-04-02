@@ -47,11 +47,53 @@ export interface CreatePipelineParams {
   streams: Array<{ name: string }>
 }
 
+export interface PipelineStatus {
+  phase: string
+  paused: boolean
+  iteration: number
+}
+
 export interface Pipeline {
   id: string
   source: Record<string, unknown>
   destination: Record<string, unknown>
   streams?: Array<{ name: string }>
+  status?: PipelineStatus
+}
+
+export async function listPipelines(): Promise<{ data: Pipeline[]; has_more: boolean }> {
+  const res = await fetch(`${SERVICE_BASE}/pipelines`)
+  if (!res.ok) throw new Error(`GET /pipelines: ${res.status}`)
+  return res.json()
+}
+
+export async function getPipeline(id: string): Promise<Pipeline> {
+  const res = await fetch(`${SERVICE_BASE}/pipelines/${encodeURIComponent(id)}`)
+  if (!res.ok) throw new Error(`GET /pipelines/${id}: ${res.status}`)
+  return res.json()
+}
+
+export async function pausePipeline(id: string): Promise<Pipeline> {
+  const res = await fetch(`${SERVICE_BASE}/pipelines/${encodeURIComponent(id)}/pause`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`POST /pipelines/${id}/pause: ${res.status}`)
+  return res.json()
+}
+
+export async function resumePipeline(id: string): Promise<Pipeline> {
+  const res = await fetch(`${SERVICE_BASE}/pipelines/${encodeURIComponent(id)}/resume`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`POST /pipelines/${id}/resume: ${res.status}`)
+  return res.json()
+}
+
+export async function deletePipeline(id: string): Promise<void> {
+  const res = await fetch(`${SERVICE_BASE}/pipelines/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`DELETE /pipelines/${id}: ${res.status}`)
 }
 
 export async function createPipeline(params: CreatePipelineParams): Promise<Pipeline> {

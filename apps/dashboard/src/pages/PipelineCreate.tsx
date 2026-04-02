@@ -6,7 +6,7 @@ import type { CatalogStream } from '@/lib/stream-groups'
 
 type Step = 'source' | 'streams' | 'destination' | 'review'
 
-export function PipelineCreate() {
+export function PipelineCreate({ onDone }: { onDone?: () => void }) {
   const [step, setStep] = useState<Step>('source')
 
   // Connector metadata
@@ -82,13 +82,8 @@ export function PipelineCreate() {
         destination: { type: destType, ...destConfig },
         streams: [...selectedStreams].map((name) => ({ name })),
       })
-      // Success — reset form
-      setStep('source')
-      setSourceConfig({})
-      setDestConfig({})
-      setCatalog([])
-      setSelectedStreams(new Set())
-      alert('Pipeline created!')
+      // Success — navigate back to list
+      onDone?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create pipeline')
     } finally {
