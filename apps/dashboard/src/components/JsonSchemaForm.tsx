@@ -113,9 +113,7 @@ function FieldInput({
           className="h-4 w-4 rounded border-gray-300 text-indigo-600"
         />
         <span className="text-sm font-medium text-gray-700">{label}</span>
-        {prop.description && (
-          <span className="text-xs text-gray-400">{prop.description}</span>
-        )}
+        {prop.description && <span className="text-xs text-gray-400">{prop.description}</span>}
       </label>
     )
   }
@@ -141,7 +139,11 @@ function FieldInput({
   }
 
   // String (default) — use textarea for long descriptions, password for secrets
-  const isSecret = name.includes('key') || name.includes('secret') || name.includes('token') || name.includes('password')
+  const isSecret =
+    name.includes('key') ||
+    name.includes('secret') ||
+    name.includes('token') ||
+    name.includes('password')
   const inputType = isSecret ? 'password' : prop.format === 'uri' ? 'url' : 'text'
 
   return (
@@ -166,7 +168,5 @@ const fieldClass =
   'rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-300'
 
 function formatLabel(key: string): string {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }

@@ -1,7 +1,12 @@
 import { useState, useMemo } from 'react'
 import { ChevronRight, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { groupStreams, filterStreams, type CatalogStream, type StreamGroup } from '@/lib/stream-groups'
+import {
+  groupStreams,
+  filterStreams,
+  type CatalogStream,
+  type StreamGroup,
+} from '@/lib/stream-groups'
 
 interface StreamSelectorProps {
   streams: CatalogStream[]
@@ -136,13 +141,8 @@ function GroupRow({
           onChange={() => onToggleAll(names, !allChecked)}
           className="h-4 w-4 rounded border-gray-300 text-indigo-600"
         />
-        <button
-          onClick={onToggleExpand}
-          className="flex flex-1 items-center gap-2 text-left"
-        >
-          <ChevronRight
-            className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')}
-          />
+        <button onClick={onToggleExpand} className="flex flex-1 items-center gap-2 text-left">
+          <ChevronRight className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')} />
           <span className="font-semibold">{group.name}</span>
         </button>
         <span className="text-sm text-gray-400">

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1",
@@ -24,8 +25,13 @@
     "tailwind-merge": "^3"
   },
   "devDependencies": {
+    "@hono/node-server": "^1",
+    "@playwright/test": "^1",
+    "@stripe/sync-destination-google-sheets": "workspace:*",
+    "@stripe/sync-destination-postgres": "workspace:*",
     "@stripe/sync-engine": "workspace:*",
     "@stripe/sync-service": "workspace:*",
+    "@stripe/sync-source-stripe": "workspace:*",
     "@tailwindcss/vite": "^4",
     "@types/react": "^19",
     "@types/react-dom": "^19",

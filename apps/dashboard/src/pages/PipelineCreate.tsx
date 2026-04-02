@@ -100,9 +100,7 @@ export function PipelineCreate() {
     <div className="mx-auto max-w-2xl p-8">
       <h1 className="mb-8 text-2xl font-bold">Create Pipeline</h1>
 
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-      )}
+      {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       {/* Step indicator */}
       <div className="mb-8 flex gap-2">
