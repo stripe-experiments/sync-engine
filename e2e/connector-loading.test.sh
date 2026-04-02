@@ -113,7 +113,7 @@ echo ""
 # ---------------------------------------------------------------------------
 
 # JSON-encoded X-Pipeline header value for check requests.
-SYNC_PARAMS='{"source":{"name":"stripe","api_key":"sk_test_fake"},"destination":{"name":"postgres","connection_string":"postgresql://fake:fake@localhost/fake"},"streams":[{"name":"products"}]}'
+SYNC_PARAMS='{"source":{"type":"stripe","api_key":"sk_test_fake"},"destination":{"type":"postgres","connection_string":"postgresql://fake:fake@localhost/fake"},"streams":[{"name":"products"}]}'
 
 # Run `sync-engine check` with fake credentials and given extra flags.
 # Exits non-zero (bad credentials) but must NOT output "not found".
