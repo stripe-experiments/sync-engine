@@ -16,15 +16,15 @@ jobs:
   e2e_supabase:
     name: Supabase install + sync
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Check required secrets
         id: check
         run: |
-          if [ -z "${{ secrets.E2E_SUPABASE_TOKEN }}" ] || [ -z "${{ secrets.E2E_SUPABASE_PROJECT }}" ] || [ -z "${{ secrets.STRIPE_API_KEY }}" ]; then
+          if [ -z "${{ secrets.E2E_SUPABASE_TOKEN }}" ] || [ -z "${{ secrets.E2E_SUPABASE_ORG }}" ] || [ -z "${{ secrets.STRIPE_SANDBOX_KEY }}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Skipped — E2E_SUPABASE_TOKEN, E2E_SUPABASE_PROJECT, or STRIPE_API_KEY not set"
+            echo "::warning::Skipped — E2E_SUPABASE_TOKEN, E2E_SUPABASE_ORG, or STRIPE_SANDBOX_KEY not set"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -53,4 +53,4 @@ jobs:
         env:
           STRIPE_SANDBOX_KEY: ${{ secrets.STRIPE_SANDBOX_KEY }}
           E2E_SUPABASE_TOKEN: ${{ secrets.E2E_SUPABASE_TOKEN }}
-          E2E_SUPABASE_PROJECT: ${{ secrets.E2E_SUPABASE_PROJECT }}
+          E2E_SUPABASE_ORG: ${{ secrets.E2E_SUPABASE_ORG }}
