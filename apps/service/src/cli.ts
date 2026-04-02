@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { Readable } from 'node:stream'
 import { defineCommand } from 'citty'
 import { createCliFromSpec } from '@stripe/sync-ts-cli/openapi'
