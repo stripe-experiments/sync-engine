@@ -1,6 +1,6 @@
 import { heartbeat } from '@temporalio/activity'
 import { createRemoteEngine } from '@stripe/sync-engine'
-import type { PipelineConfig, Message } from '@stripe/sync-protocol'
+import type { PipelineConfig, Message } from '@stripe/sync-engine'
 import { Kafka } from 'kafkajs'
 import type { RunResult } from './types.js'
 

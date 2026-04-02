@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import type { ConnectorResolver } from '@stripe/sync-engine'
 import { sourceTest, destinationTest, createApp } from '@stripe/sync-engine'
-import type { PipelineConfig } from '@stripe/sync-protocol'
+import type { PipelineConfig } from '@stripe/sync-engine'
 import { createActivities } from '../temporal/activities.js'
 
 // Mock Temporal heartbeat — activities call it but we're outside a workflow context
