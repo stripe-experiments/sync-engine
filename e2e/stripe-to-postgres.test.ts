@@ -19,7 +19,7 @@ const ts = new Date()
   .slice(0, 15)
 const SCHEMA = `e2e_${ts}`
 const STREAMS = ['products', 'prices']
-const BACKFILL_LIMIT = 200
+const BACKFILL_LIMIT = 10
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,6 +48,7 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
           type: 'stripe',
           api_key: STRIPE_API_KEY,
           backfill_limit: BACKFILL_LIMIT,
+          backfill_concurrency: 1,
           ...(opts.websocket && { websocket: true }),
         },
         destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
@@ -61,7 +62,7 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: POSTGRES_URL })
     await pool.query('SELECT 1')
-    stripe = new Stripe(STRIPE_API_KEY, { maxNetworkRetries: 3 })
+    stripe = new Stripe(STRIPE_API_KEY)
     const account = await stripe.accounts.retrieve()
     const isTest = STRIPE_API_KEY.startsWith('sk_test_')
     const dashPrefix = isTest ? 'dashboard.stripe.com/test' : 'dashboard.stripe.com'
