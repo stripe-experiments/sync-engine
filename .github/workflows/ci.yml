@@ -501,8 +501,20 @@ jobs:
           ENGINE_IMAGE: ${{ github.repository }}
           SERVICE_IMAGE: ${{ github.repository }}-service
 
+      - name: Wait for Temporal to be ready
+        run: |
+          echo "Waiting for Temporal gRPC on localhost:7233..."
+          for i in $(seq 1 90); do
+            if nc -z 127.0.0.1 7233 2>/dev/null; then
+              echo "Temporal port open after ${i}s — waiting 5s for schema init"
+              sleep 5
+              break
+            fi
+            sleep 1
+          done
+          nc -z 127.0.0.1 7233 || (echo "Temporal never became ready"; exit 1)
+
       - name: Start service containers
-        if: ${{ env.STRIPE_API_KEY != '' }}
         run: |
           ENGINE_IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64"
           SERVICE_IMAGE="ghcr.io/${{ github.repository }}-service:${{ github.sha }}-arm64"
@@ -527,8 +539,6 @@ jobs:
             sleep 1
           done
           curl -sf http://localhost:4020/health || (echo "Service failed to start"; docker logs ci-service; exit 1)
-        env:
-          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
 
       - name: Service Docker e2e
         run: |
@@ -543,6 +553,14 @@ jobs:
           POSTGRES_CONTAINER_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
           SERVICE_DOCKER_E2E: '1'
           SKIP_SETUP: '1'
+
+      - name: Dump container logs
+        if: always()
+        run: |
+          for name in ci-engine ci-service ci-worker; do
+            echo "=== $name ==="
+            docker logs "$name" 2>&1 | tail -100 || true
+          done
 
       - name: Stop service containers
         if: always()

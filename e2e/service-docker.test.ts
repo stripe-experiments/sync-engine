@@ -136,14 +136,17 @@ describeWithEnv(
       console.log(`\n  Pipeline: ${id}`)
 
       // --- Wait for data ---
-      await pollUntil(async () => {
-        try {
-          const r = await pool.query(`SELECT count(*)::int AS n FROM "${schema}"."products"`)
-          return r.rows[0].n > 0
-        } catch {
-          return false
-        }
-      })
+      await pollUntil(
+        async () => {
+          try {
+            const r = await pool.query(`SELECT count(*)::int AS n FROM "${schema}"."products"`)
+            return r.rows[0].n > 0
+          } catch {
+            return false
+          }
+        },
+        { timeout: 200_000 }
+      )
 
       const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${schema}"."products"`)
       console.log(`  Synced:   ${rows[0].n} products`)
@@ -174,6 +177,6 @@ describeWithEnv(
 
       const { error: getAfter } = await c.GET('/pipelines/{id}', { params: { path: { id } } })
       expect(getAfter).toBeDefined()
-    }, 120_000)
+    }, 240_000)
   }
 )
