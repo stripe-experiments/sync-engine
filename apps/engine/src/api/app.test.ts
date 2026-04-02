@@ -132,10 +132,10 @@ describe('GET /openapi.json', () => {
     const spec = (await res.json()) as any
     const schemas = spec.components.schemas
 
-    // Individual message types — @hono/zod-openapi uses enum for z.literal()
-    expect(schemas.RecordMessage.properties.type.enum).toEqual(['record'])
-    expect(schemas.StateMessage.properties.type.enum).toEqual(['state'])
-    expect(schemas.ErrorMessage.properties.type.enum).toEqual(['error'])
+    // Individual message types — zod-openapi uses const for z.literal() in OpenAPI 3.1
+    expect(schemas.RecordMessage.properties.type.const).toBe('record')
+    expect(schemas.StateMessage.properties.type.const).toBe('state')
+    expect(schemas.ErrorMessage.properties.type.const).toBe('error')
 
     // Message union
     expect(schemas.Message.discriminator.propertyName).toBe('type')
@@ -145,10 +145,10 @@ describe('GET /openapi.json', () => {
     expect(schemas.DestinationOutput.discriminator.propertyName).toBe('type')
     expect(schemas.DestinationOutput.oneOf).toHaveLength(3)
 
-    // NDJSON responses reference item schemas (not plain strings)
+    // NDJSON responses reference schemas (zod-openapi adds Output suffix for response-only types)
     const readNdjson =
       spec.paths['/read']?.post?.responses?.['200']?.content?.['application/x-ndjson']
-    expect(readNdjson.schema.$ref).toBe('#/components/schemas/Message')
+    expect(readNdjson.schema.$ref).toBe('#/components/schemas/MessageOutput')
 
     const writeNdjson =
       spec.paths['/write']?.post?.responses?.['200']?.content?.['application/x-ndjson']

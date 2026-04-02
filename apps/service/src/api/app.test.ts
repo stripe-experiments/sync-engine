@@ -77,7 +77,7 @@ const noErrors: RunResult = { errors: [], state: {} }
 
 function stubActivities(): SyncActivities {
   return {
-    setup: async () => {},
+    setup: async () => ({}),
     syncImmediate: async () => noErrors,
     readIntoQueue: async () => ({ count: 0, state: {} }),
     writeFromQueue: async () => ({ errors: [], state: {}, written: 0 }),
@@ -113,6 +113,17 @@ function liveApp() {
   })
 }
 
+/** Poll GET /pipelines/:id until the workflow is queryable (not 404). */
+async function waitForPipeline(a: ReturnType<typeof liveApp>, id: string, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const res = await a.request(`/pipelines/${id}`)
+    if (res.status === 200) return
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  throw new Error(`Pipeline ${id} not queryable after ${timeoutMs}ms`)
+}
+
 describe('pipeline CRUD', () => {
   it('create returns full pipeline', async () => {
     const res = await liveApp().request('/pipelines', {
@@ -145,7 +156,7 @@ describe('pipeline CRUD', () => {
       }),
     })
     const created = await createRes.json()
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForPipeline(a, created.id)
 
     // Update
     const updateRes = await a.request(`/pipelines/${created.id}`, {
@@ -177,7 +188,7 @@ describe('pipeline CRUD', () => {
       }),
     })
     const created = await createRes.json()
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForPipeline(a, created.id)
 
     // Pause
     const pauseRes = await a.request(`/pipelines/${created.id}/pause`, { method: 'POST' })

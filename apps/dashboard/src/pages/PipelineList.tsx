@@ -137,8 +137,8 @@ function PipelineCard({
         </button>
       </div>
       <div className="mt-4 text-sm text-gray-600">
-        <span className="font-medium text-gray-700">Tables:</span> {tablesSummary} (
-        {streams.length})
+        <span className="font-medium text-gray-700">Tables:</span> {tablesSummary} ({streams.length}
+        )
       </div>
     </div>
   )

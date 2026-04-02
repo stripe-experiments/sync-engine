@@ -119,9 +119,7 @@ export function PipelineDetail({ id, onBack }: PipelineDetailProps) {
               <StatusBadge phase={phase} paused={paused} />
             </div>
             <p className="text-sm text-gray-500">{pipeline.id}</p>
-            {iteration > 0 && (
-              <p className="text-xs text-gray-400">Iteration {iteration}</p>
-            )}
+            {iteration > 0 && <p className="text-xs text-gray-400">Iteration {iteration}</p>}
           </div>
         </div>
         <div className="flex gap-2">
