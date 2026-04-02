@@ -134,12 +134,12 @@ describe('pipelineWorkflow: Stripe → Postgres (real Temporal + real Stripe + r
     const pipeline = {
       id: `pipe_integration_${Date.now()}`,
       source: {
-        name: 'stripe',
+        type: 'stripe',
         api_key: 'sk_test_fake',
         base_url: STRIPE_MOCK_URL,
       },
       destination: {
-        name: 'postgres',
+        type: 'postgres',
         connection_string: POSTGRES_URL,
         schema,
       },

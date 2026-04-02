@@ -1,7 +1,8 @@
 // Barrel — re-exports for consumers of @stripe/sync-service
 
 // Schemas (Zod + inferred types)
-export {
+export { createSchemas } from './lib/createSchemas.js'
+export type {
   SourceConfig,
   DestinationConfig,
   StreamConfig,
@@ -9,7 +10,7 @@ export {
   CreatePipeline,
   UpdatePipeline,
   LogEntry,
-} from './lib/schemas.js'
+} from './lib/createSchemas.js'
 
 // Temporal bridge
 export { TemporalBridge } from './temporal/bridge.js'

@@ -1,5 +1,5 @@
 import type { WorkflowClient } from '@temporalio/client'
-import type { Pipeline } from '../lib/schemas.js'
+import type { Pipeline } from '../lib/createSchemas.js'
 import type { WorkflowStatus } from './types.js'
 
 // MARK: - Types

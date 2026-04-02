@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkflowClient } from '@temporalio/client'
+import { createConnectorResolver, sourceTest, destinationTest } from '@stripe/sync-engine'
 import { createApp } from './app.js'
 
 // These tests cover routes that don't touch Temporal (OpenAPI spec, docs, health).
 // Pipeline CRUD tests live in app.integration.test.ts with a real Temporal server.
 
+const resolver = createConnectorResolver({
+  sources: { test: sourceTest },
+  destinations: { test: destinationTest },
+})
+
 function app() {
   return createApp({
     temporal: { client: {} as WorkflowClient, taskQueue: 'unused' },
+    resolver,
   })
 }
 
@@ -20,7 +27,7 @@ describe('GET /openapi.json', () => {
     const res = await app().request('/openapi.json')
     expect(res.status).toBe(200)
     const spec = await res.json()
-    expect(spec.openapi).toBe('3.0.0')
+    expect(spec.openapi).toBe('3.1.0')
     expect(spec.info.title).toBeDefined()
     expect(spec.paths).toBeDefined()
   })

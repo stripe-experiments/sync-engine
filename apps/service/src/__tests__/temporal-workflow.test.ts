@@ -13,8 +13,8 @@ const noErrors: RunResult = { errors: [], state: {} }
 
 const testPipeline = {
   id: 'test_pipe',
-  source: { name: 'test', api_key: 'sk_test_123' },
-  destination: { name: 'test' },
+  source: { type: 'test', api_key: 'sk_test_123' },
+  destination: { type: 'test' },
 }
 
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
@@ -248,7 +248,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
 
       const config = await handle.query('config')
       expect(config.id).toBe('test_pipe')
-      expect(config.source.name).toBe('test')
+      expect(config.source.type).toBe('test')
 
       await handle.signal('delete')
       await handle.result()

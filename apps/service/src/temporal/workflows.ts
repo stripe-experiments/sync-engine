@@ -36,8 +36,8 @@ interface StreamDef {
 
 interface Pipeline {
   id: string
-  source: { name: string; [key: string]: unknown }
-  destination: { name: string; [key: string]: unknown }
+  source: { type: string; [key: string]: unknown }
+  destination: { type: string; [key: string]: unknown }
   streams?: StreamDef[]
 }
 
@@ -48,9 +48,11 @@ type PipelineConfig = {
 }
 
 function toConfig(pipeline: Pipeline): PipelineConfig {
+  const { type: sourceName, ...sourceRest } = pipeline.source
+  const { type: destName, ...destRest } = pipeline.destination
   return {
-    source: pipeline.source,
-    destination: pipeline.destination,
+    source: { name: sourceName, ...sourceRest },
+    destination: { name: destName, ...destRest },
     streams: pipeline.streams,
   }
 }

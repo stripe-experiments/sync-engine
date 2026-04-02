@@ -3,9 +3,18 @@ import { Readable } from 'node:stream'
 import { defineCommand } from 'citty'
 import { createCliFromSpec } from '@stripe/sync-ts-cli/openapi'
 import { serve } from '@hono/node-server'
+import { createConnectorResolver } from '@stripe/sync-engine'
+import sourceStripe from '@stripe/sync-source-stripe'
+import destinationPostgres from '@stripe/sync-destination-postgres'
+import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import { createApp } from '../api/app.js'
 import type { TemporalOptions } from '../temporal/bridge.js'
 import { logger } from '../logger.js'
+
+const resolver = createConnectorResolver({
+  sources: { stripe: sourceStripe },
+  destinations: { postgres: destinationPostgres, 'google-sheets': destinationGoogleSheets },
+})
 
 async function createTemporalClient(address: string, taskQueue: string): Promise<TemporalOptions> {
   const { Client, Connection } = await import('@temporalio/client')
@@ -47,7 +56,7 @@ const serveCmd = defineCommand({
       'Temporal mode enabled'
     )
 
-    const app = createApp({ temporal })
+    const app = createApp({ temporal, resolver })
 
     serve({ fetch: app.fetch, port }, () => {
       logger.info({ port }, `Sync Service listening on http://localhost:${port}`)
@@ -164,7 +173,7 @@ export async function createProgram() {
     list: async function* () {},
   } as any
 
-  const app = createApp({ temporal: { client: mockClient, taskQueue: 'cli' } })
+  const app = createApp({ temporal: { client: mockClient, taskQueue: 'cli' }, resolver })
   const res = await app.request('/openapi.json')
   const spec = await res.json()
 

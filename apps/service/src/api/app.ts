@@ -1,11 +1,8 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { apiReference } from '@scalar/hono-api-reference'
-import {
-  Pipeline as PipelineSchema,
-  CreatePipeline as CreatePipelineSchema,
-  UpdatePipeline as UpdatePipelineSchema,
-} from '../lib/schemas.js'
-import type { Pipeline } from '../lib/schemas.js'
+import type { ConnectorResolver } from '@stripe/sync-engine'
+import { createSchemas } from '../lib/createSchemas.js'
+import type { Pipeline } from '../lib/createSchemas.js'
 import type { TemporalOptions } from '../temporal/bridge.js'
 import { TemporalBridge } from '../temporal/bridge.js'
 import { mountWebhookRoutes } from './webhook-app.js'
@@ -27,17 +24,7 @@ function genId(prefix: string): string {
   return `${prefix}_${(_idCounter++).toString(36)}`
 }
 
-// MARK: - Response schemas
-
-const PipelineWithStatusSchema = PipelineSchema.extend({
-  status: z
-    .object({
-      phase: z.string(),
-      paused: z.boolean(),
-      iteration: z.number(),
-    })
-    .optional(),
-})
+// MARK: - Response schemas (static — don't depend on connector set)
 
 const DeleteResponseSchema = z.object({
   id: z.string(),
@@ -53,14 +40,60 @@ function ListResponse<T extends z.ZodType>(itemSchema: T) {
   })
 }
 
+// MARK: - OpenAPI discriminator injection
+
+/**
+ * Walk an OpenAPI spec and add `discriminator: { propertyName: "type" }` to
+ * every `oneOf` whose variants all define a `type` property with a single enum value.
+ * Needed because @hono/zod-openapi doesn't emit discriminator metadata from z.discriminatedUnion.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function addDiscriminators(node: any): void {
+  if (node == null || typeof node !== 'object') return
+  if (Array.isArray(node)) {
+    for (const item of node) addDiscriminators(item)
+    return
+  }
+  if (Array.isArray(node.oneOf)) {
+    const allHaveTypeEnum = node.oneOf.every(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v: any) =>
+        v?.type === 'object' &&
+        v?.properties?.type?.enum?.length === 1
+    )
+    if (allHaveTypeEnum && !node.discriminator) {
+      node.discriminator = { propertyName: 'type' }
+    }
+  }
+  for (const value of Object.values(node)) {
+    addDiscriminators(value)
+  }
+}
+
 // MARK: - App factory
 
 export interface AppOptions {
   temporal: TemporalOptions
+  resolver: ConnectorResolver
 }
 
 export function createApp(options: AppOptions) {
   const bridge = new TemporalBridge(options.temporal.client, options.temporal.taskQueue)
+  const {
+    Pipeline: PipelineSchema,
+    CreatePipeline: CreatePipelineSchema,
+    UpdatePipeline: UpdatePipelineSchema,
+  } = createSchemas(options.resolver)
+
+  const PipelineWithStatusSchema = PipelineSchema.extend({
+    status: z
+      .object({
+        phase: z.string(),
+        paused: z.boolean(),
+        iteration: z.number(),
+      })
+      .optional(),
+  })
 
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -258,8 +291,8 @@ export function createApp(options: AppOptions) {
   // MARK: - OpenAPI spec + Swagger UI
 
   app.get('/openapi.json', (c) => {
-    const spec = app.getOpenAPIDocument({
-      openapi: '3.0.0',
+    const spec = app.getOpenAPI31Document({
+      openapi: '3.1.0',
       info: {
         title: 'Stripe Sync Service',
         version: '1.0.0',
@@ -267,6 +300,9 @@ export function createApp(options: AppOptions) {
       },
     })
     spec.info.description += '\n\n## Endpoints\n\n' + endpointTable(spec)
+    // @hono/zod-openapi doesn't emit discriminator for z.discriminatedUnion —
+    // walk the spec and inject it wherever oneOf variants share a `type` enum.
+    addDiscriminators(spec)
     return c.json(spec)
   })
 

@@ -29,8 +29,11 @@
     "@hono/node-server": "^1",
     "@hono/zod-openapi": "^1.2",
     "@scalar/hono-api-reference": "^0.6",
+    "@stripe/sync-destination-google-sheets": "workspace:*",
+    "@stripe/sync-destination-postgres": "workspace:*",
     "@stripe/sync-engine": "workspace:*",
     "@stripe/sync-protocol": "workspace:*",
+    "@stripe/sync-source-stripe": "workspace:*",
     "@stripe/sync-ts-cli": "workspace:*",
     "@temporalio/activity": "^1",
     "@temporalio/client": "^1",
@@ -46,8 +49,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@stripe/sync-destination-postgres": "workspace:*",
-    "@stripe/sync-source-stripe": "workspace:*",
     "@temporalio/testing": "^1",
     "@types/node": "^24.10.1",
     "openapi-typescript": "^7",

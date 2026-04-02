@@ -146,12 +146,21 @@ importers:
       '@scalar/hono-api-reference':
         specifier: ^0.6
         version: 0.6.0(hono@4.12.8)
+      '@stripe/sync-destination-google-sheets':
+        specifier: workspace:*
+        version: link:../../packages/destination-google-sheets
+      '@stripe/sync-destination-postgres':
+        specifier: workspace:*
+        version: link:../../packages/destination-postgres
       '@stripe/sync-engine':
         specifier: workspace:*
         version: link:../engine
       '@stripe/sync-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@stripe/sync-source-stripe':
+        specifier: workspace:*
+        version: link:../../packages/source-stripe
       '@stripe/sync-ts-cli':
         specifier: workspace:*
         version: link:../../packages/ts-cli
@@ -192,12 +201,6 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@stripe/sync-destination-postgres':
-        specifier: workspace:*
-        version: link:../../packages/destination-postgres
-      '@stripe/sync-source-stripe':
-        specifier: workspace:*
-        version: link:../../packages/source-stripe
       '@temporalio/testing':
         specifier: ^1
         version: 1.15.0(tslib@2.8.1)
