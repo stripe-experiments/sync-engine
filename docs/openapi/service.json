@@ -13,9 +13,7 @@
     "/health": {
       "get": {
         "operationId": "health",
-        "tags": [
-          "Status"
-        ],
+        "tags": ["Status"],
         "summary": "Health check",
         "responses": {
           "200": {
@@ -27,14 +25,10 @@
                   "properties": {
                     "ok": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }
@@ -45,9 +39,7 @@
     "/pipelines": {
       "get": {
         "operationId": "listPipelines",
-        "tags": [
-          "Pipelines"
-        ],
+        "tags": ["Pipelines"],
         "summary": "List pipelines",
         "responses": {
           "200": {
@@ -72,9 +64,7 @@
                                 "type": "string"
                               }
                             },
-                            "required": [
-                              "name"
-                            ],
+                            "required": ["name"],
                             "additionalProperties": {
                               "nullable": true
                             }
@@ -86,9 +76,7 @@
                                 "type": "string"
                               }
                             },
-                            "required": [
-                              "name"
-                            ],
+                            "required": ["name"],
                             "additionalProperties": {
                               "nullable": true
                             }
@@ -103,33 +91,21 @@
                                 },
                                 "sync_mode": {
                                   "type": "string",
-                                  "enum": [
-                                    "incremental",
-                                    "full_refresh"
-                                  ]
+                                  "enum": ["incremental", "full_refresh"]
                                 }
                               },
-                              "required": [
-                                "name"
-                              ]
+                              "required": ["name"]
                             }
                           }
                         },
-                        "required": [
-                          "id",
-                          "source",
-                          "destination"
-                        ]
+                        "required": ["id", "source", "destination"]
                       }
                     },
                     "has_more": {
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "data",
-                    "has_more"
-                  ]
+                  "required": ["data", "has_more"]
                 }
               }
             }
@@ -138,9 +114,7 @@
       },
       "post": {
         "operationId": "createPipeline",
-        "tags": [
-          "Pipelines"
-        ],
+        "tags": ["Pipelines"],
         "summary": "Create pipeline",
         "requestBody": {
           "content": {
@@ -155,9 +129,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name"
-                    ],
+                    "required": ["name"],
                     "additionalProperties": {
                       "nullable": true
                     }
@@ -169,9 +141,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name"
-                    ],
+                    "required": ["name"],
                     "additionalProperties": {
                       "nullable": true
                     }
@@ -186,22 +156,14 @@
                         },
                         "sync_mode": {
                           "type": "string",
-                          "enum": [
-                            "incremental",
-                            "full_refresh"
-                          ]
+                          "enum": ["incremental", "full_refresh"]
                         }
                       },
-                      "required": [
-                        "name"
-                      ]
+                      "required": ["name"]
                     }
                   }
                 },
-                "required": [
-                  "source",
-                  "destination"
-                ]
+                "required": ["source", "destination"]
               }
             }
           }
@@ -224,9 +186,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "name"
-                      ],
+                      "required": ["name"],
                       "additionalProperties": {
                         "nullable": true
                       }
@@ -238,9 +198,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "name"
-                      ],
+                      "required": ["name"],
                       "additionalProperties": {
                         "nullable": true
                       }
@@ -255,23 +213,14 @@
                           },
                           "sync_mode": {
                             "type": "string",
-                            "enum": [
-                              "incremental",
-                              "full_refresh"
-                            ]
+                            "enum": ["incremental", "full_refresh"]
                           }
                         },
-                        "required": [
-                          "name"
-                        ]
+                        "required": ["name"]
                       }
                     }
                   },
-                  "required": [
-                    "id",
-                    "source",
-                    "destination"
-                  ]
+                  "required": ["id", "source", "destination"]
                 }
               }
             }
@@ -297,9 +246,7 @@
     "/pipelines/{id}": {
       "get": {
         "operationId": "getPipeline",
-        "tags": [
-          "Pipelines"
-        ],
+        "tags": ["Pipelines"],
         "summary": "Retrieve pipeline",
         "parameters": [
           {
@@ -330,9 +277,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "name"
-                      ],
+                      "required": ["name"],
                       "additionalProperties": {
                         "nullable": true
                       }
@@ -344,9 +289,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "name"
-                      ],
+                      "required": ["name"],
                       "additionalProperties": {
                         "nullable": true
                       }
@@ -361,15 +304,10 @@
                           },
                           "sync_mode": {
                             "type": "string",
-                            "enum": [
-                              "incremental",
-                              "full_refresh"
-                            ]
+                            "enum": ["incremental", "full_refresh"]
                           }
                         },
-                        "required": [
-                          "name"
-                        ]
+                        "required": ["name"]
                       }
                     },
                     "status": {
@@ -385,18 +323,10 @@
                           "type": "number"
                         }
                       },
-                      "required": [
-                        "phase",
-                        "paused",
-                        "iteration"
-                      ]
+                      "required": ["phase", "paused", "iteration"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "source",
-                    "destination"
-                  ]
+                  "required": ["id", "source", "destination"]
                 }
               }
             }
@@ -420,9 +350,7 @@
       },
       "patch": {
         "operationId": "updatePipeline",
-        "tags": [
-          "Pipelines"
-        ],
+        "tags": ["Pipelines"],
         "summary": "Update pipeline",
         "description": "Update pipeline config. Include `{ \"paused\": true }` to pause or `{ \"paused\": false }` to resume.",
         "parameters": [
@@ -449,9 +377,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name"
-                    ],
+                    "required": ["name"],
                     "additionalProperties": {
                       "nullable": true
                     }
@@ -463,9 +389,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name"
-                    ],
+                    "required": ["name"],
                     "additionalProperties": {
                       "nullable": true
                     }
@@ -480,15 +404,10 @@
                         },
                         "sync_mode": {
                           "type": "string",
-                          "enum": [
-                            "incremental",
-                            "full_refresh"
-                          ]
+                          "enum": ["incremental", "full_refresh"]
                         }
                       },
-                      "required": [
-                        "name"
-                      ]
+                      "required": ["name"]
                     }
                   }
                 }
@@ -506,14 +425,10 @@
                   "properties": {
                     "ok": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }
@@ -537,9 +452,7 @@
       },
       "delete": {
         "operationId": "deletePipeline",
-        "tags": [
-          "Pipelines"
-        ],
+        "tags": ["Pipelines"],
         "summary": "Delete pipeline",
         "parameters": [
           {
@@ -565,15 +478,10 @@
                     },
                     "deleted": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "id",
-                    "deleted"
-                  ]
+                  "required": ["id", "deleted"]
                 }
               }
             }
@@ -599,9 +507,7 @@
     "/webhooks/{pipeline_id}": {
       "post": {
         "operationId": "pushWebhook",
-        "tags": [
-          "Webhooks"
-        ],
+        "tags": ["Webhooks"],
         "summary": "Ingest a Stripe webhook event",
         "description": "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
         "parameters": [
@@ -622,9 +528,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "enum": [
-                    "ok"
-                  ]
+                  "enum": ["ok"]
                 }
               }
             }

@@ -4,394 +4,394 @@
  */
 
 export interface paths {
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Health check */
-        get: operations["health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/pipelines": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List pipelines */
-        get: operations["listPipelines"];
-        put?: never;
-        /** Create pipeline */
-        post: operations["createPipeline"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/pipelines/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Retrieve pipeline */
-        get: operations["getPipeline"];
-        put?: never;
-        post?: never;
-        /** Delete pipeline */
-        delete: operations["deletePipeline"];
-        options?: never;
-        head?: never;
-        /**
-         * Update pipeline
-         * @description Update pipeline config. Include `{ "paused": true }` to pause or `{ "paused": false }` to resume.
-         */
-        patch: operations["updatePipeline"];
-        trace?: never;
-    };
-    "/webhooks/{pipeline_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ingest a Stripe webhook event
-         * @description Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.
-         */
-        post: operations["pushWebhook"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
+  '/health': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Health check */
+    get: operations['health']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pipelines': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List pipelines */
+    get: operations['listPipelines']
+    put?: never
+    /** Create pipeline */
+    post: operations['createPipeline']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pipelines/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Retrieve pipeline */
+    get: operations['getPipeline']
+    put?: never
+    post?: never
+    /** Delete pipeline */
+    delete: operations['deletePipeline']
+    options?: never
+    head?: never
+    /**
+     * Update pipeline
+     * @description Update pipeline config. Include `{ "paused": true }` to pause or `{ "paused": false }` to resume.
+     */
+    patch: operations['updatePipeline']
+    trace?: never
+  }
+  '/webhooks/{pipeline_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Ingest a Stripe webhook event
+     * @description Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.
+     */
+    post: operations['pushWebhook']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
-export type webhooks = Record<string, never>;
+export type webhooks = Record<string, never>
 export interface components {
-    schemas: never;
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+  schemas: never
+  responses: never
+  parameters: never
+  requestBodies: never
+  headers: never
+  pathItems: never
 }
-export type $defs = Record<string, never>;
+export type $defs = Record<string, never>
 export interface operations {
-    health: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server is healthy */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                    };
-                };
-            };
-        };
-    };
-    listPipelines: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of pipelines */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: {
-                            id: string;
-                            source: {
-                                name: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                            destination: {
-                                name: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                            streams?: {
-                                name: string;
-                                /** @enum {string} */
-                                sync_mode?: "incremental" | "full_refresh";
-                            }[];
-                        }[];
-                        has_more: boolean;
-                    };
-                };
-            };
-        };
-    };
-    createPipeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    source: {
-                        name: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    destination: {
-                        name: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    streams?: {
-                        name: string;
-                        /** @enum {string} */
-                        sync_mode?: "incremental" | "full_refresh";
-                    }[];
-                };
-            };
-        };
-        responses: {
-            /** @description Created pipeline */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        id: string;
-                        source: {
-                            name: string;
-                        } & {
-                            [key: string]: unknown;
-                        };
-                        destination: {
-                            name: string;
-                        } & {
-                            [key: string]: unknown;
-                        };
-                        streams?: {
-                            name: string;
-                            /** @enum {string} */
-                            sync_mode?: "incremental" | "full_refresh";
-                        }[];
-                    };
-                };
-            };
-            /** @description Invalid input */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: unknown;
-                    };
-                };
-            };
-        };
-    };
-    getPipeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Retrieved pipeline with status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        id: string;
-                        source: {
-                            name: string;
-                        } & {
-                            [key: string]: unknown;
-                        };
-                        destination: {
-                            name: string;
-                        } & {
-                            [key: string]: unknown;
-                        };
-                        streams?: {
-                            name: string;
-                            /** @enum {string} */
-                            sync_mode?: "incremental" | "full_refresh";
-                        }[];
-                        status?: {
-                            phase: string;
-                            paused: boolean;
-                            iteration: number;
-                        };
-                    };
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: unknown;
-                    };
-                };
-            };
-        };
-    };
-    deletePipeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted pipeline */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        id: string;
-                        /** @enum {boolean} */
-                        deleted: true;
-                    };
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: unknown;
-                    };
-                };
-            };
-        };
-    };
-    updatePipeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    source?: {
-                        name: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    destination?: {
-                        name: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    streams?: {
-                        name: string;
-                        /** @enum {string} */
-                        sync_mode?: "incremental" | "full_refresh";
-                    }[];
-                };
-            };
-        };
-        responses: {
-            /** @description Update signal sent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                    };
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: unknown;
-                    };
-                };
-            };
-        };
-    };
-    pushWebhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                pipeline_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Event accepted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": "ok";
-                };
-            };
-        };
-    };
+  health: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server is healthy */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @enum {boolean} */
+            ok: true
+          }
+        }
+      }
+    }
+  }
+  listPipelines: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of pipelines */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            data: {
+              id: string
+              source: {
+                name: string
+              } & {
+                [key: string]: unknown
+              }
+              destination: {
+                name: string
+              } & {
+                [key: string]: unknown
+              }
+              streams?: {
+                name: string
+                /** @enum {string} */
+                sync_mode?: 'incremental' | 'full_refresh'
+              }[]
+            }[]
+            has_more: boolean
+          }
+        }
+      }
+    }
+  }
+  createPipeline: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': {
+          source: {
+            name: string
+          } & {
+            [key: string]: unknown
+          }
+          destination: {
+            name: string
+          } & {
+            [key: string]: unknown
+          }
+          streams?: {
+            name: string
+            /** @enum {string} */
+            sync_mode?: 'incremental' | 'full_refresh'
+          }[]
+        }
+      }
+    }
+    responses: {
+      /** @description Created pipeline */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            id: string
+            source: {
+              name: string
+            } & {
+              [key: string]: unknown
+            }
+            destination: {
+              name: string
+            } & {
+              [key: string]: unknown
+            }
+            streams?: {
+              name: string
+              /** @enum {string} */
+              sync_mode?: 'incremental' | 'full_refresh'
+            }[]
+          }
+        }
+      }
+      /** @description Invalid input */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            error?: unknown
+          }
+        }
+      }
+    }
+  }
+  getPipeline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Retrieved pipeline with status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            id: string
+            source: {
+              name: string
+            } & {
+              [key: string]: unknown
+            }
+            destination: {
+              name: string
+            } & {
+              [key: string]: unknown
+            }
+            streams?: {
+              name: string
+              /** @enum {string} */
+              sync_mode?: 'incremental' | 'full_refresh'
+            }[]
+            status?: {
+              phase: string
+              paused: boolean
+              iteration: number
+            }
+          }
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            error?: unknown
+          }
+        }
+      }
+    }
+  }
+  deletePipeline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Deleted pipeline */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            id: string
+            /** @enum {boolean} */
+            deleted: true
+          }
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            error?: unknown
+          }
+        }
+      }
+    }
+  }
+  updatePipeline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': {
+          source?: {
+            name: string
+          } & {
+            [key: string]: unknown
+          }
+          destination?: {
+            name: string
+          } & {
+            [key: string]: unknown
+          }
+          streams?: {
+            name: string
+            /** @enum {string} */
+            sync_mode?: 'incremental' | 'full_refresh'
+          }[]
+        }
+      }
+    }
+    responses: {
+      /** @description Update signal sent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @enum {boolean} */
+            ok: true
+          }
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            error?: unknown
+          }
+        }
+      }
+    }
+  }
+  pushWebhook: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        pipeline_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Event accepted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'text/plain': 'ok'
+        }
+      }
+    }
+  }
 }
