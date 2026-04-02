@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import createClient from 'openapi-fetch'
 import type { WorkflowClient } from '@temporalio/client'
 import { createApp } from './app.js'
+import type { paths } from '../__generated__/openapi.js'
 import type { Pipeline } from '../lib/schemas.js'
 
 // ---------------------------------------------------------------------------
-// Mock Temporal client — in-memory pipeline storage
+// In-memory Temporal client (backs the app without a real Temporal server)
 // ---------------------------------------------------------------------------
 
-function mockWorkflowClient(): WorkflowClient {
+function inMemoryWorkflowClient(): WorkflowClient {
   const store = new Map<string, { pipeline: Pipeline; paused: boolean }>()
 
   return {
@@ -60,10 +62,16 @@ function mockWorkflowClient(): WorkflowClient {
   } as unknown as WorkflowClient
 }
 
-function app() {
-  return createApp({
-    temporal: { client: mockWorkflowClient(), taskQueue: 'test' },
+/** Create a typed openapi-fetch client backed by the Hono app's fetch. */
+function createTestClient() {
+  const app = createApp({
+    temporal: { client: inMemoryWorkflowClient(), taskQueue: 'test' },
   })
+  const client = createClient<paths>({
+    baseUrl: 'http://localhost',
+    fetch: app.fetch as unknown as typeof globalThis.fetch,
+  })
+  return { app, client }
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +80,8 @@ function app() {
 
 describe('GET /openapi.json', () => {
   it('returns a valid OpenAPI 3.0 spec', async () => {
-    const res = await app().request('/openapi.json')
+    const { app } = createTestClient()
+    const res = await app.request('/openapi.json')
     expect(res.status).toBe(200)
     const spec = await res.json()
     expect(spec.openapi).toBe('3.0.0')
@@ -81,7 +90,8 @@ describe('GET /openapi.json', () => {
   })
 
   it('includes pipeline and webhook paths', async () => {
-    const res = await app().request('/openapi.json')
+    const { app } = createTestClient()
+    const res = await app.request('/openapi.json')
     const spec = (await res.json()) as { paths: Record<string, unknown> }
     const paths = Object.keys(spec.paths)
 
@@ -91,7 +101,8 @@ describe('GET /openapi.json', () => {
   })
 
   it('does not include removed pipeline operation paths', async () => {
-    const res = await app().request('/openapi.json')
+    const { app } = createTestClient()
+    const res = await app.request('/openapi.json')
     const spec = (await res.json()) as { paths: Record<string, unknown> }
     const paths = Object.keys(spec.paths)
 
@@ -108,7 +119,8 @@ describe('GET /openapi.json', () => {
 
 describe('GET /docs', () => {
   it('returns HTML (Scalar API reference)', async () => {
-    const res = await app().request('/docs')
+    const { app } = createTestClient()
+    const res = await app.request('/docs')
     expect(res.status).toBe(200)
     const contentType = res.headers.get('content-type') ?? ''
     expect(contentType).toContain('text/html')
@@ -121,9 +133,10 @@ describe('GET /docs', () => {
 
 describe('GET /health', () => {
   it('returns ok', async () => {
-    const res = await app().request('/health')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
+    const { client } = createTestClient()
+    const { data, error } = await client.GET('/health')
+    expect(error).toBeUndefined()
+    expect(data).toEqual({ ok: true })
   })
 })
 
@@ -133,63 +146,63 @@ describe('GET /health', () => {
 
 describe('pipelines', () => {
   it('create → get → list → update → delete', async () => {
-    const a = app()
+    const { client } = createTestClient()
 
     // Create pipeline
-    const createRes = await a.request('/pipelines', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const { data: created, error: createErr } = await client.POST('/pipelines', {
+      body: {
         source: { name: 'stripe', api_key: 'sk_test_123' },
         destination: { name: 'postgres', connection_string: 'postgres://localhost/db' },
         streams: [{ name: 'customers' }],
-      }),
+      },
     })
-    expect(createRes.status).toBe(201)
-    const created = (await createRes.json()) as any
-    expect(created.id).toMatch(/^pipe_/)
-    expect(created.source.name).toBe('stripe')
+    expect(createErr).toBeUndefined()
+    expect(created!.id).toMatch(/^pipe_/)
+    expect(created!.source.name).toBe('stripe')
 
-    const pipelineId = created.id
+    const pipelineId = created!.id
 
     // Get (includes status from query)
-    const getRes = await a.request(`/pipelines/${pipelineId}`)
-    expect(getRes.status).toBe(200)
-    const got = (await getRes.json()) as any
-    expect(got.status.phase).toBe('running')
+    const { data: got, error: getErr } = await client.GET('/pipelines/{id}', {
+      params: { path: { id: pipelineId } },
+    })
+    expect(getErr).toBeUndefined()
+    expect(got!.status?.phase).toBe('running')
 
     // List
-    const listRes = await a.request('/pipelines')
-    expect(listRes.status).toBe(200)
-    const list = (await listRes.json()) as any
-    expect(list.data).toHaveLength(1)
-    expect(list.has_more).toBe(false)
+    const { data: list, error: listErr } = await client.GET('/pipelines')
+    expect(listErr).toBeUndefined()
+    expect(list!.data).toHaveLength(1)
+    expect(list!.has_more).toBe(false)
 
     // Update
-    const updateRes = await a.request(`/pipelines/${pipelineId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        streams: [{ name: 'products' }],
-      }),
+    const { data: updated, error: updateErr } = await client.PATCH('/pipelines/{id}', {
+      params: { path: { id: pipelineId } },
+      body: { streams: [{ name: 'products' }] },
     })
-    expect(updateRes.status).toBe(200)
+    expect(updateErr).toBeUndefined()
+    expect(updated).toEqual({ ok: true })
 
     // Delete
-    const deleteRes = await a.request(`/pipelines/${pipelineId}`, {
-      method: 'DELETE',
+    const { data: deleted, error: deleteErr } = await client.DELETE('/pipelines/{id}', {
+      params: { path: { id: pipelineId } },
     })
-    expect(deleteRes.status).toBe(200)
-    expect(await deleteRes.json()).toEqual({ id: pipelineId, deleted: true })
+    expect(deleteErr).toBeUndefined()
+    expect(deleted).toEqual({ id: pipelineId, deleted: true })
 
     // Get after delete → 404
-    const getAfterDelete = await a.request(`/pipelines/${pipelineId}`)
-    expect(getAfterDelete.status).toBe(404)
+    const { error: notFoundErr } = await client.GET('/pipelines/{id}', {
+      params: { path: { id: pipelineId } },
+    })
+    expect(notFoundErr).toBeDefined()
   })
 
   it('returns 404 for non-existent pipeline', async () => {
-    const res = await app().request('/pipelines/pipe_nope')
-    expect(res.status).toBe(404)
+    const { client } = createTestClient()
+    const { error } = await client.GET('/pipelines/{id}', {
+      params: { path: { id: 'pipe_nope' } },
+    })
+    expect(error).toBeDefined()
   })
 })
 
@@ -199,12 +212,13 @@ describe('pipelines', () => {
 
 describe('POST /webhooks/:pipeline_id', () => {
   it('accepts webhook events and returns ok', async () => {
-    const res = await app().request('/webhooks/pipe_abc123', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'checkout.session.completed' }),
+    const { client } = createTestClient()
+    const { data, response } = await client.POST('/webhooks/{pipeline_id}', {
+      params: { path: { pipeline_id: 'pipe_abc123' } },
+      body: { type: 'checkout.session.completed' } as any,
+      parseAs: 'text',
     })
-    expect(res.status).toBe(200)
-    expect(await res.text()).toBe('ok')
+    expect(response.status).toBe(200)
+    expect(data).toBe('ok')
   })
 })
