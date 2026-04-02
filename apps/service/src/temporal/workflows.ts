@@ -10,7 +10,7 @@ import {
 
 import type { SyncActivities } from './activities.js'
 import type { WorkflowStatus } from './types.js'
-import { deepEqual, CONTINUE_AS_NEW_THRESHOLD, EVENT_BATCH_SIZE, retryPolicy } from './utils.js'
+import { deepEqual, CONTINUE_AS_NEW_THRESHOLD, EVENT_BATCH_SIZE, retryPolicy } from '../lib/utils.js'
 
 // Setup/teardown: 2m with retry
 const { setup, teardown } = proxyActivities<SyncActivities>({
