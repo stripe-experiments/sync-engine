@@ -61,7 +61,7 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: POSTGRES_URL })
     await pool.query('SELECT 1')
-    stripe = new Stripe(STRIPE_API_KEY)
+    stripe = new Stripe(STRIPE_API_KEY, { maxNetworkRetries: 3 })
     const account = await stripe.accounts.retrieve()
     const isTest = STRIPE_API_KEY.startsWith('sk_test_')
     const dashPrefix = isTest ? 'dashboard.stripe.com/test' : 'dashboard.stripe.com'
