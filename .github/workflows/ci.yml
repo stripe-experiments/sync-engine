@@ -86,7 +86,7 @@ jobs:
         run: bash e2e/stripe-mock.test.sh
 
       - name: Tests
-        run: pnpm test
+        run: pnpm --filter '!@stripe/sync-e2e' test
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&search_path=stripe'
           POSTGRES_URL: 'postgres://postgres:postgres@localhost:55432/postgres'
