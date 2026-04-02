@@ -2,7 +2,11 @@ import { heartbeat } from '@temporalio/activity'
 import { createRemoteEngine } from '@stripe/sync-engine'
 import type { PipelineConfig, Message } from '@stripe/sync-engine'
 import { Kafka } from 'kafkajs'
-import type { RunResult } from './types.js'
+
+export interface RunResult {
+  errors: Array<{ message: string; failure_type?: string; stream?: string }>
+  state: Record<string, unknown>
+}
 
 /** Convert an array to an async iterable. */
 async function* asIterable<T>(items: T[]): AsyncIterable<T> {

@@ -12,25 +12,18 @@ export type {
   LogEntry,
 } from './lib/createSchemas.js'
 
-// Temporal bridge
-export { TemporalBridge } from './temporal/bridge.js'
-export type { TemporalOptions } from './temporal/bridge.js'
-
 // API app factory
 export { createApp } from './api/app.js'
 export type { AppOptions } from './api/app.js'
 
-// Typed HTTP client for the service API
-export { createServiceClient } from './lib/service-client.js'
-export type { ServiceClient } from './lib/service-client.js'
 
 // Standalone webhook ingress app
 export { createWebhookApp } from './api/webhook-app.js'
 export type { WebhookAppOptions } from './api/webhook-app.js'
 
 // Temporal workflow types (for consumers that need to reference them)
-export type { RunResult, WorkflowStatus } from './temporal/types.js'
 export { createActivities } from './temporal/activities.js'
-export type { SyncActivities } from './temporal/activities.js'
+export type { SyncActivities, RunResult } from './temporal/activities.js'
+export type { WorkflowStatus } from './temporal/workflows.js'
 export { createWorker } from './temporal/worker.js'
 export type { WorkerOptions } from './temporal/worker.js'

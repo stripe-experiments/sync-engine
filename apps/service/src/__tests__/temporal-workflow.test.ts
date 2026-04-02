@@ -4,7 +4,7 @@ import { Worker } from '@temporalio/worker'
 import path from 'node:path'
 import type { PipelineConfig } from '@stripe/sync-engine'
 import type { SyncActivities } from '../temporal/activities.js'
-import type { RunResult } from '../temporal/types.js'
+import type { RunResult } from '../temporal/activities.js'
 
 // workflowsPath must point to compiled JS (Temporal bundles it for V8 sandbox)
 const workflowsPath = path.resolve(process.cwd(), 'dist/temporal/workflows.js')

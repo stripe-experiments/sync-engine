@@ -1,11 +1,10 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { apiReference } from '@scalar/hono-api-reference'
+import type { WorkflowClient } from '@temporalio/client'
 import type { ConnectorResolver } from '@stripe/sync-engine'
 import { createSchemas } from '../lib/createSchemas.js'
 import type { Pipeline } from '../lib/createSchemas.js'
-import type { TemporalOptions } from '../temporal/bridge.js'
-import { TemporalBridge } from '../temporal/bridge.js'
-import { mountWebhookRoutes } from './webhook-app.js'
+import type { WorkflowStatus } from '../temporal/workflows.js'
 
 // MARK: - Helpers
 
@@ -73,12 +72,12 @@ function addDiscriminators(node: any): void {
 // MARK: - App factory
 
 export interface AppOptions {
-  temporal: TemporalOptions
+  temporal: { client: WorkflowClient; taskQueue: string }
   resolver: ConnectorResolver
 }
 
 export function createApp(options: AppOptions) {
-  const bridge = new TemporalBridge(options.temporal.client, options.temporal.taskQueue)
+  const { client: temporal, taskQueue } = options.temporal
   const {
     Pipeline: PipelineSchema,
     CreatePipeline: CreatePipelineSchema,
@@ -149,8 +148,12 @@ export function createApp(options: AppOptions) {
       },
     }),
     async (c) => {
-      const list = await bridge.list()
-      return c.json({ data: list, has_more: false } as any, 200)
+      const pipelines: Pipeline[] = []
+      for await (const wf of temporal.list({ query: `WorkflowType = 'pipelineWorkflow'` })) {
+        const memo = wf.memo as { pipeline?: Pipeline } | undefined
+        if (memo?.pipeline) pipelines.push(memo.pipeline)
+      }
+      return c.json({ data: pipelines, has_more: false } as any, 200)
     }
   )
 
@@ -181,7 +184,12 @@ export function createApp(options: AppOptions) {
       const body = c.req.valid('json')
       const id = genId('pipe')
       const pipeline = { id, ...(body as Record<string, unknown>) } as Pipeline
-      await bridge.start(pipeline)
+      await temporal.start('pipelineWorkflow', {
+        workflowId: id,
+        taskQueue,
+        args: [pipeline],
+        memo: { pipeline },
+      })
       return c.json(pipeline as any, 201)
     }
   )
@@ -208,7 +216,11 @@ export function createApp(options: AppOptions) {
     async (c) => {
       const { id } = c.req.valid('param')
       try {
-        const { pipeline, status } = await bridge.get(id)
+        const handle = temporal.getHandle(id)
+        const [pipeline, status] = await Promise.all([
+          handle.query<Pipeline>('config'),
+          handle.query<WorkflowStatus>('status'),
+        ])
         return c.json({ ...pipeline, status } as any, 200)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
@@ -246,7 +258,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
       const patch = c.req.valid('json')
       try {
-        await bridge.update(id, patch as Partial<Pipeline> & { paused?: boolean })
+        await temporal.getHandle(id).signal('update', patch)
         return c.json({ ok: true as const }, 200)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
@@ -276,7 +288,7 @@ export function createApp(options: AppOptions) {
     async (c) => {
       const { id } = c.req.valid('param')
       try {
-        await bridge.stop(id)
+        await temporal.getHandle(id).signal('delete')
         return c.json({ id, deleted: true as const }, 200)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
@@ -284,9 +296,40 @@ export function createApp(options: AppOptions) {
     }
   )
 
-  // MARK: - Webhook ingress (mounted from webhook-app.ts)
+  // MARK: - Webhook ingress
 
-  mountWebhookRoutes(app, (id, e) => bridge.pushEvent(id, e))
+  const WebhookParam = z.object({
+    pipeline_id: z.string().openapi({
+      param: { name: 'pipeline_id', in: 'path' },
+      example: 'pipe_abc123',
+    }),
+  })
+
+  app.openapi(
+    createRoute({
+      operationId: 'pushWebhook',
+      method: 'post',
+      path: '/webhooks/{pipeline_id}',
+      tags: ['Webhooks'],
+      summary: 'Ingest a Stripe webhook event',
+      description:
+        "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
+      request: { params: WebhookParam },
+      responses: {
+        200: {
+          content: { 'text/plain': { schema: z.literal('ok') } },
+          description: 'Event accepted',
+        },
+      },
+    }),
+    async (c) => {
+      const { pipeline_id } = c.req.valid('param')
+      const body = await c.req.text()
+      const headers = Object.fromEntries(c.req.raw.headers.entries())
+      temporal.getHandle(pipeline_id).signal('stripe_event', { body, headers }).catch(() => {})
+      return c.text('ok', 200)
+    }
+  )
 
   // MARK: - OpenAPI spec + Swagger UI
 
