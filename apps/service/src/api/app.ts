@@ -114,7 +114,7 @@ export function createApp(options: AppOptions) {
       // including failed/terminated so operators can see broken pipelines.
       const pipelines: Array<Pipeline & { status?: WorkflowStatus }> = []
       for await (const wf of temporal.list({
-        query: `WorkflowType = 'pipelineWorkflow' AND ExecutionStatus != 'Completed'`,
+        query: `WorkflowType = 'pipelineWorkflow' AND ExecutionStatus IN ('Running', 'Failed', 'Terminated', 'TimedOut', 'Canceled')`,
       })) {
         try {
           const handle = temporal.getHandle(wf.workflowId)
@@ -365,17 +365,31 @@ export function createApp(options: AppOptions) {
           content: { 'application/json': { schema: ErrorSchema } },
           description: 'Not found',
         },
+        500: {
+          content: { 'application/json': { schema: ErrorSchema } },
+          description: 'Teardown or deletion failed',
+        },
       },
     }),
     async (c) => {
       const { id } = c.req.valid('param')
       try {
         const handle = temporal.getHandle(id)
+        // Verify the workflow exists and is running before signaling
+        const desc = await handle.describe()
+        if (desc.status.name === 'COMPLETED') {
+          return c.json({ error: `Pipeline ${id} not found` }, 404)
+        }
         await handle.signal('delete')
         await handle.result()
         return c.json({ id, deleted: true as const }, 200)
-      } catch {
-        return c.json({ error: `Pipeline ${id} not found` }, 404)
+      } catch (err) {
+        // WorkflowNotFoundError → 404; teardown/other failures → 500
+        const message = err instanceof Error ? err.message : String(err)
+        if (message.includes('not found') || message.includes('NOT_FOUND')) {
+          return c.json({ error: `Pipeline ${id} not found` }, 404)
+        }
+        return c.json({ error: `Failed to delete pipeline ${id}: ${message}` }, 500)
       }
     }
   )

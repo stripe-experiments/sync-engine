@@ -1724,6 +1724,21 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Teardown or deletion failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }

@@ -197,10 +197,13 @@ export function createStripeSource(
       if (config.webhook_url) {
         const stripe = makeClient(config)
         const existing = await stripe.webhookEndpoints.list({ limit: 100 })
-        for (const wh of existing.data) {
-          if (wh.metadata?.managed_by === 'stripe-sync') {
-            await stripe.webhookEndpoints.del(wh.id)
-          }
+        // Only delete the endpoint matching THIS pipeline's URL — not all managed endpoints.
+        // Other pipelines on the same account may share the managed_by tag with different URLs.
+        const target = existing.data.find(
+          (wh) => wh.url === config.webhook_url && wh.metadata?.managed_by === 'stripe-sync'
+        )
+        if (target) {
+          await stripe.webhookEndpoints.del(target.id)
         }
       }
     },
