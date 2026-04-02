@@ -2,21 +2,12 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { apiReference } from '@scalar/hono-api-reference'
 import type { WorkflowClient } from '@temporalio/client'
 import type { ConnectorResolver } from '@stripe/sync-engine'
+import { endpointTable, addDiscriminators } from '@stripe/sync-engine/api/openapi-utils'
 import { createSchemas } from '../lib/createSchemas.js'
 import type { Pipeline } from '../lib/createSchemas.js'
 import type { WorkflowStatus } from '../temporal/workflows.js'
 
 // MARK: - Helpers
-
-function endpointTable(spec: { paths?: Record<string, unknown> }) {
-  const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete'])
-  const rows = Object.entries(spec.paths ?? {}).flatMap(([path, methods]) =>
-    Object.entries(methods as Record<string, { summary?: string }>)
-      .filter(([m]) => HTTP_METHODS.has(m))
-      .map(([method, op]) => `| ${method.toUpperCase()} | ${path} | ${op.summary ?? ''} |`)
-  )
-  return ['| Method | Path | Summary |', '|--------|------|---------|', ...rows].join('\n')
-}
 
 let _idCounter = Date.now()
 function genId(prefix: string): string {
@@ -37,36 +28,6 @@ function ListResponse<T extends z.ZodType>(itemSchema: T) {
     data: z.array(itemSchema),
     has_more: z.boolean(),
   })
-}
-
-// MARK: - OpenAPI discriminator injection
-
-/**
- * Walk an OpenAPI spec and add `discriminator: { propertyName: "type" }` to
- * every `oneOf` whose variants all define a `type` property with a single enum value.
- * Needed because @hono/zod-openapi doesn't emit discriminator metadata from z.discriminatedUnion.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function addDiscriminators(node: any): void {
-  if (node == null || typeof node !== 'object') return
-  if (Array.isArray(node)) {
-    for (const item of node) addDiscriminators(item)
-    return
-  }
-  if (Array.isArray(node.oneOf)) {
-    const allHaveTypeEnum = node.oneOf.every(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (v: any) =>
-        v?.type === 'object' &&
-        v?.properties?.type?.enum?.length === 1
-    )
-    if (allHaveTypeEnum && !node.discriminator) {
-      node.discriminator = { propertyName: 'type' }
-    }
-  }
-  for (const value of Object.values(node)) {
-    addDiscriminators(value)
-  }
 }
 
 // MARK: - App factory

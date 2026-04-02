@@ -11,6 +11,7 @@ import {
   parseNdjsonStream,
   PipelineConfig,
 } from '../lib/index.js'
+import { endpointTable, addDiscriminators, injectConnectorSchemas } from './openapi-utils.js'
 import {
   Message as MessageSchema,
   DestinationOutput as DestinationOutputSchema,
@@ -31,16 +32,6 @@ import {
 import { createHash } from 'node:crypto'
 
 // ── Helpers ─────────────────────────────────────────────────────
-
-function endpointTable(spec: { paths?: Record<string, unknown> }) {
-  const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete'])
-  const rows = Object.entries(spec.paths ?? {}).flatMap(([path, methods]) =>
-    Object.entries(methods as Record<string, { summary?: string }>)
-      .filter(([m]) => HTTP_METHODS.has(m))
-      .map(([method, op]) => `| ${method.toUpperCase()} | ${path} | ${op.summary ?? ''} |`)
-  )
-  return ['| Method | Path | Summary |', '|--------|------|---------|', ...rows].join('\n')
-}
 
 function syncRequestContext(params: SyncParams) {
   return {
@@ -103,49 +94,6 @@ async function* logApiStream<T>(
     )
     throw error
   }
-}
-
-// ── OpenAPI helpers ─────────────────────────────────────────────
-
-/**
- * Walk an OpenAPI spec and add `discriminator: { propertyName: "type" }` to
- * every `oneOf` whose variants all define a `type` property with a single
- * enum or const value. Handles both Zod v3 (`enum`) and Zod v4 (`const`).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function addDiscriminators(node: any): void {
-  if (node == null || typeof node !== 'object') return
-  if (Array.isArray(node)) {
-    for (const item of node) addDiscriminators(item)
-    return
-  }
-  if (Array.isArray(node.oneOf)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allHaveTypeDiscriminator = node.oneOf.every(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (v: any) =>
-        v?.type === 'object' &&
-        (v?.properties?.type?.enum?.length === 1 || v?.properties?.type?.const !== undefined)
-    )
-    if (allHaveTypeDiscriminator && !node.discriminator) {
-      node.discriminator = { propertyName: 'type' }
-    }
-  }
-  for (const value of Object.values(node)) {
-    addDiscriminators(value)
-  }
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
-function connectorSchemaName(name: string, role: 'Source' | 'Destination'): string {
-  const pascal = name
-    .split(/[-_]/)
-    .map((w) => capitalize(w))
-    .join('')
-  return `${pascal}${role}Config`
 }
 
 // ── App factory ────────────────────────────────────────────────
@@ -507,7 +455,7 @@ export function createApp(resolver: ConnectorResolver) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (async (c: any) => {
       const params = parseSyncParams(c)
-      const stateStore = await maybeDestinationStateStore(params.pipeline)
+      const stateStore = readonlyStateStore(params.state)
       const { engine, close } = await resolveEngineWithRateLimiter(params.pipeline, stateStore)
 
       const input = hasBody(c) ? parseNdjsonStream(c.req.raw.body!) : undefined
@@ -516,10 +464,7 @@ export function createApp(resolver: ConnectorResolver) {
         output = takeStateCheckpoints<DestinationOutput>(params.stateCheckpointLimit)(output)
       }
       return ndjsonResponse(
-        closeAfter(output, async () => {
-          await stateStore.close?.()
-          await close()
-        })
+        closeAfter(output, () => close())
       )
     }) as any
   )
@@ -578,107 +523,7 @@ export function createApp(resolver: ConnectorResolver) {
       },
     }) as any
 
-    // Inject typed connector config schemas into OpenAPI components
-    if (!spec.components) spec.components = {}
-    if (!spec.components.schemas) spec.components.schemas = {}
-
-    for (const [name, r] of resolver.sources()) {
-      const schema = JSON.parse(JSON.stringify(r.rawConfigJsonSchema))
-      schema.properties = { name: { type: 'string', enum: [name] }, ...(schema.properties ?? {}) }
-      schema.required = ['name', ...(schema.required ?? [])]
-      spec.components.schemas[connectorSchemaName(name, 'Source')] = schema
-    }
-
-    for (const [name, r] of resolver.destinations()) {
-      const schema = JSON.parse(JSON.stringify(r.rawConfigJsonSchema))
-      schema.properties = { name: { type: 'string', enum: [name] }, ...(schema.properties ?? {}) }
-      schema.required = ['name', ...(schema.required ?? [])]
-      spec.components.schemas[connectorSchemaName(name, 'Destination')] = schema
-    }
-
-    const sourceNames = [...resolver.sources().keys()]
-    if (sourceNames.length > 0) {
-      spec.components.schemas['SourceConfig'] = {
-        discriminator: { propertyName: 'name' },
-        oneOf: sourceNames.map((n) => ({
-          $ref: `#/components/schemas/${connectorSchemaName(n, 'Source')}`,
-        })),
-      }
-    }
-
-    const destNames = [...resolver.destinations().keys()]
-    if (destNames.length > 0) {
-      spec.components.schemas['DestinationConfig'] = {
-        discriminator: { propertyName: 'name' },
-        oneOf: destNames.map((n) => ({
-          $ref: `#/components/schemas/${connectorSchemaName(n, 'Destination')}`,
-        })),
-      }
-    }
-
-    spec.components.schemas['PipelineConfig'] = {
-      type: 'object',
-      required: ['source', 'destination'],
-      properties: {
-        source:
-          sourceNames.length > 0
-            ? { $ref: '#/components/schemas/SourceConfig' }
-            : {
-                type: 'object',
-                required: ['name'],
-                properties: { name: { type: 'string' } },
-                additionalProperties: true,
-              },
-        destination:
-          destNames.length > 0
-            ? { $ref: '#/components/schemas/DestinationConfig' }
-            : {
-                type: 'object',
-                required: ['name'],
-                properties: { name: { type: 'string' } },
-                additionalProperties: true,
-              },
-        streams: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['name'],
-            properties: {
-              name: { type: 'string' },
-              sync_mode: { type: 'string', enum: ['incremental', 'full_refresh'] },
-              fields: { type: 'array', items: { type: 'string' } },
-            },
-          },
-        },
-      },
-    }
-
-    // Annotate JSON-encoded headers with contentMediaType / contentSchema (OAS 3.1)
-    for (const [, methods] of Object.entries(spec.paths ?? {})) {
-      for (const [, op] of Object.entries(methods as Record<string, any>)) {
-        for (const param of op?.parameters ?? []) {
-          if (param.in !== 'header') continue
-          if (param.name === 'x-pipeline') {
-            param.schema = {
-              type: 'string',
-              contentMediaType: 'application/json',
-              contentSchema: { $ref: '#/components/schemas/PipelineConfig' },
-            }
-          } else if (param.name === 'x-state') {
-            param.schema = {
-              type: 'string',
-              contentMediaType: 'application/json',
-              contentSchema: {
-                type: 'object',
-                additionalProperties: true,
-                description: 'Per-stream cursor state keyed by stream name',
-              },
-            }
-          }
-        }
-      }
-    }
-
+    injectConnectorSchemas(spec, resolver)
     addDiscriminators(spec)
     spec.info.description += '\n\n## Endpoints\n\n' + endpointTable(spec)
     return c.json(spec)

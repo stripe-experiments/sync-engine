@@ -22,6 +22,11 @@
       "bun": "./src/api/app.ts",
       "types": "./dist/api/app.d.ts",
       "import": "./dist/api/app.js"
+    },
+    "./api/openapi-utils": {
+      "bun": "./src/api/openapi-utils.ts",
+      "types": "./dist/api/openapi-utils.d.ts",
+      "import": "./dist/api/openapi-utils.js"
     }
   },
   "scripts": {
