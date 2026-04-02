@@ -30,7 +30,12 @@ node -e "
 echo "Generating service OpenAPI spec..."
 node -e "
   import { createApp } from './apps/service/dist/api/app.js';
-  const app = createApp({ dataDir: '/tmp/sync-openapi-gen' });
+  const mockClient = {
+    start: async () => {},
+    getHandle: () => ({ signal: async () => {}, query: async () => ({}), terminate: async () => {} }),
+    list: async function* () {},
+  };
+  const app = createApp({ temporal: { client: mockClient, taskQueue: 'gen' } });
   const res = await app.request('/openapi.json');
   const spec = await res.json();
   process.stdout.write(JSON.stringify(spec, null, 2) + '\n');
