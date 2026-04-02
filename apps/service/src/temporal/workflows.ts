@@ -75,7 +75,7 @@ export async function pipelineWorkflow(
   const inputQueue: unknown[] = [...(opts?.inputQueue ?? [])]
   let iteration = 0
   let syncState: Record<string, unknown> = opts?.state ?? {}
-  let reconciled = false
+  let readComplete = false
   let pendingWrites = opts?.pendingWrites ?? false
 
   // Register signal handlers (must be before any await)
@@ -137,9 +137,10 @@ export async function pipelineWorkflow(
 
   if (opts?.mode === 'read-write') {
     // Concurrent read/write via Kafka queue — each loop runs at its own pace
-    // readCursor: internal pagination state for read (not persisted)
-    // syncState: official pipeline state, only updated after successful writes
-    let readCursor: Record<string, unknown> = { ...syncState }
+    // readState: pagination cursor for source reads (not persisted)
+    // writeState: persisted pipeline state, only updated after successful writes
+    let readState: Record<string, unknown> = { ...syncState }
+    let writeState: Record<string, unknown> = { ...syncState }
 
     async function readLoop(): Promise<void> {
       while (!deleted) {
@@ -155,16 +156,16 @@ export async function pipelineWorkflow(
           continue
         }
 
-        // Reconciliation: backfill one page → Kafka
-        if (!reconciled) {
-          const before = readCursor
-          const { count, state: cursorUpdate } = await read(pipelineId, {
-            state: readCursor,
+        // Backfill one page → Kafka
+        if (!readComplete) {
+          const before = readState
+          const { count, state: nextReadState } = await read(pipelineId, {
+            state: readState,
             stateLimit: 1,
           })
           if (count > 0) pendingWrites = true
-          readCursor = { ...readCursor, ...cursorUpdate }
-          reconciled = deepEqual(readCursor, before)
+          readState = { ...readState, ...nextReadState }
+          readComplete = deepEqual(readState, before)
           await tickIteration()
           continue
         }
@@ -182,12 +183,10 @@ export async function pipelineWorkflow(
         if (pendingWrites) {
           const result = await write(pipelineId, { maxBatch: 50 })
           pendingWrites = result.written > 0
-          // Only write results update the persisted pipeline state
-          syncState = { ...syncState, ...result.state }
+          writeState = { ...writeState, ...result.state }
           if (opts?.writeRps) await sleep(Math.ceil(1000 / opts.writeRps))
           await tickIteration()
         } else {
-          // Wait until there's something to write or we're done
           await condition(() => pendingWrites || deleted)
         }
       }
@@ -210,11 +209,11 @@ export async function pipelineWorkflow(
       }
 
       // 2. Reconciliation page
-      if (!reconciled) {
+      if (!readComplete) {
         const before = syncState
         const result = await sync(pipelineId, { state: syncState, stateLimit: 1 })
         syncState = { ...syncState, ...result.state }
-        reconciled = deepEqual(syncState, before)
+        readComplete = deepEqual(syncState, before)
         await tickIteration()
         continue
       }
