@@ -13,7 +13,7 @@
     "lint": "pnpm -r run lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "concurrently -n engine,service,worker,dashboard -c cyan,green,yellow,magenta \"PORT=4010 tsx apps/engine/src/api/index.ts\" \"tsx apps/service/src/bin/sync-service.ts serve --temporal-address localhost:7233 --port 4020\" \"tsx apps/service/src/bin/sync-service.ts worker --temporal-address localhost:7233 --engine-url http://localhost:4010\" \"pnpm --filter @stripe/sync-dashboard dev\"",
+    "dev": "concurrently -n engine,service,worker,dashboard -c cyan,green,yellow,magenta \"pnpm --filter @stripe/sync-engine dev\" \"pnpm --filter @stripe/sync-service dev:serve\" \"pnpm --filter @stripe/sync-service dev:worker\" \"pnpm --filter @stripe/sync-dashboard dev\"",
     "visualizer": "pnpm --filter @stripe/sync-visualizer dev"
   },
   "dependencies": {
