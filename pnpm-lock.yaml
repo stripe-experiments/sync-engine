@@ -216,6 +216,9 @@ importers:
       pg:
         specifier: ^8
         version: 8.16.3
+      stripe:
+        specifier: ^21.0.1
+        version: 21.0.1(@types/node@24.10.1)
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.1)
@@ -3834,6 +3837,15 @@ packages:
     engines: {node: '>=12.*'}
     peerDependencies:
       '@types/node': '>=12.x.x'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
+  stripe@21.0.1:
+    resolution: {integrity: sha512-ocv0j7dWttswDWV2XL/kb6+yiLpDXNXL3RQAOB5OB2kr49z0cEatdQc12+zP/j5nrXk6rAsT4N3y/NUvBbK7Pw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
     peerDependenciesMeta:
       '@types/node':
         optional: true
@@ -7863,6 +7875,10 @@ snapshots:
   stripe@18.5.0(@types/node@24.10.1):
     dependencies:
       qs: 6.14.0
+    optionalDependencies:
+      '@types/node': 24.10.1
+
+  stripe@21.0.1(@types/node@24.10.1):
     optionalDependencies:
       '@types/node': 24.10.1
 
