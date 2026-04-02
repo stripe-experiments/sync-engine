@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
 import createFetchClient from 'openapi-fetch'
+import pg from 'pg'
 import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import { createApp as createEngineApp, createConnectorResolver } from '@stripe/sync-engine'
@@ -21,7 +22,11 @@ const TEMPORAL_ADDRESS = process.env['TEMPORAL_ADDRESS'] ?? 'localhost:7233'
 const STRIPE_API_KEY = process.env['STRIPE_API_KEY']!
 const POSTGRES_URL = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL']!
 const TASK_QUEUE = `test-app-${Date.now()}`
+const SCHEMA = `integration_${Date.now()}`
 const workflowsPath = path.resolve(process.cwd(), 'dist/temporal/workflows.js')
+
+// Set CLEANUP=1 to drop the test schema after the run
+const CLEANUP = process.env['CLEANUP'] === '1'
 
 // ---------------------------------------------------------------------------
 // Real connectors, real servers, real Temporal
@@ -40,6 +45,7 @@ let engineServer: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let serviceServer: any
 let serviceUrl: string
+let pool: pg.Pool
 
 beforeAll(async () => {
   // 1. Build service so dist/temporal/workflows.js is fresh
@@ -48,7 +54,11 @@ beforeAll(async () => {
     stdio: 'pipe',
   })
 
-  // 2. Start real engine HTTP server on random port
+  // 2. Postgres pool
+  pool = new pg.Pool({ connectionString: POSTGRES_URL })
+  await pool.query('SELECT 1')
+
+  // 3. Start real engine HTTP server on random port
   const engineApp = createEngineApp(resolver)
   const engineUrl = await new Promise<string>((resolve) => {
     engineServer = serve({ fetch: engineApp.fetch, port: 0 }, (info) => {
@@ -56,11 +66,11 @@ beforeAll(async () => {
     })
   })
 
-  // 3. Connect to real Temporal (Docker)
+  // 4. Connect to real Temporal (Docker)
   const connection = await Connection.connect({ address: TEMPORAL_ADDRESS })
   client = new Client({ connection })
 
-  // 4. Start worker with real workflows + real activities
+  // 5. Start worker with real workflows + real activities
   const nativeConnection = await NativeConnection.connect({ address: TEMPORAL_ADDRESS })
   worker = await Worker.create({
     connection: nativeConnection,
@@ -70,7 +80,7 @@ beforeAll(async () => {
   })
   workerRunning = worker.run()
 
-  // 5. Start real service HTTP server on random port
+  // 6. Start real service HTTP server on random port
   const serviceApp = createApp({
     temporal: { client: client.workflow, taskQueue: TASK_QUEUE },
     resolver,
@@ -80,6 +90,10 @@ beforeAll(async () => {
       resolve(`http://localhost:${(info as AddressInfo).port}`)
     })
   })
+
+  console.log(`  Schema:   ${SCHEMA}`)
+  console.log(`  Postgres: ${POSTGRES_URL}`)
+  console.log(`  Cleanup:  ${CLEANUP ? 'yes' : 'no (set CLEANUP=1 to drop schema)'}`)
 }, 60_000)
 
 afterAll(async () => {
@@ -89,32 +103,46 @@ afterAll(async () => {
   await new Promise<void>((r, e) =>
     serviceServer?.close((err: Error | null) => (err ? e(err) : r()))
   )
+  if (CLEANUP) {
+    await pool?.query(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`).catch(() => {})
+  }
+  await pool?.end().catch(() => {})
 })
 
 function api() {
   return createFetchClient<paths>({ baseUrl: serviceUrl })
 }
 
+async function pollUntil(
+  fn: () => Promise<boolean>,
+  { timeout = 30_000, interval = 1000 } = {}
+): Promise<void> {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await fn()) return
+    await new Promise((r) => setTimeout(r, interval))
+  }
+  throw new Error(`pollUntil timed out after ${timeout}ms`)
+}
+
 // ---------------------------------------------------------------------------
-// Pipeline CRUD
+// Pipeline CRUD + data verification
 // ---------------------------------------------------------------------------
 
 describe('pipelines (integration)', () => {
-  it('create → get → list → update → delete', async () => {
+  it('create → data lands in Postgres → delete', async () => {
     const c = api()
 
-    // Create
+    // Create pipeline targeting a unique schema
     const { data: created, error: createErr } = await c.POST('/pipelines', {
       body: {
         source: { type: 'stripe', api_key: STRIPE_API_KEY },
-        destination: { type: 'postgres', connection_string: POSTGRES_URL },
+        destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
         streams: [{ name: 'products' }],
       },
     })
     expect(createErr).toBeUndefined()
     expect(created!.id).toMatch(/^pipe_/)
-    expect(created!.source.type).toBe('stripe')
-
     const id = created!.id
 
     // Wait for workflow to start and become queryable
@@ -131,6 +159,27 @@ describe('pipelines (integration)', () => {
     const { data: list, error: listErr } = await c.GET('/pipelines')
     expect(listErr).toBeUndefined()
     expect(list!.data.length).toBeGreaterThanOrEqual(1)
+
+    // Wait for data to land in Postgres
+    await pollUntil(async () => {
+      try {
+        const r = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}"."products"`)
+        return r.rows[0].n > 0
+      } catch {
+        return false
+      }
+    })
+
+    // Verify rows
+    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}"."products"`)
+    console.log(`  Synced ${rows[0].n} products`)
+    expect(rows[0].n).toBeGreaterThan(0)
+
+    // Verify data shape
+    const { rows: sample } = await pool.query(
+      `SELECT id FROM "${SCHEMA}"."products" LIMIT 1`
+    )
+    expect(sample[0].id).toMatch(/^prod_/)
 
     // Update
     const { data: updated, error: updateErr } = await c.PATCH('/pipelines/{id}', {
