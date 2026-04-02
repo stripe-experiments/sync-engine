@@ -473,6 +473,18 @@ jobs:
             docker exec ci-postgres pg_isready -U postgres && break || sleep 2
           done
 
+      - name: Start stripe-mock
+        run: |
+          docker run -d --name ci-stripe-mock -p 12111:12111 stripe/stripe-mock:latest
+          for i in $(seq 1 20); do
+            if nc -z localhost 12111 2>/dev/null; then
+              echo "stripe-mock ready after ${i}s"
+              break
+            fi
+            sleep 0.5
+          done
+          nc -z localhost 12111 || (echo "stripe-mock failed to start"; exit 1)
+
       - name: Login to ghcr.io
         uses: docker/login-action@v4
         with:
@@ -551,6 +563,7 @@ jobs:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
           POSTGRES_URL: 'postgres://postgres:postgres@localhost:55432/postgres'
           POSTGRES_CONTAINER_URL: 'postgresql://postgres:postgres@localhost:55432/postgres'
+          STRIPE_MOCK_URL: 'http://localhost:12111'
           SERVICE_DOCKER_E2E: '1'
           SKIP_SETUP: '1'
 
@@ -564,7 +577,7 @@ jobs:
 
       - name: Stop service containers
         if: always()
-        run: docker rm -f ci-engine ci-service ci-worker 2>/dev/null || true
+        run: docker rm -f ci-engine ci-service ci-worker ci-stripe-mock 2>/dev/null || true
 
       - name: Skipped test warnings
         if: always()

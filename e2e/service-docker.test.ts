@@ -119,9 +119,14 @@ describeWithEnv(
       const c = api()
 
       // --- Create ---
+      const stripeMockUrl = process.env.STRIPE_MOCK_URL
       const { data: created, error: createErr } = await c.POST('/pipelines', {
         body: {
-          source: { type: 'stripe', api_key: STRIPE_API_KEY },
+          source: {
+            type: 'stripe',
+            api_key: STRIPE_API_KEY,
+            ...(stripeMockUrl ? { base_url: stripeMockUrl } : {}),
+          },
           destination: {
             type: 'postgres',
             connection_string: POSTGRES_CONTAINER_URL,
