@@ -20,7 +20,7 @@ cd "$ROOT"
 # Load .env if present
 [ -f .env ] && set -a && source .env && set +a
 
-: "${STRIPE_API_KEY:?Set STRIPE_API_KEY}"
+: "${STRIPE_SANDBOX_KEY:?Set STRIPE_SANDBOX_KEY}"
 : "${E2E_SUPABASE_TOKEN:?Set E2E_SUPABASE_TOKEN}"
 : "${E2E_SUPABASE_PROJECT:?Set E2E_SUPABASE_PROJECT}"
 SKIP_DELETE="${SKIP_DELETE:-}"
@@ -82,7 +82,7 @@ echo "==> Running: sync-engine supabase install"
 $CLI supabase install \
   --token "$SUPABASE_ACCESS_TOKEN" \
   --project "$SUPABASE_PROJECT_REF" \
-  --stripe-key "$STRIPE_API_KEY" \
+  --stripe-key "$STRIPE_SANDBOX_KEY" \
   --worker-interval 30 \
   --rate-limit 20 \
   --backfill-concurrency 10

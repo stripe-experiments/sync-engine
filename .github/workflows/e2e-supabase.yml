@@ -51,6 +51,6 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: bash e2e/supabase.test.sh
         env:
-          STRIPE_API_KEY: ${{ secrets.STRIPE_SANDBOX_KEY }}
+          STRIPE_SANDBOX_KEY: ${{ secrets.STRIPE_SANDBOX_KEY }}
           E2E_SUPABASE_TOKEN: ${{ secrets.E2E_SUPABASE_TOKEN }}
           E2E_SUPABASE_PROJECT: ${{ secrets.E2E_SUPABASE_PROJECT }}
