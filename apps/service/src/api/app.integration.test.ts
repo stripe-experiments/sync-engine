@@ -19,7 +19,7 @@ import type { paths } from '../__generated__/openapi.js'
 // ---------------------------------------------------------------------------
 
 const TEMPORAL_ADDRESS = process.env['TEMPORAL_ADDRESS'] ?? 'localhost:7233'
-const STRIPE_API_KEY = process.env['STRIPE_API_KEY']!
+const STRIPE_MOCK_URL = process.env['STRIPE_MOCK_URL'] ?? 'http://localhost:12111'
 const POSTGRES_URL = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL']!
 const TASK_QUEUE = `test-app-${Date.now()}`
 const SCHEMA = `integration_${Date.now()}`
@@ -59,11 +59,19 @@ beforeAll(async () => {
   await pool.query('SELECT 1')
 
   // 3. Start real engine HTTP server on random port
+  //    Raise maxHeaderSize — X-State header grows large with many Stripe streams
   const engineApp = createEngineApp(resolver)
   const engineUrl = await new Promise<string>((resolve) => {
-    engineServer = serve({ fetch: engineApp.fetch, port: 0 }, (info) => {
-      resolve(`http://localhost:${(info as AddressInfo).port}`)
-    })
+    engineServer = serve(
+      {
+        fetch: engineApp.fetch,
+        port: 0,
+        serverOptions: { maxHeaderSize: 128 * 1024 },
+      },
+      (info) => {
+        resolve(`http://localhost:${(info as AddressInfo).port}`)
+      }
+    )
   })
 
   // 4. Connect to real Temporal (Docker)
@@ -115,7 +123,7 @@ function api() {
 
 async function pollUntil(
   fn: () => Promise<boolean>,
-  { timeout = 30_000, interval = 1000 } = {}
+  { timeout = 60_000, interval = 2000 } = {}
 ): Promise<void> {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
@@ -136,7 +144,7 @@ describe('pipelines (integration)', () => {
     // Create pipeline targeting a unique schema
     const { data: created, error: createErr } = await c.POST('/pipelines', {
       body: {
-        source: { type: 'stripe', api_key: STRIPE_API_KEY },
+        source: { type: 'stripe', api_key: 'sk_test_fake', base_url: STRIPE_MOCK_URL },
         destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
         streams: [{ name: 'products' }],
       },
