@@ -21,23 +21,29 @@ export function createRemoteEngine(engineUrl: string, pipeline: PipelineConfig):
 
   /**
    * Execute a streaming POST (read / write / sync).
-   * Uses raw fetch instead of openapi-fetch because openapi-fetch's default bodySerializer
-   * calls JSON.stringify on the ReadableStream body (producing '{}'), which corrupts the
-   * NDJSON stream. Raw fetch passes the ReadableStream through unchanged.
+   * Passes bodySerializer:(b)=>b so openapi-fetch forwards the ReadableStream to fetch
+   * unchanged instead of calling JSON.stringify on it (which would produce '{}').
+   * Node 18+ requires duplex:'half' when the request body is a ReadableStream; extra
+   * options passed to openapi-fetch are forwarded to the underlying fetch call.
    */
   async function streamPost(
     path: '/read' | '/write' | '/sync',
     body?: ReadableStream<Uint8Array>
   ): Promise<Response> {
-    const headers: Record<string, string> = { 'x-pipeline': ph }
-    if (body) headers['content-type'] = 'application/x-ndjson'
-    const res = await fetch(`${engineUrl}${path}`, {
-      method: 'POST',
-      headers,
-      body,
-      // Node 18+ requires duplex:'half' when the request body is a ReadableStream
-      ...(body ? ({ duplex: 'half' } as Record<string, unknown>) : {}),
-    } as RequestInit)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { response } = await (client.POST as any)(path, {
+      params: { header: { 'x-pipeline': ph } },
+      parseAs: 'stream',
+      ...(body
+        ? {
+            body,
+            bodySerializer: (b: unknown) => b,
+            headers: { 'content-type': 'application/x-ndjson' },
+            duplex: 'half',
+          }
+        : {}),
+    })
+    const res = response as Response
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       throw new Error(`Engine ${path} failed (${res.status}): ${text}`)

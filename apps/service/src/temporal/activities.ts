@@ -1,5 +1,6 @@
 import { heartbeat } from '@temporalio/activity'
 import { parseNdjsonStream } from '@stripe/sync-engine'
+import { Kafka } from 'kafkajs'
 import type { RunResult } from './types.js'
 
 /**
@@ -24,8 +25,36 @@ async function resolveParams(serviceUrl: string, pipelineId: string): Promise<st
   })
 }
 
-export function createActivities(opts: { serviceUrl: string; engineUrl: string }) {
-  const { serviceUrl, engineUrl } = opts
+export function createActivities(opts: {
+  serviceUrl: string
+  engineUrl: string
+  kafkaBroker?: string
+}) {
+  const { serviceUrl, engineUrl, kafkaBroker } = opts
+
+  // Shared Kafka client + producer (created lazily, reused across activity calls)
+  let kafka: Kafka | undefined
+  let producerConnected: Promise<import('kafkajs').Producer> | undefined
+
+  function getKafka(): Kafka {
+    if (!kafka) {
+      if (!kafkaBroker) throw new Error('kafkaBroker is required for read-write mode')
+      kafka = new Kafka({ brokers: [kafkaBroker] })
+    }
+    return kafka
+  }
+
+  function getProducer(): Promise<import('kafkajs').Producer> {
+    if (!producerConnected) {
+      const producer = getKafka().producer()
+      producerConnected = producer.connect().then(() => producer)
+    }
+    return producerConnected
+  }
+
+  function topicName(pipelineId: string): string {
+    return `pipeline.${pipelineId}`
+  }
 
   return {
     async setup(pipelineId: string): Promise<void> {
@@ -104,7 +133,7 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
     async read(
       pipelineId: string,
       opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
-    ): Promise<{ records: unknown[]; state: Record<string, unknown> }> {
+    ): Promise<{ count: number; records: unknown[]; state: Record<string, unknown> }> {
       const params = await resolveParams(serviceUrl, pipelineId)
       const headers: Record<string, string> = { 'X-Pipeline': params }
       let body: string | undefined
@@ -142,11 +171,58 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
       }
       if (messageCount % 50 !== 0) heartbeat({ messages: messageCount })
 
-      return { records, state }
+      // If Kafka is configured, produce records to the pipeline topic
+      if (kafkaBroker && records.length > 0) {
+        const producer = await getProducer()
+        await producer.send({
+          topic: topicName(pipelineId),
+          messages: records.map((r) => ({ value: JSON.stringify(r) })),
+        })
+      }
+
+      return { count: records.length, records, state }
     },
 
-    async write(pipelineId: string, records: unknown[]): Promise<RunResult> {
+    async write(
+      pipelineId: string,
+      opts?: { records?: unknown[]; maxBatch?: number }
+    ): Promise<RunResult & { written: number }> {
       const params = await resolveParams(serviceUrl, pipelineId)
+      let records: unknown[]
+
+      if (kafkaBroker) {
+        // Consume a batch from Kafka
+        const maxBatch = opts?.maxBatch ?? 50
+        records = []
+        const consumer = getKafka().consumer({ groupId: `pipeline.${pipelineId}` })
+        await consumer.connect()
+        await consumer.subscribe({ topic: topicName(pipelineId), fromBeginning: false })
+
+        await new Promise<void>((resolve) => {
+          consumer.run({
+            eachMessage: async ({ message }) => {
+              if (message.value) {
+                records.push(JSON.parse(message.value.toString()))
+              }
+              if (records.length >= maxBatch) {
+                resolve()
+              }
+            },
+          })
+          // If fewer than maxBatch messages are available, resolve after a short wait
+          setTimeout(resolve, 2000)
+        })
+
+        await consumer.disconnect()
+      } else {
+        // In-memory mode: records passed directly
+        records = opts?.records ?? []
+      }
+
+      if (records.length === 0) {
+        return { errors: [], state: {}, written: 0 }
+      }
+
       const headers: Record<string, string> = {
         'X-Pipeline': params,
         'Content-Type': 'application/x-ndjson',
@@ -182,7 +258,7 @@ export function createActivities(opts: { serviceUrl: string; engineUrl: string }
       }
       if (messageCount % 50 !== 0) heartbeat({ messages: messageCount })
 
-      return { errors, state }
+      return { errors, state, written: records.length }
     },
 
     async teardown(pipelineId: string): Promise<void> {
