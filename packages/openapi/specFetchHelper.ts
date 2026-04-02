@@ -40,14 +40,20 @@ export async function resolveOpenApiSpec(
 
   // If the requested version matches what's bundled, serve from the filesystem
   // without any network calls or caching overhead.
+  // In environments where the file isn't on disk (e.g. Deno edge runtime after
+  // esbuild bundling), fall through to the CDN/network path below.
   if (extractDatePart(apiVersion) === extractDatePart(BUNDLED_API_VERSION)) {
-    const bundledPath = fileURLToPath(new URL('./bundled-spec.json', import.meta.url))
-    const spec = await readSpecFromPath(bundledPath)
-    return {
-      apiVersion,
-      spec,
-      source: 'bundled',
-      cachePath: bundledPath,
+    try {
+      const bundledPath = fileURLToPath(new URL('./bundled-spec.json', import.meta.url))
+      const spec = await readSpecFromPath(bundledPath)
+      return {
+        apiVersion,
+        spec,
+        source: 'bundled',
+        cachePath: bundledPath,
+      }
+    } catch {
+      // Bundled spec not available on disk — continue to CDN/network fetch
     }
   }
 

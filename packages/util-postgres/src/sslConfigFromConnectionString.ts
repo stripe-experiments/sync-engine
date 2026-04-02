@@ -40,7 +40,7 @@ export function sslConfigFromConnectionString(
     return false
   }
   if (sslmode === null || sslmode === 'disable') return false
-  if (sslmode === 'require') return { rejectUnauthorized: false }
+  if (sslmode === 'prefer' || sslmode === 'require') return { rejectUnauthorized: false }
   if (sslmode === 'verify-full') {
     return { rejectUnauthorized: true, ...(sslCaPem ? { ca: sslCaPem } : {}) }
   }

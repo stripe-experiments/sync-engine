@@ -1,0 +1,56 @@
+name: E2E Supabase
+
+on:
+  pull_request:
+  push:
+    branches: [main, v2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STRIPE_NPM_REGISTRY: https://npm.pkg.github.com
+
+jobs:
+  e2e_supabase:
+    name: Supabase install + sync
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          if [ -z "${{ secrets.E2E_SUPABASE_TOKEN }}" ] || [ -z "${{ secrets.E2E_SUPABASE_PROJECT }}" ] || [ -z "${{ secrets.STRIPE_API_KEY }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipped — E2E_SUPABASE_TOKEN, E2E_SUPABASE_PROJECT, or STRIPE_API_KEY not set"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.check.outputs.skip == 'false'
+
+      - name: Install pnpm
+        if: steps.check.outputs.skip == 'false'
+        uses: pnpm/action-setup@v5
+
+      - name: Set up Node
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ./.nvmrc
+          cache: pnpm
+
+      - name: Install dependencies & build
+        if: steps.check.outputs.skip == 'false'
+        run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: Supabase install + sync e2e
+        if: steps.check.outputs.skip == 'false'
+        run: bash e2e/supabase.test.sh
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_SANDBOX_KEY }}
+          E2E_SUPABASE_TOKEN: ${{ secrets.E2E_SUPABASE_TOKEN }}
+          E2E_SUPABASE_PROJECT: ${{ secrets.E2E_SUPABASE_PROJECT }}

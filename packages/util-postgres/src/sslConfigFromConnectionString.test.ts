@@ -50,10 +50,10 @@ describe('sslConfigFromConnectionString', () => {
     expect(sslConfigFromConnectionString('not-a-url')).toBe(false)
   })
 
-  it('sslmode=prefer → throws', () => {
-    expect(() =>
-      sslConfigFromConnectionString('postgres://user:pass@host:5432/mydb?sslmode=prefer')
-    ).toThrow(/Unsupported Postgres sslmode "prefer"/)
+  it('sslmode=prefer → rejectUnauthorized: false (same as require)', () => {
+    expect(sslConfigFromConnectionString(`${base}?sslmode=prefer`)).toEqual({
+      rejectUnauthorized: false,
+    })
   })
 
   it('sslmode=allow → throws', () => {

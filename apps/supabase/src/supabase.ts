@@ -417,7 +417,8 @@ export class SupabaseSetupClient {
     rateLimit?: number,
     syncIntervalSeconds?: number,
     startTime?: number,
-    skipInitialSync?: boolean
+    skipInitialSync?: boolean,
+    backfillConcurrency?: number
   ): Promise<void> {
     const trimmedStripeKey = stripeKey.trim()
     if (!trimmedStripeKey.startsWith('sk_') && !trimmedStripeKey.startsWith('rk_')) {
@@ -449,6 +450,9 @@ export class SupabaseSetupClient {
       }
       if (syncIntervalSeconds != null) {
         secrets.push({ name: 'SYNC_INTERVAL', value: String(syncIntervalSeconds) })
+      }
+      if (backfillConcurrency != null) {
+        secrets.push({ name: 'BACKFILL_CONCURRENCY', value: String(backfillConcurrency) })
       }
       await this.setSecrets(secrets)
 
@@ -511,6 +515,7 @@ export async function install(params: {
   syncIntervalSeconds?: number
   startTime?: number
   skipInitialSync?: boolean
+  backfillConcurrency?: number
 }): Promise<void> {
   const {
     supabaseAccessToken,
@@ -522,6 +527,7 @@ export async function install(params: {
     syncIntervalSeconds,
     startTime,
     skipInitialSync,
+    backfillConcurrency,
   } = params
 
   const client = new SupabaseSetupClient({
@@ -538,7 +544,8 @@ export async function install(params: {
     rateLimit,
     syncIntervalSeconds,
     startTime,
-    skipInitialSync
+    skipInitialSync,
+    backfillConcurrency
   )
 }
 

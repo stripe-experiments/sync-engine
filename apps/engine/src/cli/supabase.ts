@@ -48,6 +48,10 @@ const installCmd = defineCommand({
       default: false,
       description: 'Skip triggering the first sync immediately after install',
     },
+    backfillConcurrency: {
+      type: 'string',
+      description: 'Number of time-range segments for parallel backfill (default: 200)',
+    },
   },
   async run({ args }) {
     const token = args.token || process.env.SUPABASE_ACCESS_TOKEN
@@ -80,6 +84,9 @@ const installCmd = defineCommand({
       syncIntervalSeconds: parseInt(args.syncInterval),
       skipInitialSync: args.skipInitialSync,
       supabaseManagementUrl: managementUrl,
+      backfillConcurrency: args.backfillConcurrency
+        ? parseInt(args.backfillConcurrency)
+        : undefined,
     })
 
     console.log('Installation complete.')
