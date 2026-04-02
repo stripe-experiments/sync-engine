@@ -5,7 +5,7 @@
   "description": "Stripe Sync Service — pipeline management and webhook ingress via Temporal",
   "type": "module",
   "bin": {
-    "sync-service": "./dist/bin/cli.js"
+    "sync-service": "./dist/bin/sync-service.js"
   },
   "exports": {
     ".": {

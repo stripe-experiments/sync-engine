@@ -8,7 +8,7 @@ import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import { createApp } from '../api/app.js'
-import type { TemporalOptions } from '../temporal/bridge.js'
+import type { WorkflowClient } from '@temporalio/client'
 import { logger } from '../logger.js'
 
 const resolver = createConnectorResolver({
@@ -16,7 +16,10 @@ const resolver = createConnectorResolver({
   destinations: { postgres: destinationPostgres, 'google-sheets': destinationGoogleSheets },
 })
 
-async function createTemporalClient(address: string, taskQueue: string): Promise<TemporalOptions> {
+async function createTemporalClient(
+  address: string,
+  taskQueue: string
+): Promise<{ client: WorkflowClient; taskQueue: string }> {
   const { Client, Connection } = await import('@temporalio/client')
   const connection = await Connection.connect({ address })
   const client = new Client({ connection })
@@ -136,16 +139,18 @@ const webhookCmd = defineCommand({
     },
   },
   async run({ args }) {
-    const { TemporalBridge } = await import('../temporal/bridge.js')
     const { createWebhookApp } = await import('../api/webhook-app.js')
 
-    const temporal = await createTemporalClient(
+    const { client } = await createTemporalClient(
       args['temporal-address'],
       args['temporal-task-queue'] || 'sync-engine'
     )
-    const bridge = new TemporalBridge(temporal.client, temporal.taskQueue)
 
-    const app = createWebhookApp({ push_event: (id, e) => bridge.pushEvent(id, e) })
+    const app = createWebhookApp({
+      push_event: (id, e) => {
+        client.getHandle(id).signal('stripe_event', e).catch(() => {})
+      },
+    })
     const port = Number(args.port)
     serve({ fetch: app.fetch, port }, () => {
       logger.info(
