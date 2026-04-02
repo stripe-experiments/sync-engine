@@ -218,6 +218,9 @@ describe('pipelines (integration)', () => {
         params: { path: { id } },
       })
       expect(getAfter).toBeDefined()
+
+      // Remove workflow execution from Temporal (skip with SKIP_CLEANUP=1 to inspect)
+      await handle.delete()
     }
   }, 60_000)
 
