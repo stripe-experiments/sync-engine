@@ -76,7 +76,7 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
       await engine.setup()
     },
 
-    async sync(
+    async syncImmediate(
       config: PipelineConfig,
       opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
     ): Promise<RunResult> {
@@ -91,7 +91,7 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
       return { errors, state }
     },
 
-    async read(
+    async readIntoQueue(
       config: PipelineConfig,
       pipelineId: string,
       opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
@@ -117,7 +117,7 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
       return { count: records.length, state }
     },
 
-    async write(
+    async writeFromQueue(
       config: PipelineConfig,
       pipelineId: string,
       opts?: { records?: unknown[]; maxBatch?: number }

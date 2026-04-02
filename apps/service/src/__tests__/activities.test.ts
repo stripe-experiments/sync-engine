@@ -93,7 +93,7 @@ describe('createActivities (integration via createRemoteEngine)', () => {
 
   it('sync returns errors and state', async () => {
     const activities = createActivities({ engineUrl })
-    const result = await activities.sync(config, {
+    const result = await activities.syncImmediate(config, {
       input: [
         { type: 'record', stream: 'customers', data: { id: 'cus_1' }, emitted_at: 1 },
         { type: 'state', stream: 'customers', data: { cursor: 'cus_1' } },
@@ -108,7 +108,7 @@ describe('createActivities (integration via createRemoteEngine)', () => {
 
   it('read returns count and state', async () => {
     const activities = createActivities({ engineUrl })
-    const result = await activities.read(config, 'test-pipeline', {
+    const result = await activities.readIntoQueue(config, 'test-pipeline', {
       input: [
         { type: 'record', stream: 'customers', data: { id: 'cus_1' }, emitted_at: 1 },
         { type: 'state', stream: 'customers', data: { cursor: 'cus_1' } },
@@ -121,7 +121,7 @@ describe('createActivities (integration via createRemoteEngine)', () => {
 
   it('write returns errors, state, and written count', async () => {
     const activities = createActivities({ engineUrl })
-    const result = await activities.write(config, 'test-pipeline', {
+    const result = await activities.writeFromQueue(config, 'test-pipeline', {
       records: [
         { type: 'record', stream: 'customers', data: { id: 'cus_1' }, emitted_at: 1 },
         { type: 'state', stream: 'customers', data: { cursor: 'cus_1' } },
@@ -136,14 +136,14 @@ describe('createActivities (integration via createRemoteEngine)', () => {
 
   it('sync without input returns empty result', async () => {
     const activities = createActivities({ engineUrl })
-    const result = await activities.sync(config)
+    const result = await activities.syncImmediate(config)
     expect(result.errors).toEqual([])
     expect(result.state).toEqual({})
   })
 
   it('write with empty records returns zero written', async () => {
     const activities = createActivities({ engineUrl })
-    const result = await activities.write(config, 'test-pipeline', { records: [] })
+    const result = await activities.writeFromQueue(config, 'test-pipeline', { records: [] })
     expect(result.written).toBe(0)
     expect(result.errors).toEqual([])
   })

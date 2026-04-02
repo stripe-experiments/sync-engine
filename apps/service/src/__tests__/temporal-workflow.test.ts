@@ -20,9 +20,9 @@ const testPipeline = {
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
   return {
     setup: async () => {},
-    sync: async () => noErrors,
-    read: async () => ({ count: 0, state: {} }),
-    write: async () => ({ errors: [], state: {}, written: 0 }),
+    syncImmediate: async () => noErrors,
+    readIntoQueue: async () => ({ count: 0, state: {} }),
+    writeFromQueue: async () => ({ errors: [], state: {}, written: 0 }),
     teardown: async () => {},
     ...overrides,
   }
@@ -51,7 +51,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
         setup: async () => {
           setupCalled = true
         },
-        sync: async () => {
+        syncImmediate: async () => {
           runCallCount++
           return noErrors
         },
@@ -87,7 +87,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-2',
       workflowsPath,
       activities: stubActivities({
-        sync: async (config: PipelineConfig, opts?) => {
+        syncImmediate: async (config: PipelineConfig, opts?) => {
           syncCalls.push({ config, input: opts?.input ?? undefined })
           return noErrors
         },
@@ -174,7 +174,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-4',
       workflowsPath,
       activities: stubActivities({
-        sync: async () => {
+        syncImmediate: async () => {
           // Slow sync so delete arrives mid-reconciliation
           await new Promise((r) => setTimeout(r, 500))
           return noErrors
@@ -261,7 +261,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-7',
       workflowsPath,
       activities: stubActivities({
-        sync: async () => ({ errors: [], state: { customers: { cursor: 'cus_100' } } }),
+        syncImmediate: async () => ({ errors: [], state: { customers: { cursor: 'cus_100' } } }),
       }),
     })
 
