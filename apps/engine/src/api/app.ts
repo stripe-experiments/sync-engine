@@ -14,6 +14,7 @@ import { endpointTable, addDiscriminators, injectConnectorSchemas } from './open
 import {
   Message as MessageSchema,
   DestinationOutput as DestinationOutputSchema,
+  CatalogMessage as CatalogMessageSchema,
 } from '@stripe/sync-protocol'
 import { takeStateCheckpoints } from '../lib/pipeline.js'
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
@@ -306,17 +307,7 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available streams',
           content: {
             'application/json': {
-              schema: z.object({
-                type: z.literal('catalog'),
-                streams: z.array(
-                  z.object({
-                    name: z.string(),
-                    primary_key: z.array(z.array(z.string())),
-                    json_schema: z.record(z.string(), z.unknown()).optional(),
-                    metadata: z.record(z.string(), z.unknown()).optional(),
-                  })
-                ),
-              }),
+              schema: CatalogMessageSchema,
             },
           },
         },
