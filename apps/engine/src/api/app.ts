@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { OpenAPIHono, createRoute } from '@stripe/sync-hono-zod-openapi'
+import { z } from 'zod'
 import { apiReference } from '@scalar/hono-api-reference'
 import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
@@ -198,7 +199,7 @@ export function createApp(resolver: ConnectorResolver) {
       summary: 'Set up destination schema',
       description:
         'Creates destination tables and applies migrations. Safe to call multiple times.',
-      request: { headers: pipelineHeaders },
+      requestParams: { header: pipelineHeaders },
       responses: {
         200: {
           description: 'Setup complete',
@@ -238,7 +239,7 @@ export function createApp(resolver: ConnectorResolver) {
       tags: ['Stateless Sync API'],
       summary: 'Tear down destination schema',
       description: 'Drops destination tables. Irreversible.',
-      request: { headers: pipelineHeaders },
+      requestParams: { header: pipelineHeaders },
       responses: {
         204: { description: 'Teardown complete' },
         400: errorResponse,
@@ -260,7 +261,7 @@ export function createApp(resolver: ConnectorResolver) {
       tags: ['Stateless Sync API'],
       summary: 'Check connector connection',
       description: 'Validates the source/destination config and tests connectivity.',
-      request: { headers: pipelineHeaders },
+      requestParams: { header: pipelineHeaders },
       responses: {
         200: {
           description: 'Connection check result',
@@ -299,7 +300,7 @@ export function createApp(resolver: ConnectorResolver) {
       summary: 'Discover available streams',
       description:
         'Returns the catalog of available streams for the configured source. Each stream includes its name, primary key, and optional JSON schema.',
-      request: { headers: pipelineHeaders },
+      requestParams: { header: pipelineHeaders },
       responses: {
         200: {
           description: 'Available streams',
@@ -344,7 +345,7 @@ export function createApp(resolver: ConnectorResolver) {
       summary: 'Read records from source',
       description:
         'Streams NDJSON messages (records, state, catalog). Optional NDJSON body provides live events as input.',
-      request: { headers: allSyncHeaders },
+      requestParams: { header: allSyncHeaders },
       responses: {
         200: {
           description: 'NDJSON stream of sync messages',
@@ -384,12 +385,10 @@ export function createApp(resolver: ConnectorResolver) {
       summary: 'Write records to destination',
       description:
         'Reads NDJSON messages from the request body and writes them to the destination. Pipe /read output as input.',
-      request: {
-        headers: pipelineHeaders,
-        body: {
-          required: true,
-          content: { 'application/x-ndjson': { schema: MessageSchema } },
-        },
+      requestParams: { header: pipelineHeaders },
+      requestBody: {
+        required: true,
+        content: { 'application/x-ndjson': { schema: MessageSchema } },
       },
       responses: {
         200: {
@@ -427,7 +426,7 @@ export function createApp(resolver: ConnectorResolver) {
       description:
         'Without a request body, reads from the source connector and writes to the destination (backfill mode). ' +
         'With an NDJSON request body, uses the provided messages as input instead of reading from the source (push mode — e.g. piped webhook events).',
-      request: { headers: allSyncHeaders },
+      requestParams: { header: allSyncHeaders },
       responses: {
         200: {
           description: 'NDJSON stream of sync messages',
@@ -496,7 +495,6 @@ export function createApp(resolver: ConnectorResolver) {
 
   app.get('/openapi.json', (c) => {
     const spec = app.getOpenAPI31Document({
-      openapi: '3.1.0',
       info: {
         title: 'Stripe Sync Engine',
         version: '1.0.0',

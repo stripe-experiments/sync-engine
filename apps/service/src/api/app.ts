@@ -1,4 +1,5 @@
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { OpenAPIHono, createRoute } from '@stripe/sync-hono-zod-openapi'
+import { z } from 'zod'
 import { apiReference } from '@scalar/hono-api-reference'
 import type { WorkflowClient } from '@temporalio/client'
 import type { ConnectorResolver } from '@stripe/sync-engine'
@@ -66,7 +67,7 @@ export function createApp(options: AppOptions) {
   // ── Path param schemas ──────────────────────────────────────────
 
   const PipelineIdParam = z.object({
-    id: z.string().openapi({ param: { name: 'id', in: 'path' }, example: 'pipe_abc123' }),
+    id: z.string().meta({ example: 'pipe_abc123' }),
   })
 
   // ── Health ──────────────────────────────────────────────────────
@@ -129,10 +130,8 @@ export function createApp(options: AppOptions) {
       path: '/pipelines',
       tags: ['Pipelines'],
       summary: 'Create pipeline',
-      request: {
-        body: {
-          content: { 'application/json': { schema: CreatePipelineSchema } },
-        },
+      requestBody: {
+        content: { 'application/json': { schema: CreatePipelineSchema } },
       },
       responses: {
         201: {
@@ -166,7 +165,7 @@ export function createApp(options: AppOptions) {
       path: '/pipelines/{id}',
       tags: ['Pipelines'],
       summary: 'Retrieve pipeline',
-      request: { params: PipelineIdParam },
+      requestParams: { path: PipelineIdParam },
       responses: {
         200: {
           content: { 'application/json': { schema: PipelineWithStatusSchema } },
@@ -205,11 +204,9 @@ export function createApp(options: AppOptions) {
       path: '/pipelines/{id}',
       tags: ['Pipelines'],
       summary: 'Update pipeline',
-      request: {
-        params: PipelineIdParam,
-        body: {
-          content: { 'application/json': { schema: UpdatePipelineSchema } },
-        },
+      requestParams: { path: PipelineIdParam },
+      requestBody: {
+        content: { 'application/json': { schema: UpdatePipelineSchema } },
       },
       responses: {
         200: {
@@ -248,7 +245,7 @@ export function createApp(options: AppOptions) {
       path: '/pipelines/{id}/pause',
       tags: ['Pipelines'],
       summary: 'Pause pipeline',
-      request: { params: PipelineIdParam },
+      requestParams: { path: PipelineIdParam },
       responses: {
         200: {
           content: { 'application/json': { schema: PipelineWithStatusSchema } },
@@ -284,7 +281,7 @@ export function createApp(options: AppOptions) {
       path: '/pipelines/{id}/resume',
       tags: ['Pipelines'],
       summary: 'Resume pipeline',
-      request: { params: PipelineIdParam },
+      requestParams: { path: PipelineIdParam },
       responses: {
         200: {
           content: { 'application/json': { schema: PipelineWithStatusSchema } },
@@ -320,7 +317,7 @@ export function createApp(options: AppOptions) {
       path: '/pipelines/{id}',
       tags: ['Pipelines'],
       summary: 'Delete pipeline',
-      request: { params: PipelineIdParam },
+      requestParams: { path: PipelineIdParam },
       responses: {
         200: {
           content: { 'application/json': { schema: DeleteResponseSchema } },
@@ -348,10 +345,7 @@ export function createApp(options: AppOptions) {
   // MARK: - Webhook ingress
 
   const WebhookParam = z.object({
-    pipeline_id: z.string().openapi({
-      param: { name: 'pipeline_id', in: 'path' },
-      example: 'pipe_abc123',
-    }),
+    pipeline_id: z.string().meta({ example: 'pipe_abc123' }),
   })
 
   app.openapi(
@@ -363,7 +357,7 @@ export function createApp(options: AppOptions) {
       summary: 'Ingest a Stripe webhook event',
       description:
         "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
-      request: { params: WebhookParam },
+      requestParams: { path: WebhookParam },
       responses: {
         200: {
           content: { 'text/plain': { schema: z.literal('ok') } },
@@ -387,7 +381,6 @@ export function createApp(options: AppOptions) {
 
   app.get('/openapi.json', (c) => {
     const spec = app.getOpenAPI31Document({
-      openapi: '3.1.0',
       info: {
         title: 'Stripe Sync Service',
         version: '1.0.0',

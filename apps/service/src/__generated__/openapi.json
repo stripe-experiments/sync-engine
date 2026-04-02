@@ -5,10 +5,6 @@
     "version": "1.0.0",
     "description": "Stripe Sync Service — manage pipelines and webhook ingress.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| GET | /pipelines | List pipelines |\n| POST | /pipelines | Create pipeline |\n| GET | /pipelines/{id} | Retrieve pipeline |\n| PATCH | /pipelines/{id} | Update pipeline |\n| DELETE | /pipelines/{id} | Delete pipeline |\n| POST | /pipelines/{id}/pause | Pause pipeline |\n| POST | /pipelines/{id}/resume | Resume pipeline |\n| POST | /webhooks/{pipeline_id} | Ingest a Stripe webhook event |"
   },
-  "components": {
-    "schemas": {},
-    "parameters": {}
-  },
   "paths": {
     "/health": {
       "get": {
@@ -25,10 +21,11 @@
                   "properties": {
                     "ok": {
                       "type": "boolean",
-                      "enum": [true]
+                      "const": true
                     }
                   },
-                  "required": ["ok"]
+                  "required": ["ok"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -115,31 +112,32 @@
                                   },
                                   "backfill_limit": {
                                     "type": "integer",
-                                    "maximum": 9007199254740991,
                                     "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
                                     "description": "Max objects to backfill per stream (useful for testing)"
                                   },
                                   "rate_limit": {
                                     "type": "integer",
-                                    "maximum": 9007199254740991,
                                     "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
                                     "description": "Max Stripe API requests per second (default: 25)"
                                   },
                                   "backfill_concurrency": {
                                     "type": "integer",
-                                    "maximum": 9007199254740991,
                                     "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
                                     "description": "Number of time-range segments for parallel backfill (default: 200)"
                                   },
                                   "type": {
                                     "type": "string",
-                                    "enum": ["stripe"]
+                                    "const": "stripe"
                                   }
                                 },
                                 "required": ["api_key", "type"],
                                 "additionalProperties": false
                               }
                             ],
+                            "type": "object",
                             "discriminator": {
                               "propertyName": "type"
                             }
@@ -162,8 +160,8 @@
                                     "description": "Postgres host (required for AWS IAM)"
                                   },
                                   "port": {
-                                    "type": "number",
                                     "default": 5432,
+                                    "type": "number",
                                     "description": "Postgres port"
                                   },
                                   "database": {
@@ -175,13 +173,13 @@
                                     "description": "Database user (required for AWS IAM)"
                                   },
                                   "schema": {
-                                    "type": "string",
                                     "default": "public",
+                                    "type": "string",
                                     "description": "Target schema name"
                                   },
                                   "batch_size": {
-                                    "type": "number",
                                     "default": 100,
+                                    "type": "number",
                                     "description": "Records to buffer before flushing"
                                   },
                                   "aws": {
@@ -210,10 +208,10 @@
                                   },
                                   "type": {
                                     "type": "string",
-                                    "enum": ["postgres"]
+                                    "const": "postgres"
                                   }
                                 },
-                                "required": ["type"],
+                                "required": ["port", "schema", "batch_size", "type"],
                                 "additionalProperties": false
                               },
                               {
@@ -240,24 +238,31 @@
                                     "description": "Target spreadsheet ID (created if omitted)"
                                   },
                                   "spreadsheet_title": {
-                                    "type": "string",
                                     "default": "Stripe Sync",
+                                    "type": "string",
                                     "description": "Title when creating a new spreadsheet"
                                   },
                                   "batch_size": {
-                                    "type": "number",
                                     "default": 50,
+                                    "type": "number",
                                     "description": "Rows per Sheets API append call"
                                   },
                                   "type": {
                                     "type": "string",
-                                    "enum": ["google-sheets"]
+                                    "const": "google-sheets"
                                   }
                                 },
-                                "required": ["access_token", "refresh_token", "type"],
+                                "required": [
+                                  "access_token",
+                                  "refresh_token",
+                                  "spreadsheet_title",
+                                  "batch_size",
+                                  "type"
+                                ],
                                 "additionalProperties": false
                               }
                             ],
+                            "type": "object",
                             "discriminator": {
                               "propertyName": "type"
                             }
@@ -276,21 +281,25 @@
                                 },
                                 "backfill_limit": {
                                   "type": "integer",
-                                  "exclusiveMinimum": 0
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
                                 }
                               },
-                              "required": ["name"]
+                              "required": ["name"],
+                              "additionalProperties": false
                             }
                           }
                         },
-                        "required": ["id", "source", "destination"]
+                        "required": ["id", "source", "destination"],
+                        "additionalProperties": false
                       }
                     },
                     "has_more": {
                       "type": "boolean"
                     }
                   },
-                  "required": ["data", "has_more"]
+                  "required": ["data", "has_more"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -365,31 +374,32 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Max objects to backfill per stream (useful for testing)"
                           },
                           "rate_limit": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Max Stripe API requests per second (default: 25)"
                           },
                           "backfill_concurrency": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Number of time-range segments for parallel backfill (default: 200)"
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["stripe"]
+                            "const": "stripe"
                           }
                         },
                         "required": ["api_key", "type"],
                         "additionalProperties": false
                       }
                     ],
+                    "type": "object",
                     "discriminator": {
                       "propertyName": "type"
                     }
@@ -412,8 +422,8 @@
                             "description": "Postgres host (required for AWS IAM)"
                           },
                           "port": {
-                            "type": "number",
                             "default": 5432,
+                            "type": "number",
                             "description": "Postgres port"
                           },
                           "database": {
@@ -425,13 +435,13 @@
                             "description": "Database user (required for AWS IAM)"
                           },
                           "schema": {
-                            "type": "string",
                             "default": "public",
+                            "type": "string",
                             "description": "Target schema name"
                           },
                           "batch_size": {
-                            "type": "number",
                             "default": 100,
+                            "type": "number",
                             "description": "Records to buffer before flushing"
                           },
                           "aws": {
@@ -460,7 +470,7 @@
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["postgres"]
+                            "const": "postgres"
                           }
                         },
                         "required": ["type"],
@@ -490,24 +500,25 @@
                             "description": "Target spreadsheet ID (created if omitted)"
                           },
                           "spreadsheet_title": {
-                            "type": "string",
                             "default": "Stripe Sync",
+                            "type": "string",
                             "description": "Title when creating a new spreadsheet"
                           },
                           "batch_size": {
-                            "type": "number",
                             "default": 50,
+                            "type": "number",
                             "description": "Rows per Sheets API append call"
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["google-sheets"]
+                            "const": "google-sheets"
                           }
                         },
                         "required": ["access_token", "refresh_token", "type"],
                         "additionalProperties": false
                       }
                     ],
+                    "type": "object",
                     "discriminator": {
                       "propertyName": "type"
                     }
@@ -526,7 +537,8 @@
                         },
                         "backfill_limit": {
                           "type": "integer",
-                          "exclusiveMinimum": 0
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": ["name"]
@@ -607,31 +619,32 @@
                             },
                             "backfill_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max objects to backfill per stream (useful for testing)"
                             },
                             "rate_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max Stripe API requests per second (default: 25)"
                             },
                             "backfill_concurrency": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Number of time-range segments for parallel backfill (default: 200)"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["stripe"]
+                              "const": "stripe"
                             }
                           },
                           "required": ["api_key", "type"],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -654,8 +667,8 @@
                               "description": "Postgres host (required for AWS IAM)"
                             },
                             "port": {
-                              "type": "number",
                               "default": 5432,
+                              "type": "number",
                               "description": "Postgres port"
                             },
                             "database": {
@@ -667,13 +680,13 @@
                               "description": "Database user (required for AWS IAM)"
                             },
                             "schema": {
-                              "type": "string",
                               "default": "public",
+                              "type": "string",
                               "description": "Target schema name"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 100,
+                              "type": "number",
                               "description": "Records to buffer before flushing"
                             },
                             "aws": {
@@ -702,10 +715,10 @@
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["postgres"]
+                              "const": "postgres"
                             }
                           },
-                          "required": ["type"],
+                          "required": ["port", "schema", "batch_size", "type"],
                           "additionalProperties": false
                         },
                         {
@@ -732,24 +745,31 @@
                               "description": "Target spreadsheet ID (created if omitted)"
                             },
                             "spreadsheet_title": {
-                              "type": "string",
                               "default": "Stripe Sync",
+                              "type": "string",
                               "description": "Title when creating a new spreadsheet"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 50,
+                              "type": "number",
                               "description": "Rows per Sheets API append call"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["google-sheets"]
+                              "const": "google-sheets"
                             }
                           },
-                          "required": ["access_token", "refresh_token", "type"],
+                          "required": [
+                            "access_token",
+                            "refresh_token",
+                            "spreadsheet_title",
+                            "batch_size",
+                            "type"
+                          ],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -768,14 +788,17 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "exclusiveMinimum": 0
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
-                        "required": ["name"]
+                        "required": ["name"],
+                        "additionalProperties": false
                       }
                     }
                   },
-                  "required": ["id", "source", "destination"]
+                  "required": ["id", "source", "destination"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -788,7 +811,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -803,13 +828,13 @@
         "summary": "Retrieve pipeline",
         "parameters": [
           {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": true
           }
         ],
         "responses": {
@@ -881,31 +906,32 @@
                             },
                             "backfill_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max objects to backfill per stream (useful for testing)"
                             },
                             "rate_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max Stripe API requests per second (default: 25)"
                             },
                             "backfill_concurrency": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Number of time-range segments for parallel backfill (default: 200)"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["stripe"]
+                              "const": "stripe"
                             }
                           },
                           "required": ["api_key", "type"],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -928,8 +954,8 @@
                               "description": "Postgres host (required for AWS IAM)"
                             },
                             "port": {
-                              "type": "number",
                               "default": 5432,
+                              "type": "number",
                               "description": "Postgres port"
                             },
                             "database": {
@@ -941,13 +967,13 @@
                               "description": "Database user (required for AWS IAM)"
                             },
                             "schema": {
-                              "type": "string",
                               "default": "public",
+                              "type": "string",
                               "description": "Target schema name"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 100,
+                              "type": "number",
                               "description": "Records to buffer before flushing"
                             },
                             "aws": {
@@ -976,10 +1002,10 @@
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["postgres"]
+                              "const": "postgres"
                             }
                           },
-                          "required": ["type"],
+                          "required": ["port", "schema", "batch_size", "type"],
                           "additionalProperties": false
                         },
                         {
@@ -1006,24 +1032,31 @@
                               "description": "Target spreadsheet ID (created if omitted)"
                             },
                             "spreadsheet_title": {
-                              "type": "string",
                               "default": "Stripe Sync",
+                              "type": "string",
                               "description": "Title when creating a new spreadsheet"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 50,
+                              "type": "number",
                               "description": "Rows per Sheets API append call"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["google-sheets"]
+                              "const": "google-sheets"
                             }
                           },
-                          "required": ["access_token", "refresh_token", "type"],
+                          "required": [
+                            "access_token",
+                            "refresh_token",
+                            "spreadsheet_title",
+                            "batch_size",
+                            "type"
+                          ],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -1042,10 +1075,12 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "exclusiveMinimum": 0
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
-                        "required": ["name"]
+                        "required": ["name"],
+                        "additionalProperties": false
                       }
                     },
                     "status": {
@@ -1061,10 +1096,12 @@
                           "type": "number"
                         }
                       },
-                      "required": ["phase", "paused", "iteration"]
+                      "required": ["phase", "paused", "iteration"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["id", "source", "destination"]
+                  "required": ["id", "source", "destination"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1077,7 +1114,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1090,13 +1129,13 @@
         "summary": "Update pipeline",
         "parameters": [
           {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": true
           }
         ],
         "requestBody": {
@@ -1163,31 +1202,32 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Max objects to backfill per stream (useful for testing)"
                           },
                           "rate_limit": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Max Stripe API requests per second (default: 25)"
                           },
                           "backfill_concurrency": {
                             "type": "integer",
-                            "maximum": 9007199254740991,
                             "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
                             "description": "Number of time-range segments for parallel backfill (default: 200)"
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["stripe"]
+                            "const": "stripe"
                           }
                         },
                         "required": ["api_key", "type"],
                         "additionalProperties": false
                       }
                     ],
+                    "type": "object",
                     "discriminator": {
                       "propertyName": "type"
                     }
@@ -1210,8 +1250,8 @@
                             "description": "Postgres host (required for AWS IAM)"
                           },
                           "port": {
-                            "type": "number",
                             "default": 5432,
+                            "type": "number",
                             "description": "Postgres port"
                           },
                           "database": {
@@ -1223,13 +1263,13 @@
                             "description": "Database user (required for AWS IAM)"
                           },
                           "schema": {
-                            "type": "string",
                             "default": "public",
+                            "type": "string",
                             "description": "Target schema name"
                           },
                           "batch_size": {
-                            "type": "number",
                             "default": 100,
+                            "type": "number",
                             "description": "Records to buffer before flushing"
                           },
                           "aws": {
@@ -1258,7 +1298,7 @@
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["postgres"]
+                            "const": "postgres"
                           }
                         },
                         "required": ["type"],
@@ -1288,24 +1328,25 @@
                             "description": "Target spreadsheet ID (created if omitted)"
                           },
                           "spreadsheet_title": {
-                            "type": "string",
                             "default": "Stripe Sync",
+                            "type": "string",
                             "description": "Title when creating a new spreadsheet"
                           },
                           "batch_size": {
-                            "type": "number",
                             "default": 50,
+                            "type": "number",
                             "description": "Rows per Sheets API append call"
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["google-sheets"]
+                            "const": "google-sheets"
                           }
                         },
                         "required": ["access_token", "refresh_token", "type"],
                         "additionalProperties": false
                       }
                     ],
+                    "type": "object",
                     "discriminator": {
                       "propertyName": "type"
                     }
@@ -1324,7 +1365,8 @@
                         },
                         "backfill_limit": {
                           "type": "integer",
-                          "exclusiveMinimum": 0
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": ["name"]
@@ -1404,31 +1446,32 @@
                             },
                             "backfill_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max objects to backfill per stream (useful for testing)"
                             },
                             "rate_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max Stripe API requests per second (default: 25)"
                             },
                             "backfill_concurrency": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Number of time-range segments for parallel backfill (default: 200)"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["stripe"]
+                              "const": "stripe"
                             }
                           },
                           "required": ["api_key", "type"],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -1451,8 +1494,8 @@
                               "description": "Postgres host (required for AWS IAM)"
                             },
                             "port": {
-                              "type": "number",
                               "default": 5432,
+                              "type": "number",
                               "description": "Postgres port"
                             },
                             "database": {
@@ -1464,13 +1507,13 @@
                               "description": "Database user (required for AWS IAM)"
                             },
                             "schema": {
-                              "type": "string",
                               "default": "public",
+                              "type": "string",
                               "description": "Target schema name"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 100,
+                              "type": "number",
                               "description": "Records to buffer before flushing"
                             },
                             "aws": {
@@ -1499,10 +1542,10 @@
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["postgres"]
+                              "const": "postgres"
                             }
                           },
-                          "required": ["type"],
+                          "required": ["port", "schema", "batch_size", "type"],
                           "additionalProperties": false
                         },
                         {
@@ -1529,24 +1572,31 @@
                               "description": "Target spreadsheet ID (created if omitted)"
                             },
                             "spreadsheet_title": {
-                              "type": "string",
                               "default": "Stripe Sync",
+                              "type": "string",
                               "description": "Title when creating a new spreadsheet"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 50,
+                              "type": "number",
                               "description": "Rows per Sheets API append call"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["google-sheets"]
+                              "const": "google-sheets"
                             }
                           },
-                          "required": ["access_token", "refresh_token", "type"],
+                          "required": [
+                            "access_token",
+                            "refresh_token",
+                            "spreadsheet_title",
+                            "batch_size",
+                            "type"
+                          ],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -1565,10 +1615,12 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "exclusiveMinimum": 0
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
-                        "required": ["name"]
+                        "required": ["name"],
+                        "additionalProperties": false
                       }
                     },
                     "status": {
@@ -1584,10 +1636,12 @@
                           "type": "number"
                         }
                       },
-                      "required": ["phase", "paused", "iteration"]
+                      "required": ["phase", "paused", "iteration"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["id", "source", "destination"]
+                  "required": ["id", "source", "destination"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1600,7 +1654,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1613,13 +1669,13 @@
         "summary": "Delete pipeline",
         "parameters": [
           {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": true
           }
         ],
         "responses": {
@@ -1635,10 +1691,11 @@
                     },
                     "deleted": {
                       "type": "boolean",
-                      "enum": [true]
+                      "const": true
                     }
                   },
-                  "required": ["id", "deleted"]
+                  "required": ["id", "deleted"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1651,7 +1708,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1666,13 +1725,13 @@
         "summary": "Pause pipeline",
         "parameters": [
           {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": true
           }
         ],
         "responses": {
@@ -1744,31 +1803,32 @@
                             },
                             "backfill_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max objects to backfill per stream (useful for testing)"
                             },
                             "rate_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max Stripe API requests per second (default: 25)"
                             },
                             "backfill_concurrency": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Number of time-range segments for parallel backfill (default: 200)"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["stripe"]
+                              "const": "stripe"
                             }
                           },
                           "required": ["api_key", "type"],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -1791,8 +1851,8 @@
                               "description": "Postgres host (required for AWS IAM)"
                             },
                             "port": {
-                              "type": "number",
                               "default": 5432,
+                              "type": "number",
                               "description": "Postgres port"
                             },
                             "database": {
@@ -1804,13 +1864,13 @@
                               "description": "Database user (required for AWS IAM)"
                             },
                             "schema": {
-                              "type": "string",
                               "default": "public",
+                              "type": "string",
                               "description": "Target schema name"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 100,
+                              "type": "number",
                               "description": "Records to buffer before flushing"
                             },
                             "aws": {
@@ -1839,10 +1899,10 @@
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["postgres"]
+                              "const": "postgres"
                             }
                           },
-                          "required": ["type"],
+                          "required": ["port", "schema", "batch_size", "type"],
                           "additionalProperties": false
                         },
                         {
@@ -1869,24 +1929,31 @@
                               "description": "Target spreadsheet ID (created if omitted)"
                             },
                             "spreadsheet_title": {
-                              "type": "string",
                               "default": "Stripe Sync",
+                              "type": "string",
                               "description": "Title when creating a new spreadsheet"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 50,
+                              "type": "number",
                               "description": "Rows per Sheets API append call"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["google-sheets"]
+                              "const": "google-sheets"
                             }
                           },
-                          "required": ["access_token", "refresh_token", "type"],
+                          "required": [
+                            "access_token",
+                            "refresh_token",
+                            "spreadsheet_title",
+                            "batch_size",
+                            "type"
+                          ],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -1905,10 +1972,12 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "exclusiveMinimum": 0
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
-                        "required": ["name"]
+                        "required": ["name"],
+                        "additionalProperties": false
                       }
                     },
                     "status": {
@@ -1924,10 +1993,12 @@
                           "type": "number"
                         }
                       },
-                      "required": ["phase", "paused", "iteration"]
+                      "required": ["phase", "paused", "iteration"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["id", "source", "destination"]
+                  "required": ["id", "source", "destination"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1940,7 +2011,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1955,13 +2028,13 @@
         "summary": "Resume pipeline",
         "parameters": [
           {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": true
           }
         ],
         "responses": {
@@ -2033,31 +2106,32 @@
                             },
                             "backfill_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max objects to backfill per stream (useful for testing)"
                             },
                             "rate_limit": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Max Stripe API requests per second (default: 25)"
                             },
                             "backfill_concurrency": {
                               "type": "integer",
-                              "maximum": 9007199254740991,
                               "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
                               "description": "Number of time-range segments for parallel backfill (default: 200)"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["stripe"]
+                              "const": "stripe"
                             }
                           },
                           "required": ["api_key", "type"],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -2080,8 +2154,8 @@
                               "description": "Postgres host (required for AWS IAM)"
                             },
                             "port": {
-                              "type": "number",
                               "default": 5432,
+                              "type": "number",
                               "description": "Postgres port"
                             },
                             "database": {
@@ -2093,13 +2167,13 @@
                               "description": "Database user (required for AWS IAM)"
                             },
                             "schema": {
-                              "type": "string",
                               "default": "public",
+                              "type": "string",
                               "description": "Target schema name"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 100,
+                              "type": "number",
                               "description": "Records to buffer before flushing"
                             },
                             "aws": {
@@ -2128,10 +2202,10 @@
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["postgres"]
+                              "const": "postgres"
                             }
                           },
-                          "required": ["type"],
+                          "required": ["port", "schema", "batch_size", "type"],
                           "additionalProperties": false
                         },
                         {
@@ -2158,24 +2232,31 @@
                               "description": "Target spreadsheet ID (created if omitted)"
                             },
                             "spreadsheet_title": {
-                              "type": "string",
                               "default": "Stripe Sync",
+                              "type": "string",
                               "description": "Title when creating a new spreadsheet"
                             },
                             "batch_size": {
-                              "type": "number",
                               "default": 50,
+                              "type": "number",
                               "description": "Rows per Sheets API append call"
                             },
                             "type": {
                               "type": "string",
-                              "enum": ["google-sheets"]
+                              "const": "google-sheets"
                             }
                           },
-                          "required": ["access_token", "refresh_token", "type"],
+                          "required": [
+                            "access_token",
+                            "refresh_token",
+                            "spreadsheet_title",
+                            "batch_size",
+                            "type"
+                          ],
                           "additionalProperties": false
                         }
                       ],
+                      "type": "object",
                       "discriminator": {
                         "propertyName": "type"
                       }
@@ -2194,10 +2275,12 @@
                           },
                           "backfill_limit": {
                             "type": "integer",
-                            "exclusiveMinimum": 0
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
                           }
                         },
-                        "required": ["name"]
+                        "required": ["name"],
+                        "additionalProperties": false
                       }
                     },
                     "status": {
@@ -2213,10 +2296,12 @@
                           "type": "number"
                         }
                       },
-                      "required": ["phase", "paused", "iteration"]
+                      "required": ["phase", "paused", "iteration"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["id", "source", "destination"]
+                  "required": ["id", "source", "destination"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2229,7 +2314,9 @@
                   "type": "object",
                   "properties": {
                     "error": {}
-                  }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2245,13 +2332,13 @@
         "description": "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
         "parameters": [
           {
+            "in": "path",
+            "name": "pipeline_id",
             "schema": {
               "type": "string",
               "example": "pipe_abc123"
             },
-            "required": true,
-            "name": "pipeline_id",
-            "in": "path"
+            "required": true
           }
         ],
         "responses": {
@@ -2261,7 +2348,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "enum": ["ok"]
+                  "const": "ok"
                 }
               }
             }
@@ -2269,6 +2356,5 @@
         }
       }
     }
-  },
-  "webhooks": {}
+  }
 }
