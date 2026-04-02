@@ -25,8 +25,8 @@ const TASK_QUEUE = `test-app-${Date.now()}`
 const SCHEMA = `integration_${Date.now()}`
 const workflowsPath = path.resolve(process.cwd(), 'dist/temporal/workflows.js')
 
-// Set CLEANUP=1 to drop the test schema after the run
-const CLEANUP = process.env['CLEANUP'] === '1'
+// Set SKIP_CLEANUP=1 to keep workflows + Postgres schema for debugging
+const SKIP_CLEANUP = process.env['SKIP_CLEANUP'] === '1'
 
 // ---------------------------------------------------------------------------
 // Real connectors, real servers, real Temporal
@@ -101,7 +101,7 @@ beforeAll(async () => {
 
   console.log(`  Schema:   ${SCHEMA}`)
   console.log(`  Postgres: ${POSTGRES_URL}`)
-  console.log(`  Cleanup:  ${CLEANUP ? 'yes' : 'no (set CLEANUP=1 to drop schema)'}`)
+  console.log(`  Cleanup:  ${SKIP_CLEANUP ? 'no (SKIP_CLEANUP=1)' : 'yes'}`)
 }, 60_000)
 
 afterAll(async () => {
@@ -111,7 +111,7 @@ afterAll(async () => {
   await new Promise<void>((r, e) =>
     serviceServer?.close((err: Error | null) => (err ? e(err) : r()))
   )
-  if (CLEANUP) {
+  if (!SKIP_CLEANUP) {
     await pool?.query(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`).catch(() => {})
   }
   await pool?.end().catch(() => {})
@@ -198,16 +198,27 @@ describe('pipelines (integration)', () => {
     expect(updated!.id).toBe(id)
     expect(updated!.status).toBeDefined()
 
-    // Delete (signals workflow to teardown)
-    const { data: deleted, error: deleteErr } = await c.DELETE('/pipelines/{id}', {
-      params: { path: { id } },
-    })
-    expect(deleteErr).toBeUndefined()
-    expect(deleted).toEqual({ id, deleted: true })
+    if (!SKIP_CLEANUP) {
+      // Delete (signals workflow to teardown)
+      const { data: deleted, error: deleteErr } = await c.DELETE('/pipelines/{id}', {
+        params: { path: { id } },
+      })
+      expect(deleteErr).toBeUndefined()
+      expect(deleted).toEqual({ id, deleted: true })
 
-    // Wait for workflow to complete
-    const handle = client.workflow.getHandle(id)
-    await handle.result()
+      // Wait for workflow to complete
+      const handle = client.workflow.getHandle(id)
+      await handle.result()
+
+      // Deleted pipeline should be gone from list and get
+      const { data: listAfter } = await c.GET('/pipelines')
+      expect(listAfter!.data.find((p: any) => p.id === id)).toBeUndefined()
+
+      const { error: getAfter } = await c.GET('/pipelines/{id}', {
+        params: { path: { id } },
+      })
+      expect(getAfter).toBeDefined()
+    }
   }, 60_000)
 
   it('returns 404 for non-existent pipeline', async () => {

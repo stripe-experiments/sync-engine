@@ -109,8 +109,12 @@ export function createApp(options: AppOptions) {
       },
     }),
     async (c) => {
+      // Filter out completed/deleted workflows — they're soft-deleted pipelines.
+      // TODO: once we add a persistent store, query that instead of Temporal directly.
       const pipelines: Pipeline[] = []
-      for await (const wf of temporal.list({ query: `WorkflowType = 'pipelineWorkflow'` })) {
+      for await (const wf of temporal.list({
+        query: `WorkflowType = 'pipelineWorkflow' AND ExecutionStatus = 'Running'`,
+      })) {
         const memo = wf.memo as { pipeline?: Pipeline } | undefined
         if (memo?.pipeline) pipelines.push(memo.pipeline)
       }
@@ -178,6 +182,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
       try {
         const handle = temporal.getHandle(id)
+        // Completed workflows are soft-deleted — queries fail, treat as 404
         const [pipeline, status] = await Promise.all([
           handle.query<Pipeline>('config'),
           handle.query<WorkflowStatus>('status'),
