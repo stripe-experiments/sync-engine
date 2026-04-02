@@ -17,8 +17,13 @@ import { logger } from '../logger.js'
 
 // MARK: - Engine interface
 
+export interface SetupResult {
+  source?: Record<string, unknown>
+  destination?: Record<string, unknown>
+}
+
 export interface Engine {
-  setup(): Promise<void>
+  setup(): Promise<SetupResult>
   teardown(): Promise<void>
   check(): Promise<{ source: CheckResult; destination: CheckResult }>
   read(input?: AsyncIterable<unknown>): AsyncIterable<Message>
@@ -162,18 +167,28 @@ export function createEngine(
     async setup() {
       const catalog = await getCatalog()
       const filteredCatalog = applySelection(catalog)
-      await Promise.all([
+      const [sourceUpdates, destUpdates] = await Promise.all([
         connectors.source.setup
           ? withLoggedStep('Engine source setup', baseContext, () =>
               connectors.source.setup!({ config: sourceConfig, catalog })
             )
-          : Promise.resolve(),
+          : Promise.resolve(undefined),
         connectors.destination.setup
           ? withLoggedStep('Engine destination setup', baseContext, () =>
               connectors.destination.setup!({ config: destConfig, catalog: filteredCatalog })
             )
-          : Promise.resolve(),
+          : Promise.resolve(undefined),
       ])
+      const result: SetupResult = {}
+      if (sourceUpdates) {
+        Object.assign(sourceConfig, sourceUpdates)
+        result.source = sourceUpdates
+      }
+      if (destUpdates) {
+        Object.assign(destConfig, destUpdates)
+        result.destination = destUpdates
+      }
+      return result
     },
 
     async teardown() {

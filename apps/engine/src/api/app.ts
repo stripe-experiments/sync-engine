@@ -199,9 +199,9 @@ export function createApp(resolver: ConnectorResolver) {
     logger.info(context, 'Engine API /setup started')
     const engine = await createEngineFromParams(params.pipeline, resolver, readonlyStateStore())
     try {
-      await engine.setup()
+      const result = await engine.setup()
       logger.info({ ...context, durationMs: Date.now() - startedAt }, 'Engine API /setup completed')
-      return c.body(null, 204)
+      return c.json(result)
     } catch (error) {
       logger.error(
         { ...context, durationMs: Date.now() - startedAt, err: error },

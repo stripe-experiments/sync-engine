@@ -33,6 +33,7 @@ const apiFetch: typeof globalThis.fetch = (input, init) =>
 
 export const spec = z.object({
   api_key: z.string().describe('Stripe API key (sk_test_... or sk_live_...)'),
+  account_id: z.string().optional().describe('Stripe account ID (resolved from API if omitted)'),
   livemode: z.boolean().optional().describe('Whether this is a live mode sync'),
   api_version: z.string().optional().describe('Stripe API version (e.g. 2025-04-30.basil)'),
   base_url: z
@@ -175,8 +176,17 @@ export function createStripeSource(
     },
 
     async setup({ config, catalog }) {
+      const updates: Partial<Config> = {}
+      const stripe = makeClient(config)
+
+      // Resolve account_id if not already set
+      if (!config.account_id) {
+        const account = await stripe.accounts.retrieve()
+        updates.account_id = account.id
+      }
+
+      // Create managed webhook endpoint if webhook_url is set
       if (config.webhook_url) {
-        const stripe = makeClient(config)
         const existing = await stripe.webhookEndpoints.list({ limit: 100 })
         const managed = existing.data.find(
           (wh) => wh.url === config.webhook_url && wh.metadata?.managed_by === 'stripe-sync'
@@ -191,13 +201,19 @@ export function createStripeSource(
           // for the same account, each sync filters events by its own catalog
           // inside processStripeEvent(), keeping endpoint usage constant
           // regardless of how many syncs are configured.
-          await stripe.webhookEndpoints.create({
+          const created = await stripe.webhookEndpoints.create({
             url: config.webhook_url,
             enabled_events: ['*'],
             metadata: { managed_by: 'stripe-sync' },
           })
+          // Secret is only available at creation time — not on list/retrieve
+          if (!config.webhook_secret && created.secret) {
+            updates.webhook_secret = created.secret
+          }
         }
       }
+
+      return Object.keys(updates).length > 0 ? updates : undefined
     },
 
     async teardown({ config }) {

@@ -201,14 +201,16 @@ describe('GET /docs', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /setup', () => {
-  it('returns 204', async () => {
+  it('returns 200 with setup result', async () => {
     const app = createApp(resolver)
 
     const res = await app.request('/setup', {
       method: 'POST',
       headers: { 'X-Pipeline': syncParams },
     })
-    expect(res.status).toBe(204)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toEqual({})
   })
 })
 

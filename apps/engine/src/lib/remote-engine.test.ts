@@ -96,7 +96,7 @@ describe('createRemoteEngine', () => {
   describe('setup()', () => {
     it('resolves without error', async () => {
       const engine = createRemoteEngine(engineUrl, pipeline)
-      await expect(engine.setup()).resolves.toBeUndefined()
+      await expect(engine.setup()).resolves.toEqual({})
     })
   })
 
