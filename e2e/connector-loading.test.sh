@@ -198,7 +198,7 @@ echo ""
 # Step 8: unknown connector name → "not found"
 # ---------------------------------------------------------------------------
 echo "--- Step 8: unknown connector name → not found ---"
-UNKNOWN_PARAMS='{"source":{"name":"nonexistent-xyz"},"destination":{"name":"nonexistent-xyz"},"streams":[{"name":"x"}]}'
+UNKNOWN_PARAMS='{"source":{"type":"nonexistent-xyz"},"destination":{"type":"nonexistent-xyz"},"streams":[{"name":"x"}]}'
 unknown_output=$(npx sync-engine check \
      --x-pipeline "$UNKNOWN_PARAMS" \
      2>&1 || true)
