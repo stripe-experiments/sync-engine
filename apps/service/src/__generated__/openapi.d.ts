@@ -29,10 +29,10 @@ export interface paths {
       cookie?: never
     }
     /** List pipelines */
-    get: operations['listPipelines']
+    get: operations['pipelines.list']
     put?: never
     /** Create pipeline */
-    post: operations['createPipeline']
+    post: operations['pipelines.create']
     delete?: never
     options?: never
     head?: never
@@ -47,15 +47,15 @@ export interface paths {
       cookie?: never
     }
     /** Retrieve pipeline */
-    get: operations['getPipeline']
+    get: operations['pipelines.get']
     put?: never
     post?: never
     /** Delete pipeline */
-    delete: operations['deletePipeline']
+    delete: operations['pipelines.delete']
     options?: never
     head?: never
     /** Update pipeline */
-    patch: operations['updatePipeline']
+    patch: operations['pipelines.update']
     trace?: never
   }
   '/pipelines/{id}/pause': {
@@ -68,7 +68,7 @@ export interface paths {
     get?: never
     put?: never
     /** Pause pipeline */
-    post: operations['pausePipeline']
+    post: operations['pipelines.pause']
     delete?: never
     options?: never
     head?: never
@@ -85,7 +85,7 @@ export interface paths {
     get?: never
     put?: never
     /** Resume pipeline */
-    post: operations['resumePipeline']
+    post: operations['pipelines.resume']
     delete?: never
     options?: never
     head?: never
@@ -105,7 +105,7 @@ export interface paths {
      * Ingest a Stripe webhook event
      * @description Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.
      */
-    post: operations['pushWebhook']
+    post: operations['webhooks.push']
     delete?: never
     options?: never
     head?: never
@@ -147,7 +147,7 @@ export interface operations {
       }
     }
   }
-  listPipelines: {
+  'pipelines.list': {
     parameters: {
       query?: never
       header?: never
@@ -272,6 +272,7 @@ export interface operations {
                 name: string
                 /** @enum {string} */
                 sync_mode?: 'incremental' | 'full_refresh'
+                backfill_limit?: number
               }[]
             }[]
             has_more: boolean
@@ -280,7 +281,7 @@ export interface operations {
       }
     }
   }
-  createPipeline: {
+  'pipelines.create': {
     parameters: {
       query?: never
       header?: never
@@ -397,6 +398,7 @@ export interface operations {
             name: string
             /** @enum {string} */
             sync_mode?: 'incremental' | 'full_refresh'
+            backfill_limit?: number
           }[]
         }
       }
@@ -517,6 +519,7 @@ export interface operations {
               name: string
               /** @enum {string} */
               sync_mode?: 'incremental' | 'full_refresh'
+              backfill_limit?: number
             }[]
           }
         }
@@ -534,7 +537,7 @@ export interface operations {
       }
     }
   }
-  getPipeline: {
+  'pipelines.get': {
     parameters: {
       query?: never
       header?: never
@@ -660,6 +663,7 @@ export interface operations {
               name: string
               /** @enum {string} */
               sync_mode?: 'incremental' | 'full_refresh'
+              backfill_limit?: number
             }[]
             status?: {
               phase: string
@@ -682,7 +686,7 @@ export interface operations {
       }
     }
   }
-  deletePipeline: {
+  'pipelines.delete': {
     parameters: {
       query?: never
       header?: never
@@ -719,7 +723,7 @@ export interface operations {
       }
     }
   }
-  updatePipeline: {
+  'pipelines.update': {
     parameters: {
       query?: never
       header?: never
@@ -838,6 +842,7 @@ export interface operations {
             name: string
             /** @enum {string} */
             sync_mode?: 'incremental' | 'full_refresh'
+            backfill_limit?: number
           }[]
         }
       }
@@ -958,6 +963,7 @@ export interface operations {
               name: string
               /** @enum {string} */
               sync_mode?: 'incremental' | 'full_refresh'
+              backfill_limit?: number
             }[]
             status?: {
               phase: string
@@ -980,7 +986,7 @@ export interface operations {
       }
     }
   }
-  pausePipeline: {
+  'pipelines.pause': {
     parameters: {
       query?: never
       header?: never
@@ -1106,6 +1112,7 @@ export interface operations {
               name: string
               /** @enum {string} */
               sync_mode?: 'incremental' | 'full_refresh'
+              backfill_limit?: number
             }[]
             status?: {
               phase: string
@@ -1128,7 +1135,7 @@ export interface operations {
       }
     }
   }
-  resumePipeline: {
+  'pipelines.resume': {
     parameters: {
       query?: never
       header?: never
@@ -1254,6 +1261,7 @@ export interface operations {
               name: string
               /** @enum {string} */
               sync_mode?: 'incremental' | 'full_refresh'
+              backfill_limit?: number
             }[]
             status?: {
               phase: string
@@ -1276,7 +1284,7 @@ export interface operations {
       }
     }
   }
-  pushWebhook: {
+  'webhooks.push': {
     parameters: {
       query?: never
       header?: never

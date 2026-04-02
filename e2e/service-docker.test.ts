@@ -104,13 +104,13 @@ describeWithEnv(
       // --- Create ---
       const { data: created, error: createErr } = await c.POST('/pipelines', {
         body: {
-          source: { type: 'stripe', api_key: STRIPE_API_KEY, backfill_limit: 500 },
+          source: { type: 'stripe', api_key: STRIPE_API_KEY },
           destination: {
             type: 'postgres',
             connection_string: POSTGRES_CONTAINER_URL,
             schema,
           },
-          streams: [{ name: 'products' }],
+          streams: [{ name: 'products', backfill_limit: 500 }],
         },
       })
       expect(createErr).toBeUndefined()
@@ -128,16 +128,12 @@ describeWithEnv(
         }
       })
 
-      const { rows } = await pool.query(
-        `SELECT count(*)::int AS n FROM "${schema}"."products"`
-      )
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${schema}"."products"`)
       console.log(`  Synced:   ${rows[0].n} products`)
       expect(rows[0].n).toBeGreaterThan(0)
 
       // Verify shape
-      const { rows: sample } = await pool.query(
-        `SELECT id FROM "${schema}"."products" LIMIT 1`
-      )
+      const { rows: sample } = await pool.query(`SELECT id FROM "${schema}"."products" LIMIT 1`)
       expect(sample[0].id).toMatch(/^prod_/)
 
       // --- List includes the pipeline ---

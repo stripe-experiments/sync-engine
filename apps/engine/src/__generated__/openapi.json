@@ -3,7 +3,7 @@
   "info": {
     "title": "Stripe Sync Engine",
     "version": "1.0.0",
-    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /setup | Set up destination schema |\n| POST | /teardown | Tear down destination schema |\n| GET | /check | Check connector connection |\n| POST | /read | Read records from source |\n| POST | /write | Write records to destination |\n| POST | /sync | Run sync pipeline (read → write) |\n| GET | /connectors | List available connectors and their config schemas |"
+    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /setup | Set up destination schema |\n| POST | /teardown | Tear down destination schema |\n| GET | /check | Check connector connection |\n| POST | /discover | Discover available streams |\n| POST | /read | Read records from source |\n| POST | /write | Write records to destination |\n| POST | /sync | Run sync pipeline (read → write) |\n| GET | /connectors | List available connectors and their config schemas |"
   },
   "components": {
     "schemas": {
@@ -197,9 +197,9 @@
         "properties": {
           "source": {
             "type": "object",
-            "required": ["name"],
+            "required": ["type"],
             "properties": {
-              "name": {
+              "type": {
                 "type": "string"
               }
             },
@@ -207,9 +207,9 @@
           },
           "destination": {
             "type": "object",
-            "required": ["name"],
+            "required": ["type"],
             "properties": {
-              "name": {
+              "type": {
                 "type": "string"
               }
             },
@@ -285,7 +285,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           }
@@ -334,7 +334,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           }
@@ -375,7 +375,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           }
@@ -436,6 +436,90 @@
         }
       }
     },
+    "/discover": {
+      "post": {
+        "operationId": "discover",
+        "tags": ["Stateless Sync API"],
+        "summary": "Discover available streams",
+        "description": "Returns the catalog of available streams for the configured source. Each stream includes its name, primary key, and optional JSON schema.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "contentMediaType": "application/json",
+              "contentSchema": {
+                "$ref": "#/components/schemas/PipelineConfig"
+              }
+            },
+            "required": false,
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
+            "name": "x-pipeline",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available streams",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": ["catalog"]
+                    },
+                    "streams": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "primary_key": {
+                            "type": "array",
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "json_schema": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": ["name", "primary_key"]
+                      }
+                    }
+                  },
+                  "required": ["type", "streams"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid params",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/read": {
       "post": {
         "operationId": "read",
@@ -452,7 +536,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           },
@@ -527,7 +611,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           }
@@ -585,7 +669,7 @@
               }
             },
             "required": false,
-            "description": "JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams }",
+            "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "name": "x-pipeline",
             "in": "header"
           },

@@ -81,6 +81,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/discover': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Discover available streams
+     * @description Returns the catalog of available streams for the configured source. Each stream includes its name, primary key, and optional JSON schema.
+     */
+    post: operations['discover']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/read': {
     parameters: {
       query?: never
@@ -245,12 +265,12 @@ export interface components {
       | components['schemas']['LogMessage']
     PipelineConfig: {
       source: {
-        name: string
+        type: string
       } & {
         [key: string]: unknown
       }
       destination: {
-        name: string
+        type: string
       } & {
         [key: string]: unknown
       }
@@ -297,7 +317,7 @@ export interface operations {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
       }
       path?: never
@@ -333,7 +353,7 @@ export interface operations {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
       }
       path?: never
@@ -365,7 +385,7 @@ export interface operations {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
       }
       path?: never
@@ -406,11 +426,58 @@ export interface operations {
       }
     }
   }
+  discover: {
+    parameters: {
+      query?: never
+      header?: {
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
+        'x-pipeline'?: string
+      }
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Available streams */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @enum {string} */
+            type: 'catalog'
+            streams: {
+              name: string
+              primary_key: string[][]
+              json_schema?: {
+                [key: string]: unknown
+              }
+              metadata?: {
+                [key: string]: unknown
+              }
+            }[]
+          }
+        }
+      }
+      /** @description Invalid params */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            error?: unknown
+          }
+        }
+      }
+    }
+  }
   read: {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
         /** @description JSON-encoded per-stream cursor state. Engine uses this if present, falls back to StateStore. */
         'x-state'?: string
@@ -448,7 +515,7 @@ export interface operations {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
       }
       path?: never
@@ -486,7 +553,7 @@ export interface operations {
     parameters: {
       query?: never
       header?: {
-        /** @description JSON-encoded PipelineConfig: { source: { name, ...config }, destination: { name, ...config }, streams } */
+        /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
         'x-pipeline'?: string
         /** @description JSON-encoded per-stream cursor state. Engine uses this if present, falls back to StateStore. */
         'x-state'?: string
