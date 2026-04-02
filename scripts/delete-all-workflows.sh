@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Terminate all open Temporal workflow executions.
+# Delete all Temporal workflow executions and their event history.
+# Running workflows are terminated first, then deleted.
 #
 # Usage:
-#   ./scripts/terminate-all-workflows.sh [--address localhost:7233] [--namespace default] [--reason "..."]
+#   ./scripts/delete-all-workflows.sh [--address localhost:7233] [--namespace default] [--reason "..."]
 #
 # Defaults: address=localhost:7233, namespace=default
 
@@ -10,7 +11,7 @@ set -euo pipefail
 
 ADDRESS="localhost:7233"
 NAMESPACE="default"
-REASON="bulk terminate via terminate-all-workflows.sh"
+REASON="bulk delete via delete-all-workflows.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,11 +22,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo "Terminating all open workflows on $ADDRESS (namespace: $NAMESPACE)..."
+echo "Deleting all workflows on $ADDRESS (namespace: $NAMESPACE)..."
 
-temporal workflow terminate \
+temporal workflow delete \
   --address "$ADDRESS" \
   --namespace "$NAMESPACE" \
-  --query 'ExecutionStatus="Running"' \
+  --query 'WorkflowType!=""' \
   --reason "$REASON" \
   --yes
