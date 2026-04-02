@@ -24,7 +24,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
   const aKeys = Object.keys(a as object)
   const bKeys = Object.keys(b as object)
   if (aKeys.length !== bKeys.length) return false
-  return aKeys.every((k) => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  return aKeys.every((k) =>
+    deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])
+  )
 }
 const EVENT_BATCH_SIZE = 50
 
