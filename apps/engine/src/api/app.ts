@@ -290,6 +290,48 @@ export function createApp(resolver: ConnectorResolver) {
     }
   )
 
+  app.openapi(
+    createRoute({
+      operationId: 'discover',
+      method: 'post',
+      path: '/discover',
+      tags: ['Stateless Sync API'],
+      summary: 'Discover available streams',
+      description:
+        'Returns the catalog of available streams for the configured source. Each stream includes its name, primary key, and optional JSON schema.',
+      request: { headers: pipelineHeaders },
+      responses: {
+        200: {
+          description: 'Available streams',
+          content: {
+            'application/json': {
+              schema: z.object({
+                type: z.literal('catalog'),
+                streams: z.array(
+                  z.object({
+                    name: z.string(),
+                    primary_key: z.array(z.array(z.string())),
+                    json_schema: z.record(z.string(), z.unknown()).optional(),
+                    metadata: z.record(z.string(), z.unknown()).optional(),
+                  })
+                ),
+              }),
+            },
+          },
+        },
+        400: errorResponse,
+      },
+    }),
+    async (c) => {
+      const params = parseSyncParams(c)
+      const source = await resolver.resolveSource(params.pipeline.source.type)
+      const { type: _, ...sourceConfig } = params.pipeline.source
+      const config = z.fromJSONSchema(source.spec().config).parse(sourceConfig)
+      const catalog = await source.discover({ config: config as Record<string, unknown> })
+      return c.json(catalog, 200)
+    }
+  )
+
   // For streaming NDJSON routes the handler returns a raw Response (not c.json),
   // so we cast to `any` to satisfy the typed route handler constraint.
 
