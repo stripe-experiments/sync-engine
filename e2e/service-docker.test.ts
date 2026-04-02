@@ -47,7 +47,7 @@ function api() {
 
 describeWithEnv(
   'service docker e2e: stripe → postgres',
-  ['STRIPE_API_KEY'],
+  ['STRIPE_API_KEY', 'SERVICE_DOCKER_E2E'],
   ({ STRIPE_API_KEY }) => {
     let pool: pg.Pool
     let schema: string
