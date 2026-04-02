@@ -125,7 +125,7 @@ describe('createActivities (integration via createRemoteEngine)', () => {
     expect(result.state).toHaveProperty('customers')
   })
 
-  it('readIntoQueue returns count, records, and state', async () => {
+  it('readIntoQueue returns count and state', async () => {
     const activities = createActivities({ serviceUrl, engineUrl })
     const result = await activities.readIntoQueue('test-pipeline', {
       input: [
@@ -134,10 +134,8 @@ describe('createActivities (integration via createRemoteEngine)', () => {
       ],
     })
     expect(result).toHaveProperty('count')
-    expect(result).toHaveProperty('records')
     expect(result).toHaveProperty('state')
     expect(typeof result.count).toBe('number')
-    expect(Array.isArray(result.records)).toBe(true)
   })
 
   it('writeFromQueue returns errors, state, and written count', async () => {

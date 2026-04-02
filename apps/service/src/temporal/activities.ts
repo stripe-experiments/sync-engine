@@ -112,7 +112,7 @@ export function createActivities(opts: {
     async readIntoQueue(
       pipelineId: string,
       opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
-    ): Promise<{ count: number; records: unknown[]; state: Record<string, unknown> }> {
+    ): Promise<{ count: number; state: Record<string, unknown> }> {
       const config = await resolveConfig(serviceUrl, pipelineId)
       const engine = createRemoteEngine(engineUrl, config, {
         state: opts?.state,
@@ -132,7 +132,7 @@ export function createActivities(opts: {
         })
       }
 
-      return { count: records.length, records, state }
+      return { count: records.length, state }
     },
 
     async writeFromQueue(
