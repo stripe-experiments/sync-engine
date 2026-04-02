@@ -101,9 +101,11 @@ export function createDestination(
     },
 
     async setup({ config, catalog }: { config: Config; catalog: ConfiguredCatalog }) {
+      if (config.spreadsheet_id) {
+        spreadsheetId = config.spreadsheet_id
+        return
+      }
       const sheets = sheetsClient ?? makeSheetsClient(config)
-
-      // Always create a new spreadsheet — the returned ID should be saved by the caller
       spreadsheetId = await ensureSpreadsheet(sheets, config.spreadsheet_title)
 
       // Create the Overview intro tab first (handles "Sheet1" rename if needed)
@@ -144,13 +146,6 @@ export function createDestination(
           message: err instanceof Error ? err.message : String(err),
         }
       }
-    },
-
-    async setup({ config }: { config: Config }) {
-      if (config.spreadsheet_id) return
-      const sheets = sheetsClient ?? makeSheetsClient(config)
-      const id = await ensureSpreadsheet(sheets, config.spreadsheet_title)
-      return { spreadsheet_id: id }
     },
 
     async *write(
