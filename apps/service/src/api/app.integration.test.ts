@@ -241,10 +241,9 @@ describe('pipeline integration', () => {
     await pollUntil(
       async () => {
         try {
-          const r = await pool.query(
-            `SELECT name FROM "${SCHEMA}"."products" WHERE id = $1`,
-            [productId]
-          )
+          const r = await pool.query(`SELECT name FROM "${SCHEMA}"."products" WHERE id = $1`, [
+            productId,
+          ])
           return r.rows[0]?.name === marker
         } catch {
           return false

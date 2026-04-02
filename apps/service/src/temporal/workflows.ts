@@ -161,7 +161,10 @@ export async function pipelineWorkflow(
       pipeline = { ...pipeline, source: { ...pipeline.source, ...setupResult.source } }
     }
     if (setupResult.destination) {
-      pipeline = { ...pipeline, destination: { ...pipeline.destination, ...setupResult.destination } }
+      pipeline = {
+        ...pipeline,
+        destination: { ...pipeline.destination, ...setupResult.destination },
+      }
     }
     if (deleted) {
       await teardown(toConfig(pipeline))
