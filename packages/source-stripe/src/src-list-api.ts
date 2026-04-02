@@ -20,6 +20,23 @@ const SKIPPABLE_ERROR_PATTERNS = [
 
 const DEFAULT_BACKFILL_CONCURRENCY = 200
 
+// Compacts a segment snapshot by merging adjacent completed spans.
+// Keeps state size bounded: completed segments carry no cursor so they collapse losslessly.
+// State scales with in-flight (pending) segments, not total.
+// With DEFAULT_BACKFILL_CONCURRENCY=200, ~90 bytes/segment → stay under Node's 16KB maxHeaderSize.
+export function mergeAdjacentCompleted(segments: SegmentState[]): SegmentState[] {
+  const result: SegmentState[] = []
+  for (const seg of segments) {
+    const last = result.at(-1)
+    if (last?.status === 'complete' && seg.status === 'complete' && last.lt === seg.gte) {
+      result[result.length - 1] = { ...last, lt: seg.lt }
+    } else {
+      result.push(seg)
+    }
+  }
+  return result
+}
+
 function isSkippableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
   return SKIPPABLE_ERROR_PATTERNS.some((p) => msg.includes(p))
@@ -168,7 +185,7 @@ async function* paginateSegment(opts: {
       data: {
         pageCursor: null,
         status: allComplete ? 'complete' : 'pending',
-        segments: segments.map((s) => ({ ...s })),
+        segments: mergeAdjacentCompleted(segments.map((s) => ({ ...s }))),
       },
     } satisfies StateMessage
   }
