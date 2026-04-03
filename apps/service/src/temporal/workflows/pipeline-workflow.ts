@@ -16,10 +16,13 @@ import {
 } from './_shared.js'
 import { CONTINUE_AS_NEW_THRESHOLD, EVENT_BATCH_SIZE } from '../../lib/utils.js'
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
 export interface PipelineWorkflowOpts {
   phase?: string
   state?: Record<string, unknown>
   timeLimit?: number
+  reconInterval?: number
   inputQueue?: unknown[]
 }
 
@@ -72,6 +75,7 @@ export async function pipelineWorkflow(
         phase: 'running',
         state: syncState,
         timeLimit: opts?.timeLimit,
+        reconInterval: opts?.reconInterval,
         inputQueue: inputQueue.length > 0 ? [...inputQueue] : undefined,
       })
     }
@@ -119,7 +123,13 @@ export async function pipelineWorkflow(
       continue
     }
 
-    await condition(() => inputQueue.length > 0 || deleted)
+    // Wait for the next webhook event. If the recon interval elapses with no
+    // event, trigger a full reconciliation by resetting readComplete.
+    const gotEvent = await condition(
+      () => inputQueue.length > 0 || deleted,
+      opts?.reconInterval ?? ONE_WEEK_MS
+    )
+    if (!gotEvent && !deleted) readComplete = false
   }
 
   await teardown(toConfig(pipeline))
