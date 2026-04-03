@@ -444,7 +444,7 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available source connectors with their JSON Schema configs',
           content: {
             'application/json': {
-              schema: z.object({ data: z.array(ConnectorListItem) }),
+              schema: z.object({ items: z.array(ConnectorListItem) }),
             },
           },
         },
@@ -493,7 +493,7 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available destination connectors with their JSON Schema configs',
           content: {
             'application/json': {
-              schema: z.object({ data: z.array(ConnectorListItem) }),
+              schema: z.object({ items: z.array(ConnectorListItem) }),
             },
           },
         },

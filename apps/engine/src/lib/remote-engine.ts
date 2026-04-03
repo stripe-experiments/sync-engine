@@ -96,11 +96,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
   }
 
   return {
-    async meta_sources_list(): Promise<{ data: ConnectorListItem[] }> {
+    async meta_sources_list(): Promise<{ items: ConnectorListItem[] }> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (client.GET as any)('/meta/sources')
       if (error) throw new Error(`Engine /meta/sources failed: ${JSON.stringify(error)}`)
-      return data as { data: ConnectorListItem[] }
+      return data as { items: ConnectorListItem[] }
     },
 
     async meta_source(type: string): Promise<ConnectorInfo> {
@@ -112,11 +112,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
       return data as ConnectorInfo
     },
 
-    async meta_destinations_list(): Promise<{ data: ConnectorListItem[] }> {
+    async meta_destinations_list(): Promise<{ items: ConnectorListItem[] }> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (client.GET as any)('/meta/destinations')
       if (error) throw new Error(`Engine /meta/destinations failed: ${JSON.stringify(error)}`)
-      return data as { data: ConnectorListItem[] }
+      return data as { items: ConnectorListItem[] }
     },
 
     async meta_destination(type: string): Promise<ConnectorInfo> {

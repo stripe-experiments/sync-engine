@@ -38,9 +38,9 @@ export const ConnectorListItem = ConnectorInfo.extend({ type: z.string() })
 export type ConnectorListItem = z.infer<typeof ConnectorListItem>
 
 export interface Engine {
-  meta_sources_list(): Promise<{ data: ConnectorListItem[] }>
+  meta_sources_list(): Promise<{ items: ConnectorListItem[] }>
   meta_source(type: string): Promise<ConnectorInfo>
-  meta_destinations_list(): Promise<{ data: ConnectorListItem[] }>
+  meta_destinations_list(): Promise<{ items: ConnectorListItem[] }>
   meta_destination(type: string): Promise<ConnectorInfo>
   pipeline_setup(pipeline: PipelineConfig): Promise<SetupResult>
   pipeline_teardown(pipeline: PipelineConfig): Promise<void>
@@ -154,7 +154,7 @@ export function createEngine(resolver: ConnectorResolver): Engine {
   return {
     async meta_sources_list() {
       return {
-        data: [...resolver.sources()].map(([type, r]) => ({
+        items: [...resolver.sources()].map(([type, r]) => ({
           type,
           config_schema: r.rawConfigJsonSchema,
         })),
@@ -169,7 +169,7 @@ export function createEngine(resolver: ConnectorResolver): Engine {
 
     async meta_destinations_list() {
       return {
-        data: [...resolver.destinations()].map(([type, r]) => ({
+        items: [...resolver.destinations()].map(([type, r]) => ({
           type,
           config_schema: r.rawConfigJsonSchema,
         })),
