@@ -52,6 +52,7 @@ for the full dependency graph.
 
 ## Key Rules
 
+0. **This file is an index, not a rulebook** — before adding anything here, check if it belongs in [docs/architecture/principles.md](docs/architecture/principles.md), [docs/architecture/decisions.md](docs/architecture/decisions.md), or another doc first. Only add to AGENTS.md if no better home exists.
 1. **Connector isolation** — sources never import destinations, both depend only on `protocol`. Enforced by `e2e/layers.test.ts`.
 2. **State is a message** — connectors never access state storage directly. State in = `cursor_in`; state out = `StateMessage`.
 3. **Snake_case on the wire** — all Zod schemas and JSON wire format use snake_case.
