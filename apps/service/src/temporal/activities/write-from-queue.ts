@@ -22,9 +22,9 @@ export function createWriteFromQueueActivity(context: ActivitiesContext) {
       return { errors: [], state: {}, written: 0 }
     }
 
-    const engine = createRemoteEngine(context.engineUrl, config)
+    const engine = createRemoteEngine(context.engineUrl)
     const { errors, state } = await drainMessages(
-      engine.write(asIterable(records) as AsyncIterable<Message>) as AsyncIterable<
+      engine.pipeline_write(config, asIterable(records) as AsyncIterable<Message>) as AsyncIterable<
         Record<string, unknown>
       >
     )

@@ -110,7 +110,9 @@ const workerCmd = defineCommand({
     //   compiled: file:///.../apps/service/dist/cli.js → ./temporal/workflows/index.js
     const { fileURLToPath } = await import('node:url')
     const ext = import.meta.url.endsWith('.ts') ? '.ts' : '.js'
-    const workflowsPath = fileURLToPath(new URL(`./temporal/workflows/index${ext}`, import.meta.url))
+    const workflowsPath = fileURLToPath(
+      new URL(`./temporal/workflows/index${ext}`, import.meta.url)
+    )
 
     const worker = await createWorker({
       temporalAddress,

@@ -1,5 +1,5 @@
 import { createRemoteEngine } from '@stripe/sync-engine'
-import type { PipelineConfig } from '@stripe/sync-engine'
+import type { PipelineConfig, SyncOpts } from '@stripe/sync-engine'
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, drainMessages } from './_shared.js'
 
@@ -7,15 +7,13 @@ export function createReadIntoQueueActivity(context: ActivitiesContext) {
   return async function readIntoQueue(
     config: PipelineConfig,
     pipelineId: string,
-    opts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
+    opts?: SyncOpts & { input?: unknown[] }
   ): Promise<{ count: number; state: Record<string, unknown> }> {
-    const engine = createRemoteEngine(context.engineUrl, config, {
-      state: opts?.state,
-      stateLimit: opts?.stateLimit,
-    })
-    const input = opts?.input?.length ? asIterable(opts.input) : undefined
+    const engine = createRemoteEngine(context.engineUrl)
+    const { input: inputArr, ...syncOpts } = opts ?? {}
+    const input = inputArr?.length ? asIterable(inputArr) : undefined
     const { records, state } = await drainMessages(
-      engine.read(input) as AsyncIterable<Record<string, unknown>>
+      engine.pipeline_read(config, syncOpts, input) as AsyncIterable<Record<string, unknown>>
     )
 
     if (context.kafkaBroker && records.length > 0) {
