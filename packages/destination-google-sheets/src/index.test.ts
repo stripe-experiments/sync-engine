@@ -16,7 +16,7 @@ async function* toAsyncIter<T>(items: T[]): AsyncIterableIterator<T> {
   for (const item of items) yield item
 }
 
-const now = new Date().toISOString()
+const now = Date.now()
 
 function record(stream: string, data: Record<string, unknown>): DestinationInput {
   return { type: 'record', stream, data, emitted_at: now }
