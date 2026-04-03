@@ -23,6 +23,7 @@ export interface PipelineWorkflowOpts {
   state?: Record<string, unknown>
   mode?: 'sync' | 'read-write'
   writeRps?: number
+  timeLimit?: number
   pendingWrites?: boolean
   inputQueue?: unknown[]
 }
@@ -85,6 +86,7 @@ export async function pipelineWorkflow(
         state: syncState,
         mode: opts?.mode,
         writeRps: opts?.writeRps,
+        timeLimit: opts?.timeLimit,
         pendingWrites,
         inputQueue: inputQueue.length > 0 ? [...inputQueue] : undefined,
       })
@@ -133,6 +135,7 @@ export async function pipelineWorkflow(
           const { count, state: nextReadState, eof } = await readIntoQueue(config, pipeline.id, {
             state: readState,
             stateLimit: 1,
+            timeLimit: opts?.timeLimit,
           })
           if (count > 0) pendingWrites = true
           readState = { ...readState, ...nextReadState }
@@ -180,7 +183,7 @@ export async function pipelineWorkflow(
       }
 
       if (!readComplete) {
-        const result = await syncImmediate(config, { state: syncState, stateLimit: 1 })
+        const result = await syncImmediate(config, { state: syncState, stateLimit: 1, timeLimit: opts?.timeLimit })
         syncState = { ...syncState, ...result.state }
         readComplete = result.eof?.reason === 'complete'
         await tickIteration()
