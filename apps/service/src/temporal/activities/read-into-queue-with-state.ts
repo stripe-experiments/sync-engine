@@ -39,8 +39,11 @@ export function createReadIntoQueueWithStateActivity(context: ActivitiesContext)
         errors.push(error)
       } else if (raw.type === 'record') {
         queued.push(withRowKey(raw as RecordMessage, catalog))
-      } else if (raw.type === 'state' && typeof raw.stream === 'string') {
-        state[raw.stream] = raw.data
+      } else if (raw.type === 'state') {
+        const statePayload = (raw as Record<string, unknown>).state as Record<string, unknown>
+        if (typeof statePayload?.stream === 'string') {
+          state[statePayload.stream] = statePayload.data
+        }
         queued.push(raw as Message)
       }
       if (seen % 50 === 0) heartbeat({ messages: seen })

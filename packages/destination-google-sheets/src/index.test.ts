@@ -362,9 +362,7 @@ describe('check', () => {
       (message) => message.type === 'log' && message.log.level === 'debug'
     )
     expect(metaLog).toBeDefined()
-    const meta = parseGoogleSheetsMetaLog(
-      (metaLog as { log: { message: string } }).log.message
-    )
+    const meta = parseGoogleSheetsMetaLog((metaLog as { log: { message: string } }).log.message)
     expect(meta).toEqual({
       type: 'row_assignments',
       assignments: { customers: { '["cus_2"]': 3 } },
