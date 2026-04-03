@@ -7,9 +7,7 @@ import { createConnectorResolver } from '../lib/index.js'
 import { createApp } from '../api/app.js'
 import { serveAction } from '../serve-command.js'
 import { supabaseCmd } from './supabase.js'
-import sourceStripe from '@stripe/sync-source-stripe'
-import destinationPostgres from '@stripe/sync-destination-postgres'
-import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
+import { defaultConnectors } from '../lib/default-connectors.js'
 
 /** Connector discovery flags shared by all commands (serve + one-shot). */
 const connectorArgs = {
@@ -72,12 +70,7 @@ function parseConnectorFlags(): {
 
 export async function createProgram() {
   const flags = parseConnectorFlags()
-  const resolver = createConnectorResolver(
-    {
-      sources: { stripe: sourceStripe },
-      destinations: { postgres: destinationPostgres, 'google-sheets': destinationGoogleSheets },
-    },
-    {
+  const resolver = createConnectorResolver(defaultConnectors, {
       path: flags.connectorsFromPath,
       npm: flags.connectorsFromNpm,
       commandMap: parseJsonOrFile(flags.connectorsFromCommandMap) as
