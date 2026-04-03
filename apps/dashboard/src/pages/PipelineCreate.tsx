@@ -35,12 +35,12 @@ export function PipelineCreate({ onDone }: { onDone?: () => void }) {
   // Load available connectors on mount
   useEffect(() => {
     Promise.all([getSources(), getDestinations()]).then(([srcs, dests]) => {
-      setSources(srcs)
-      setDestinations(dests)
-      const sourceKeys = Object.keys(srcs)
-      const destKeys = Object.keys(dests)
-      if (sourceKeys.length === 1) setSourceType(sourceKeys[0])
-      if (destKeys.length === 1) setDestType(destKeys[0])
+      const srcMap = Object.fromEntries(srcs.data.map((c) => [c.type, c]))
+      const destMap = Object.fromEntries(dests.data.map((c) => [c.type, c]))
+      setSources(srcMap)
+      setDestinations(destMap)
+      if (srcs.data.length === 1) setSourceType(srcs.data[0].type)
+      if (dests.data.length === 1) setDestType(dests.data[0].type)
     })
   }, [])
 

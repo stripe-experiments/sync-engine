@@ -191,12 +191,12 @@ describe('createRemoteEngine', () => {
     })
   })
 
-  describe('meta_sources()', () => {
-    it('returns available source connectors', async () => {
+  describe('meta_sources_list()', () => {
+    it('returns available source connectors as array', async () => {
       const engine = createRemoteEngine(engineUrl)
-      const result = await engine.meta_sources()
-      expect(result).toHaveProperty('test')
-      expect(result['test']).toHaveProperty('config_schema')
+      const result = await engine.meta_sources_list()
+      expect(Array.isArray(result.data)).toBe(true)
+      expect(result.data.find((c) => c.type === 'test')).toHaveProperty('config_schema')
     })
   })
 
@@ -213,12 +213,12 @@ describe('createRemoteEngine', () => {
     })
   })
 
-  describe('meta_destinations()', () => {
-    it('returns available destination connectors', async () => {
+  describe('meta_destinations_list()', () => {
+    it('returns available destination connectors as array', async () => {
       const engine = createRemoteEngine(engineUrl)
-      const result = await engine.meta_destinations()
-      expect(result).toHaveProperty('test')
-      expect(result['test']).toHaveProperty('config_schema')
+      const result = await engine.meta_destinations_list()
+      expect(Array.isArray(result.data)).toBe(true)
+      expect(result.data.find((c) => c.type === 'test')).toHaveProperty('config_schema')
     })
   })
 

@@ -169,7 +169,7 @@ export interface paths {
             cookie?: never;
         };
         /** List available source connectors */
-        get: operations["meta_sources"];
+        get: operations["meta_sources_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -203,7 +203,7 @@ export interface paths {
             cookie?: never;
         };
         /** List available destination connectors */
-        get: operations["meta_destinations"];
+        get: operations["meta_destinations_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -879,7 +879,7 @@ export interface operations {
             };
         };
     };
-    meta_sources: {
+    meta_sources_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -895,11 +895,12 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: {
+                        data: {
                             config_schema: {
                                 [key: string]: unknown;
                             };
-                        };
+                            type: string;
+                        }[];
                     };
                 };
             };
@@ -938,7 +939,7 @@ export interface operations {
             };
         };
     };
-    meta_destinations: {
+    meta_destinations_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -954,11 +955,12 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: {
+                        data: {
                             config_schema: {
                                 [key: string]: unknown;
                             };
-                        };
+                            type: string;
+                        }[];
                     };
                 };
             };

@@ -347,8 +347,8 @@ describe('engine config validation', () => {
     expect(typeof engine.pipeline_read).toBe('function')
     expect(typeof engine.pipeline_write).toBe('function')
     expect(typeof engine.pipeline_sync).toBe('function')
-    expect(typeof engine.meta_sources).toBe('function')
-    expect(typeof engine.meta_destinations).toBe('function')
+    expect(typeof engine.meta_sources_list).toBe('function')
+    expect(typeof engine.meta_destinations_list).toBe('function')
   })
 
   it('throws on invalid source config', async () => {

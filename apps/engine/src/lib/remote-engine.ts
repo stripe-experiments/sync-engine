@@ -1,6 +1,6 @@
 import createClient from 'openapi-fetch'
 import type { paths } from '../__generated__/openapi.js'
-import type { Engine, SetupResult, SyncOpts, ConnectorInfo } from './engine.js'
+import type { Engine, SetupResult, SyncOpts, ConnectorInfo, ConnectorListItem } from './engine.js'
 import { parseNdjsonStream, toNdjsonStream } from './ndjson.js'
 import type {
   CheckResult,
@@ -81,11 +81,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
   }
 
   return {
-    async meta_sources(): Promise<Record<string, ConnectorInfo>> {
+    async meta_sources_list(): Promise<{ data: ConnectorListItem[] }> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (client.GET as any)('/meta/sources')
       if (error) throw new Error(`Engine /meta/sources failed: ${JSON.stringify(error)}`)
-      return data as Record<string, ConnectorInfo>
+      return data as { data: ConnectorListItem[] }
     },
 
     async meta_source(type: string): Promise<ConnectorInfo> {
@@ -97,11 +97,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
       return data as ConnectorInfo
     },
 
-    async meta_destinations(): Promise<Record<string, ConnectorInfo>> {
+    async meta_destinations_list(): Promise<{ data: ConnectorListItem[] }> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (client.GET as any)('/meta/destinations')
       if (error) throw new Error(`Engine /meta/destinations failed: ${JSON.stringify(error)}`)
-      return data as Record<string, ConnectorInfo>
+      return data as { data: ConnectorListItem[] }
     },
 
     async meta_destination(type: string): Promise<ConnectorInfo> {

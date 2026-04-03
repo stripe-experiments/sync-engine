@@ -210,8 +210,8 @@ describe('GET /meta/sources', () => {
     const res = await app.request('/meta/sources')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
-    expect(body).toHaveProperty('test')
-    expect(body.test.config_schema).toBeDefined()
+    expect(Array.isArray(body.data)).toBe(true)
+    expect(body.data.find((c: any) => c.type === 'test')?.config_schema).toBeDefined()
   })
 })
 
@@ -237,8 +237,8 @@ describe('GET /meta/destinations', () => {
     const res = await app.request('/meta/destinations')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
-    expect(body).toHaveProperty('test')
-    expect(body.test.config_schema).toBeDefined()
+    expect(Array.isArray(body.data)).toBe(true)
+    expect(body.data.find((c: any) => c.type === 'test')?.config_schema).toBeDefined()
   })
 })
 

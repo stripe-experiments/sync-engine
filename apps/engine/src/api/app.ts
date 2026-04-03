@@ -4,7 +4,13 @@ import { apiReference } from '@scalar/hono-api-reference'
 import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
 import type { Message, DestinationOutput, ConnectorResolver, SyncParams } from '../lib/index.js'
-import { createEngine, PipelineConfig, parseNdjsonStream, ConnectorInfo } from '../lib/index.js'
+import {
+  createEngine,
+  PipelineConfig,
+  parseNdjsonStream,
+  ConnectorInfo,
+  ConnectorListItem,
+} from '../lib/index.js'
 import { endpointTable, addDiscriminators, injectConnectorSchemas } from './openapi-utils.js'
 import {
   Message as MessageSchema,
@@ -428,7 +434,7 @@ export function createApp(resolver: ConnectorResolver) {
 
   app.openapi(
     createRoute({
-      operationId: 'meta_sources',
+      operationId: 'meta_sources_list',
       method: 'get',
       path: '/meta/sources',
       tags: ['Meta'],
@@ -438,14 +444,14 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available source connectors with their JSON Schema configs',
           content: {
             'application/json': {
-              schema: z.record(z.string(), ConnectorInfo),
+              schema: z.object({ data: z.array(ConnectorListItem) }),
             },
           },
         },
       },
     }),
     async (c) => {
-      return c.json(await engine.meta_sources(), 200)
+      return c.json(await engine.meta_sources_list(), 200)
     }
   )
 
@@ -477,7 +483,7 @@ export function createApp(resolver: ConnectorResolver) {
 
   app.openapi(
     createRoute({
-      operationId: 'meta_destinations',
+      operationId: 'meta_destinations_list',
       method: 'get',
       path: '/meta/destinations',
       tags: ['Meta'],
@@ -487,14 +493,14 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available destination connectors with their JSON Schema configs',
           content: {
             'application/json': {
-              schema: z.record(z.string(), ConnectorInfo),
+              schema: z.object({ data: z.array(ConnectorListItem) }),
             },
           },
         },
       },
     }),
     async (c) => {
-      return c.json(await engine.meta_destinations(), 200)
+      return c.json(await engine.meta_destinations_list(), 200)
     }
   )
 

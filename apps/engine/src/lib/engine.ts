@@ -34,10 +34,13 @@ export const ConnectorInfo = z.object({
 })
 export type ConnectorInfo = z.infer<typeof ConnectorInfo>
 
+export const ConnectorListItem = ConnectorInfo.extend({ type: z.string() })
+export type ConnectorListItem = z.infer<typeof ConnectorListItem>
+
 export interface Engine {
-  meta_sources(): Promise<Record<string, ConnectorInfo>>
+  meta_sources_list(): Promise<{ data: ConnectorListItem[] }>
   meta_source(type: string): Promise<ConnectorInfo>
-  meta_destinations(): Promise<Record<string, ConnectorInfo>>
+  meta_destinations_list(): Promise<{ data: ConnectorListItem[] }>
   meta_destination(type: string): Promise<ConnectorInfo>
   pipeline_setup(pipeline: PipelineConfig): Promise<SetupResult>
   pipeline_teardown(pipeline: PipelineConfig): Promise<void>
@@ -149,10 +152,13 @@ export function buildCatalog(
 
 export function createEngine(resolver: ConnectorResolver): Engine {
   return {
-    async meta_sources() {
-      return Object.fromEntries(
-        [...resolver.sources()].map(([name, r]) => [name, { config_schema: r.rawConfigJsonSchema }])
-      )
+    async meta_sources_list() {
+      return {
+        data: [...resolver.sources()].map(([type, r]) => ({
+          type,
+          config_schema: r.rawConfigJsonSchema,
+        })),
+      }
     },
 
     async meta_source(type: string): Promise<ConnectorInfo> {
@@ -161,13 +167,13 @@ export function createEngine(resolver: ConnectorResolver): Engine {
       return { config_schema: r.rawConfigJsonSchema }
     },
 
-    async meta_destinations() {
-      return Object.fromEntries(
-        [...resolver.destinations()].map(([name, r]) => [
-          name,
-          { config_schema: r.rawConfigJsonSchema },
-        ])
-      )
+    async meta_destinations_list() {
+      return {
+        data: [...resolver.destinations()].map(([type, r]) => ({
+          type,
+          config_schema: r.rawConfigJsonSchema,
+        })),
+      }
     },
 
     async meta_destination(type: string): Promise<ConnectorInfo> {
