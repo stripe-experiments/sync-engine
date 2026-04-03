@@ -132,7 +132,11 @@ export async function pipelineWorkflow(
         }
 
         if (!readComplete) {
-          const { count, state: nextReadState, eof } = await readIntoQueue(config, pipeline.id, {
+          const {
+            count,
+            state: nextReadState,
+            eof,
+          } = await readIntoQueue(config, pipeline.id, {
             state: readState,
             stateLimit: 1,
             timeLimit: opts?.timeLimit,
@@ -183,7 +187,11 @@ export async function pipelineWorkflow(
       }
 
       if (!readComplete) {
-        const result = await syncImmediate(config, { state: syncState, stateLimit: 1, timeLimit: opts?.timeLimit })
+        const result = await syncImmediate(config, {
+          state: syncState,
+          stateLimit: 1,
+          timeLimit: opts?.timeLimit,
+        })
         syncState = { ...syncState, ...result.state }
         readComplete = result.eof?.reason === 'complete'
         await tickIteration()
