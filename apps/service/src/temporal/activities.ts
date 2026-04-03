@@ -90,13 +90,13 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
         input?: unknown[]
         state?: Record<string, unknown>
         stateLimit?: number
-        timeLimitSeconds?: number
+        timeLimit?: number
       }
     ): Promise<RunResult & { eof?: { reason: string } }> {
       const engine = createRemoteEngine(engineUrl, config, {
         state: opts?.state,
         stateLimit: opts?.stateLimit,
-        timeLimitSeconds: opts?.timeLimitSeconds,
+        timeLimit: opts?.timeLimit,
       })
       const input = opts?.input?.length ? asIterable(opts.input) : undefined
       const { errors, state, eof } = await drainMessages(
@@ -112,13 +112,13 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
         input?: unknown[]
         state?: Record<string, unknown>
         stateLimit?: number
-        timeLimitSeconds?: number
+        timeLimit?: number
       }
     ): Promise<{ count: number; state: Record<string, unknown>; eof?: { reason: string } }> {
       const engine = createRemoteEngine(engineUrl, config, {
         state: opts?.state,
         stateLimit: opts?.stateLimit,
-        timeLimitSeconds: opts?.timeLimitSeconds,
+        timeLimit: opts?.timeLimit,
       })
       const input = opts?.input?.length ? asIterable(opts.input) : undefined
       const { records, state, eof } = await drainMessages(
