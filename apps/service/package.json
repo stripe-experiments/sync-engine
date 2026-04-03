@@ -52,6 +52,7 @@
   "devDependencies": {
     "@temporalio/testing": "^1",
     "@types/node": "^24.10.1",
+    "ajv": "^8.18.0",
     "openapi-typescript": "^7",
     "pg": "^8",
     "stripe": "^21.0.1",

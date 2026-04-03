@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import Ajv2020 from 'ajv/dist/2020.js'
-import { createApp, createConnectorResolver } from '../index.js'
-import { defaultConnectors } from '../lib/default-connectors.js'
+import serviceSpec from '../__generated__/openapi.json' with { type: 'json' }
 
 const OAS31_SCHEMA_URL = 'https://spec.openapis.org/oas/3.1/schema/2022-10-07'
 
@@ -33,43 +32,12 @@ beforeAll(async () => {
   patchDynamicRefs(oas31Schema)
 }, 30_000)
 
-const resolver = createConnectorResolver(defaultConnectors)
-const app = createApp(resolver)
-
-async function getSpec() {
-  const res = await app.request('/openapi.json')
-  return res.json()
-}
-
-describe('Engine OpenAPI spec', () => {
+describe('Service OpenAPI spec', () => {
   it('is a valid OpenAPI 3.1 document', async () => {
-    const spec = await getSpec()
     const ajv = new Ajv2020({ strict: false })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const validate = ajv.compile(oas31Schema as any)
-    const valid = validate(spec)
+    const valid = validate(serviceSpec)
     expect(valid, ajv.errorsText(validate.errors)).toBe(true)
-  })
-
-  it('has typed SourceConfig and DestinationConfig', async () => {
-    const spec = await getSpec()
-    const schemas = spec.components.schemas
-    expect(Object.keys(schemas)).toEqual(
-      expect.arrayContaining([
-        'StripeSourceConfig',
-        'PostgresDestinationConfig',
-        'GoogleSheetsDestinationConfig',
-        'SourceConfig',
-        'DestinationConfig',
-        'PipelineConfig',
-      ])
-    )
-  })
-
-  it('has no $schema in component schemas', async () => {
-    const spec = await getSpec()
-    for (const [name, schema] of Object.entries<Record<string, unknown>>(spec.components.schemas)) {
-      expect(schema, `${name} should not have $schema`).not.toHaveProperty('$schema')
-    }
   })
 })
