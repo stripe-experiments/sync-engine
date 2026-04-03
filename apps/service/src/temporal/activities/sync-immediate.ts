@@ -1,7 +1,7 @@
 import { createRemoteEngine } from '@stripe/sync-engine'
 import type { PipelineConfig } from '@stripe/sync-engine'
-import type { ActivitiesContext } from './context.js'
-import { asIterable, drainMessages, type RunResult } from './shared.js'
+import type { ActivitiesContext } from './_shared.js'
+import { asIterable, drainMessages, type RunResult } from './_shared.js'
 
 export function createSyncImmediateActivity(context: ActivitiesContext) {
   return async function syncImmediate(

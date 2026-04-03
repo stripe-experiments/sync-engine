@@ -1,7 +1,7 @@
 import { createRemoteEngine } from '@stripe/sync-engine'
 import type { PipelineConfig } from '@stripe/sync-engine'
-import type { ActivitiesContext } from './context.js'
-import { asIterable, drainMessages } from './shared.js'
+import type { ActivitiesContext } from './_shared.js'
+import { asIterable, drainMessages } from './_shared.js'
 
 export function createReadIntoQueueActivity(context: ActivitiesContext) {
   return async function readIntoQueue(

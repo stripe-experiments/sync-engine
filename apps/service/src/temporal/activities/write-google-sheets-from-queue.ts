@@ -5,7 +5,7 @@ import {
   createDestination as createGoogleSheetsDestination,
   parseGoogleSheetsMetaLog,
 } from '@stripe/sync-destination-google-sheets'
-import type { ActivitiesContext } from './context.js'
+import type { ActivitiesContext } from './_shared.js'
 import {
   addRowNumbers,
   asIterable,
@@ -13,7 +13,7 @@ import {
   collectError,
   compactGoogleSheetsMessages,
   type RunResult,
-} from './shared.js'
+} from './_shared.js'
 
 export function createWriteGoogleSheetsFromQueueActivity(context: ActivitiesContext) {
   return async function writeGoogleSheetsFromQueue(

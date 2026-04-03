@@ -1,7 +1,7 @@
 import { applySelection, buildCatalog } from '@stripe/sync-engine'
 import type { ConfiguredCatalog, PipelineConfig, Stream } from '@stripe/sync-engine'
-import type { ActivitiesContext } from './context.js'
-import { pipelineHeader } from './shared.js'
+import type { ActivitiesContext } from './_shared.js'
+import { pipelineHeader } from './_shared.js'
 
 export function createDiscoverCatalogActivity(context: ActivitiesContext) {
   return async function discoverCatalog(config: PipelineConfig): Promise<ConfiguredCatalog> {

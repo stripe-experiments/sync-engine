@@ -1,8 +1,8 @@
 import { heartbeat } from '@temporalio/activity'
 import { createRemoteEngine } from '@stripe/sync-engine'
 import type { ConfiguredCatalog, Message, PipelineConfig, RecordMessage } from '@stripe/sync-engine'
-import type { ActivitiesContext } from './context.js'
-import { asIterable, collectError, type RunResult, withRowKey } from './shared.js'
+import type { ActivitiesContext } from './_shared.js'
+import { asIterable, collectError, type RunResult, withRowKey } from './_shared.js'
 
 export function createReadIntoQueueWithStateActivity(context: ActivitiesContext) {
   return async function readIntoQueueWithState(
