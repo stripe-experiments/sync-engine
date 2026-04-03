@@ -1,7 +1,7 @@
 import { defineQuery, defineSignal, proxyActivities } from '@temporalio/workflow'
 import type { PipelineConfig } from '@stripe/sync-protocol'
 
-import type { SyncActivities } from '../activities.js'
+import type { SyncActivities } from '../activities/index.js'
 import { retryPolicy } from '../../lib/utils.js'
 
 export interface WorkflowStatus {

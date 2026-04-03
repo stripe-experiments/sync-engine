@@ -1,5 +1,5 @@
 import { NativeConnection, Worker } from '@temporalio/worker'
-import { createActivities } from './activities.js'
+import { createActivities } from './activities/index.js'
 
 export interface WorkerOptions {
   temporalAddress: string

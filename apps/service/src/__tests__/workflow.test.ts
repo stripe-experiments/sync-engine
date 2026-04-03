@@ -3,8 +3,8 @@ import { TestWorkflowEnvironment } from '@temporalio/testing'
 import { Worker } from '@temporalio/worker'
 import path from 'node:path'
 import type { PipelineConfig } from '@stripe/sync-engine'
-import type { SyncActivities } from '../temporal/activities.js'
-import type { RunResult } from '../temporal/activities.js'
+import type { SyncActivities } from '../temporal/activities/index.js'
+import type { RunResult } from '../temporal/activities/index.js'
 
 // workflowsPath points to the compiled workflow directory.
 const workflowsPath = path.resolve(process.cwd(), 'dist/temporal/workflows')
