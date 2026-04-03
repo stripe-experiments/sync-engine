@@ -49,3 +49,11 @@ Short records of key architectural choices and why they were made.
 **Rationale:** Type inference from Zod schemas eliminates duplicate type definitions. Zod schemas can generate JSON Schema for OpenAPI docs and connector specs.
 
 **Consequence:** `zod` is a peer dependency of `protocol`. All config validation uses Zod `parse`/`safeParse`.
+
+## DDR-007: Half-duplex HTTP streaming for remote engine
+
+**Decision:** `createRemoteEngine` uses `fetch` with `duplex: 'half'` for streaming endpoints (/read, /write, /sync). The full request body is sent before the response begins.
+
+**Rationale:** True full-duplex streaming (sending request body and reading response simultaneously) requires HTTP/2 and `duplex: 'full'`, which is non-standard and not exposed by Node.js's built-in `fetch` (undici). It would also require the server to start writing output before consuming the full input, which contradicts the pipeline model (source feeds destination sequentially — the engine can't produce output until it has processed at least some input). Half-duplex is also simpler: no concern about back-pressure across an HTTP connection.
+
+**Consequence:** Inputs to /read and /sync must be fully sent before output starts arriving. In practice all inputs are small, bounded event batches materialized as arrays by Temporal before the activity call — there is no use case for an unbounded streaming input today. If that changes, the fix is confined to `remote-engine.ts`: replace the fetch-based transport with a raw HTTP/2 client for the affected endpoints. Hono itself is transport-agnostic and would require no changes.
