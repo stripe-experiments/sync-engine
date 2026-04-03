@@ -245,7 +245,9 @@ const destination = {
         trace: {
           trace_type: 'error' as const,
           error: {
-            failure_type: isTransient(err) ? ('transient_error' as const) : ('system_error' as const),
+            failure_type: isTransient(err)
+              ? ('transient_error' as const)
+              : ('system_error' as const),
             message: err instanceof Error ? err.message : String(err),
             stack_trace: err instanceof Error ? err.stack : undefined,
           },

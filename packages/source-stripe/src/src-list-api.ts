@@ -1,7 +1,4 @@
-import type {
-  Message,
-  TraceMessage,
-} from '@stripe/sync-protocol'
+import type { Message, TraceMessage } from '@stripe/sync-protocol'
 import { toRecordMessage, stateMsg } from '@stripe/sync-protocol'
 import type { ResourceConfig } from './types.js'
 import type { SegmentState, BackfillState } from './index.js'

@@ -101,9 +101,7 @@ describeWithEnv(
       })
 
       // No trace errors
-      const traces = output.filter(
-        (m) => m.type === 'trace' && m.trace.trace_type === 'error'
-      )
+      const traces = output.filter((m) => m.type === 'trace' && m.trace.trace_type === 'error')
       expect(traces).toHaveLength(0)
 
       // Log emitted

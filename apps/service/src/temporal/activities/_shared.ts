@@ -115,9 +115,7 @@ export function pipelineHeader(config: Record<string, unknown>): string {
   return JSON.stringify(config)
 }
 
-export function collectError(
-  message: Record<string, unknown>
-): RunResult['errors'][number] | null {
+export function collectError(message: Record<string, unknown>): RunResult['errors'][number] | null {
   if (message.type === 'trace') {
     const trace = message.trace as Record<string, unknown> | undefined
     if (trace?.trace_type === 'error') {
@@ -133,9 +131,8 @@ export function collectError(
 }
 
 export function withRowKey(record: RecordMessage, catalog?: ConfiguredCatalog): RecordMessage {
-  const primaryKey = catalog?.streams.find(
-    (stream) => stream.stream.name === record.record.stream
-  )?.stream.primary_key
+  const primaryKey = catalog?.streams.find((stream) => stream.stream.name === record.record.stream)
+    ?.stream.primary_key
   if (!primaryKey) return record
   return {
     ...record,
