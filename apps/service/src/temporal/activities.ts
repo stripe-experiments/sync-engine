@@ -54,6 +54,9 @@ async function drainMessages(stream: AsyncIterable<Record<string, unknown>>): Pr
 export function createActivities(opts: { engineUrl: string; kafkaBroker?: string }) {
   const { engineUrl, kafkaBroker } = opts
 
+  // Single engine client shared across all activity calls
+  const engine = createRemoteEngine(engineUrl)
+
   // Shared Kafka client + producer (created lazily, reused across activity calls)
   let kafka: Kafka | undefined
   let producerConnected: Promise<import('kafkajs').Producer> | undefined
@@ -80,27 +83,20 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
 
   return {
     async setup(config: PipelineConfig): Promise<SetupResult> {
-      const engine = createRemoteEngine(engineUrl, config)
-      return await engine.setup()
+      return engine.setup(config)
     },
 
     async syncImmediate(
       config: PipelineConfig,
-      opts?: {
-        input?: unknown[]
-        state?: Record<string, unknown>
-        stateLimit?: number
-        timeLimit?: number
-      }
+      activityOpts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
     ): Promise<RunResult & { eof?: { reason: string } }> {
-      const engine = createRemoteEngine(engineUrl, config, {
-        state: opts?.state,
-        stateLimit: opts?.stateLimit,
-        timeLimit: opts?.timeLimit,
-      })
-      const input = opts?.input?.length ? asIterable(opts.input) : undefined
+      const input = activityOpts?.input?.length ? asIterable(activityOpts.input) : undefined
       const { errors, state, eof } = await drainMessages(
-        engine.sync(input) as AsyncIterable<Record<string, unknown>>
+        engine.sync(
+          config,
+          { state: activityOpts?.state, stateLimit: activityOpts?.stateLimit },
+          input
+        ) as AsyncIterable<Record<string, unknown>>
       )
       return { errors, state, eof }
     },
@@ -108,21 +104,15 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
     async readIntoQueue(
       config: PipelineConfig,
       pipelineId: string,
-      opts?: {
-        input?: unknown[]
-        state?: Record<string, unknown>
-        stateLimit?: number
-        timeLimit?: number
-      }
+      activityOpts?: { input?: unknown[]; state?: Record<string, unknown>; stateLimit?: number }
     ): Promise<{ count: number; state: Record<string, unknown>; eof?: { reason: string } }> {
-      const engine = createRemoteEngine(engineUrl, config, {
-        state: opts?.state,
-        stateLimit: opts?.stateLimit,
-        timeLimit: opts?.timeLimit,
-      })
-      const input = opts?.input?.length ? asIterable(opts.input) : undefined
+      const input = activityOpts?.input?.length ? asIterable(activityOpts.input) : undefined
       const { records, state, eof } = await drainMessages(
-        engine.read(input) as AsyncIterable<Record<string, unknown>>
+        engine.read(
+          config,
+          { state: activityOpts?.state, stateLimit: activityOpts?.stateLimit },
+          input
+        ) as AsyncIterable<Record<string, unknown>>
       )
 
       // If Kafka is configured, produce records to the pipeline topic
@@ -140,13 +130,13 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
     async writeFromQueue(
       config: PipelineConfig,
       pipelineId: string,
-      opts?: { records?: unknown[]; maxBatch?: number }
+      activityOpts?: { records?: unknown[]; maxBatch?: number }
     ): Promise<RunResult & { written: number }> {
       let records: unknown[]
 
       if (kafkaBroker) {
         // Consume a batch from Kafka
-        const maxBatch = opts?.maxBatch ?? 50
+        const maxBatch = activityOpts?.maxBatch ?? 50
         records = []
         const consumer = getKafka().consumer({ groupId: `pipeline.${pipelineId}` })
         await consumer.connect()
@@ -170,16 +160,15 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
         await consumer.disconnect()
       } else {
         // In-memory mode: records passed directly
-        records = opts?.records ?? []
+        records = activityOpts?.records ?? []
       }
 
       if (records.length === 0) {
         return { errors: [], state: {}, written: 0 }
       }
 
-      const engine = createRemoteEngine(engineUrl, config)
       const { errors, state } = await drainMessages(
-        engine.write(asIterable(records) as AsyncIterable<Message>) as AsyncIterable<
+        engine.write(config, asIterable(records) as AsyncIterable<Message>) as AsyncIterable<
           Record<string, unknown>
         >
       )
@@ -188,8 +177,7 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
     },
 
     async teardown(config: PipelineConfig): Promise<void> {
-      const engine = createRemoteEngine(engineUrl, config)
-      await engine.teardown()
+      await engine.teardown(config)
     },
   }
 }

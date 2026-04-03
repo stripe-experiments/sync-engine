@@ -4,12 +4,7 @@ import { apiReference } from '@scalar/hono-api-reference'
 import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
 import type { Message, DestinationOutput, ConnectorResolver, SyncParams } from '../lib/index.js'
-import {
-  createEngineFromParams,
-  readonlyStateStore,
-  parseNdjsonStream,
-  PipelineConfig,
-} from '../lib/index.js'
+import { createEngine, PipelineConfig, parseNdjsonStream } from '../lib/index.js'
 import { endpointTable, addDiscriminators, injectConnectorSchemas } from './openapi-utils.js'
 import {
   Message as MessageSchema,
@@ -61,6 +56,8 @@ async function* logApiStream<T>(
 // ── App factory ────────────────────────────────────────────────
 
 export function createApp(resolver: ConnectorResolver) {
+  const engine = createEngine(resolver)
+
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -119,18 +116,6 @@ export function createApp(resolver: ConnectorResolver) {
     const timeLimitMs = timeLimitStr ? Number(timeLimitStr) * 1000 : undefined
 
     return { pipeline, state, stateLimit, timeLimitMs }
-  }
-
-  /** Wraps an async iterable to call `fn()` after iteration completes or throws. */
-  async function* closeAfter<T>(
-    iter: AsyncIterable<T>,
-    fn: () => Promise<void> | void
-  ): AsyncIterable<T> {
-    try {
-      yield* iter
-    } finally {
-      await fn()
-    }
   }
 
   // ── Shared header param schemas ─────────────────────────────────
@@ -223,9 +208,8 @@ export function createApp(resolver: ConnectorResolver) {
       const context = { path: '/setup', ...syncRequestContext(params) }
       const startedAt = Date.now()
       logger.info(context, 'Engine API /setup started')
-      const engine = await createEngineFromParams(params.pipeline, resolver, readonlyStateStore())
       try {
-        const result = await engine.setup()
+        const result = await engine.setup(params.pipeline)
         logger.info(
           { ...context, durationMs: Date.now() - startedAt },
           'Engine API /setup completed'
@@ -257,8 +241,7 @@ export function createApp(resolver: ConnectorResolver) {
     }),
     async (c) => {
       const params = parseSyncParams(c)
-      const engine = await createEngineFromParams(params.pipeline, resolver, readonlyStateStore())
-      await engine.teardown()
+      await engine.teardown(params.pipeline)
       return c.body(null, 204)
     }
   )
@@ -295,8 +278,7 @@ export function createApp(resolver: ConnectorResolver) {
     }),
     async (c) => {
       const params = parseSyncParams(c)
-      const engine = await createEngineFromParams(params.pipeline, resolver, readonlyStateStore())
-      const result = await engine.check()
+      const result = await engine.check(params.pipeline)
       return c.json(result, 200)
     }
   )
@@ -325,10 +307,7 @@ export function createApp(resolver: ConnectorResolver) {
     }),
     async (c) => {
       const params = parseSyncParams(c)
-      const source = await resolver.resolveSource(params.pipeline.source.type)
-      const { type: _, ...sourceConfig } = params.pipeline.source
-      const config = z.fromJSONSchema(source.spec().config).parse(sourceConfig)
-      const catalog = await source.discover({ config: config as Record<string, unknown> })
+      const catalog = await engine.discover(params.pipeline.source)
       return c.json(catalog, 200)
     }
   )
@@ -361,17 +340,12 @@ export function createApp(resolver: ConnectorResolver) {
       const context = { path: '/read', inputPresent, ...syncRequestContext(params) }
       const startedAt = Date.now()
       logger.info(context, 'Engine API /read started')
-      const engine = await createEngineFromParams(
-        params.pipeline,
-        resolver,
-        readonlyStateStore(params.state)
-      )
 
       const input = inputPresent ? parseNdjsonStream(c.req.raw.body!) : undefined
       const output = takeLimits<Message>({
         stateLimit: params.stateLimit,
         timeLimitMs: params.timeLimitMs,
-      })(engine.read(input))
+      })(engine.read(params.pipeline, { state: params.state }, input))
       return ndjsonResponse(logApiStream('Engine API /read', output, context, startedAt))
     }) as any
   )
@@ -408,10 +382,14 @@ export function createApp(resolver: ConnectorResolver) {
       }
       const startedAt = Date.now()
       logger.info(context, 'Engine API /write started')
-      const engine = await createEngineFromParams(params.pipeline, resolver, readonlyStateStore())
       const messages = parseNdjsonStream<Message>(c.req.raw.body!)
       return ndjsonResponse(
-        logApiStream('Engine API /write', engine.write(messages), context, startedAt)
+        logApiStream(
+          'Engine API /write',
+          engine.write(params.pipeline, messages),
+          context,
+          startedAt
+        )
       )
     }) as any
   )
@@ -438,14 +416,11 @@ export function createApp(resolver: ConnectorResolver) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (async (c: any) => {
       const params = parseSyncParams(c)
-      const stateStore = readonlyStateStore(params.state)
-      const engine = await createEngineFromParams(params.pipeline, resolver, stateStore)
-
       const input = hasBody(c) ? parseNdjsonStream(c.req.raw.body!) : undefined
       const output = takeLimits<DestinationOutput>({
         stateLimit: params.stateLimit,
         timeLimitMs: params.timeLimitMs,
-      })(engine.sync(input))
+      })(engine.sync(params.pipeline, { state: params.state }, input))
       return ndjsonResponse(output)
     }) as any
   )

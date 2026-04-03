@@ -3,7 +3,8 @@ import Stripe from 'stripe'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import source from '@stripe/sync-source-stripe'
 import destination from '@stripe/sync-destination-postgres'
-import { createEngine, readonlyStateStore } from '@stripe/sync-engine'
+import { createEngine } from '@stripe/sync-engine'
+import type { ConnectorResolver } from '@stripe/sync-engine'
 import type { StateMessage, DestinationOutput } from '@stripe/sync-protocol'
 import { describeWithEnv } from './test-helpers.js'
 
@@ -41,22 +42,31 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
   let pool: pg.Pool
   let stripe: Stripe
 
-  function makeEngine(opts: { websocket?: boolean } = {}) {
-    return createEngine(
-      {
-        source: {
-          type: 'stripe',
-          api_key: STRIPE_API_KEY,
-          backfill_limit: BACKFILL_LIMIT,
-          backfill_concurrency: 1,
-          ...(opts.websocket && { websocket: true }),
-        },
-        destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
-        streams: STREAMS.map((name) => ({ name })),
+  const resolver: ConnectorResolver = {
+    resolveSource: async (name) => {
+      if (name !== 'stripe') throw new Error(`Unknown source: ${name}`)
+      return source
+    },
+    resolveDestination: async (name) => {
+      if (name !== 'postgres') throw new Error(`Unknown destination: ${name}`)
+      return destination
+    },
+    sources: () => new Map(),
+    destinations: () => new Map(),
+  }
+
+  function makePipeline(opts: { websocket?: boolean } = {}) {
+    return {
+      source: {
+        type: 'stripe',
+        api_key: STRIPE_API_KEY,
+        backfill_limit: BACKFILL_LIMIT,
+        backfill_concurrency: 1,
+        ...(opts.websocket && { websocket: true }),
       },
-      { source, destination },
-      readonlyStateStore()
-    )
+      destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
+      streams: STREAMS.map((name) => ({ name })),
+    }
   }
 
   beforeAll(async () => {
@@ -81,8 +91,8 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
   // -- Backfill (no websocket — runs to natural completion) -----------------
 
   it('backfills product and price data to postgres', async () => {
-    const engine = makeEngine()
-    await collectStates(engine.sync())
+    const engine = createEngine(resolver)
+    await collectStates(engine.sync(makePipeline()))
 
     for (const stream of STREAMS) {
       const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}"."${stream}"`)
@@ -97,8 +107,9 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
     // Clean slate — drop and let engine.setup() recreate
     await pool.query(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`)
 
-    const engine = makeEngine({ websocket: true })
-    const iter = engine.sync()[Symbol.asyncIterator]()
+    const engine = createEngine(resolver)
+    const pipeline = makePipeline({ websocket: true })
+    const iter = engine.sync(pipeline)[Symbol.asyncIterator]()
 
     try {
       // Phase 1: consume until backfill completes for all streams

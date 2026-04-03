@@ -1,8 +1,14 @@
 import createClient from 'openapi-fetch'
 import type { paths } from '../__generated__/openapi.js'
-import type { Engine, SetupResult } from './engine.js'
+import type { Engine, SetupResult, ReadOpts, SyncOpts } from './engine.js'
 import { parseNdjsonStream, toNdjsonStream } from './ndjson.js'
-import type { CheckResult, DestinationOutput, Message, PipelineConfig } from '@stripe/sync-protocol'
+import type {
+  CheckResult,
+  CatalogMessage,
+  DestinationOutput,
+  Message,
+  PipelineConfig,
+} from '@stripe/sync-protocol'
 
 // openapi-typescript does not model NDJSON streaming bodies correctly:
 // - /read and /sync accept an optional NDJSON body but the generated types declare `requestBody?: never`
@@ -16,27 +22,25 @@ type StreamPost = (path: string, init: Record<string, unknown>) => Promise<{ res
  * HTTP client that satisfies the Engine interface by delegating each method to
  * the corresponding sync engine REST endpoint.
  *
- * Uses openapi-fetch for typed JSON endpoints (/check).
+ * Uses openapi-fetch for typed JSON endpoints (/check, /discover).
  * Streaming NDJSON endpoints use `client.POST` with targeted casts due to
  * openapi-typescript generator limitations with streaming bodies.
  *
  * Usage:
- *   const engine = createRemoteEngine('http://localhost:3001', pipeline)
- *   await engine.setup()
- *   for await (const msg of engine.sync()) { ... }
+ *   const engine = createRemoteEngine('http://localhost:3001')
+ *   await engine.setup(pipeline)
+ *   for await (const msg of engine.sync(pipeline)) { ... }
  */
-export function createRemoteEngine(
-  engineUrl: string,
-  pipeline: PipelineConfig,
-  opts?: { state?: Record<string, unknown>; stateLimit?: number; timeLimit?: number }
-): Engine {
+export function createRemoteEngine(engineUrl: string): Engine {
   const client = createClient<paths>({ baseUrl: engineUrl })
-  const ph = JSON.stringify(pipeline)
 
   // Cast once: streaming endpoints need untyped POST due to generator limitations (see above)
   const streamPost = client.POST as unknown as StreamPost
 
-  function extraHeaders(): Record<string, string> {
+  function stateHeaders(opts?: {
+    state?: Record<string, unknown>
+    stateLimit?: number
+  }): Record<string, string> {
     const h: Record<string, string> = {}
     if (opts?.state && Object.keys(opts.state).length > 0) {
       h['x-state'] = JSON.stringify(opts.state)
@@ -44,7 +48,7 @@ export function createRemoteEngine(
     return h
   }
 
-  function queryParams(): Record<string, string> {
+  function queryParams(opts?: { stateLimit?: number; timeLimit?: number }): Record<string, string> {
     const q: Record<string, string> = {}
     if (opts?.stateLimit != null) q.state_limit = String(opts.stateLimit)
     if (opts?.timeLimit != null) q.time_limit = String(opts.timeLimit)
@@ -53,11 +57,14 @@ export function createRemoteEngine(
 
   async function post(
     path: '/read' | '/write' | '/sync' | '/setup' | '/teardown',
+    pipeline: PipelineConfig,
+    opts?: { state?: Record<string, unknown>; stateLimit?: number },
     body?: ReadableStream<Uint8Array>
   ): Promise<Response> {
-    const headers = { ...extraHeaders() }
+    const ph = JSON.stringify(pipeline)
+    const headers = { ...stateHeaders(opts) }
     const { response } = await streamPost(path, {
-      params: { header: { 'x-pipeline': ph }, query: queryParams() },
+      params: { header: { 'x-pipeline': ph }, query: queryParams(opts) },
       parseAs: 'stream',
       headers,
       ...(body
@@ -77,38 +84,60 @@ export function createRemoteEngine(
   }
 
   return {
-    async setup(): Promise<SetupResult> {
-      const res = await post('/setup')
+    async setup(pipeline: PipelineConfig): Promise<SetupResult> {
+      const res = await post('/setup', pipeline)
       const text = await res.text()
       return text ? JSON.parse(text) : {}
     },
 
-    async teardown() {
-      await post('/teardown')
+    async teardown(pipeline: PipelineConfig) {
+      await post('/teardown', pipeline)
     },
 
-    async check() {
+    async check(pipeline: PipelineConfig) {
       const { data, error } = await client.GET('/check', {
-        params: { header: { 'x-pipeline': ph } },
+        params: { header: { 'x-pipeline': JSON.stringify(pipeline) } },
       })
       if (error) throw new Error(`Engine /check failed: ${JSON.stringify(error)}`)
       return data as { source: CheckResult; destination: CheckResult }
     },
 
-    async *read(input?: AsyncIterable<unknown>) {
+    async discover(source: PipelineConfig['source']): Promise<CatalogMessage> {
+      // Only source config is needed for discover — pass a minimal pipeline header
+      const ph = JSON.stringify({ source, destination: { type: '_' } })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (client.POST as any)('/discover', {
+        params: { header: { 'x-pipeline': ph } },
+      })
+      if (error) throw new Error(`Engine /discover failed: ${JSON.stringify(error)}`)
+      return data as CatalogMessage
+    },
+
+    async *read(
+      pipeline: PipelineConfig,
+      opts?: ReadOpts,
+      input?: AsyncIterable<unknown>
+    ): AsyncIterable<Message> {
       const body = input ? toNdjsonStream(input) : undefined
-      const res = await post('/read', body)
+      const res = await post('/read', pipeline, opts, body)
       yield* parseNdjsonStream<Message>(res.body!)
     },
 
-    async *write(messages: AsyncIterable<Message>) {
-      const res = await post('/write', toNdjsonStream(messages))
+    async *write(
+      pipeline: PipelineConfig,
+      messages: AsyncIterable<Message>
+    ): AsyncIterable<DestinationOutput> {
+      const res = await post('/write', pipeline, undefined, toNdjsonStream(messages))
       yield* parseNdjsonStream<DestinationOutput>(res.body!)
     },
 
-    async *sync(input?: AsyncIterable<unknown>) {
+    async *sync(
+      pipeline: PipelineConfig,
+      opts?: SyncOpts,
+      input?: AsyncIterable<unknown>
+    ): AsyncIterable<DestinationOutput> {
       const body = input ? toNdjsonStream(input) : undefined
-      const res = await post('/sync', body)
+      const res = await post('/sync', pipeline, opts, body)
       yield* parseNdjsonStream<DestinationOutput>(res.body!)
     },
   }
