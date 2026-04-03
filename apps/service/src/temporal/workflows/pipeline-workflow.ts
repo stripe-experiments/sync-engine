@@ -22,7 +22,6 @@ export interface PipelineWorkflowOpts {
   phase?: string
   state?: Record<string, unknown>
   timeLimit?: number
-  reconInterval?: number
   inputQueue?: unknown[]
 }
 
@@ -75,7 +74,6 @@ export async function pipelineWorkflow(
         phase: 'running',
         state: syncState,
         timeLimit: opts?.timeLimit,
-        reconInterval: opts?.reconInterval,
         inputQueue: inputQueue.length > 0 ? [...inputQueue] : undefined,
       })
     }
@@ -127,7 +125,7 @@ export async function pipelineWorkflow(
     // event, trigger a full reconciliation by resetting readComplete.
     const gotEvent = await condition(
       () => inputQueue.length > 0 || deleted,
-      opts?.reconInterval ?? ONE_WEEK_MS
+      ONE_WEEK_MS
     )
     if (!gotEvent && !deleted) readComplete = false
   }

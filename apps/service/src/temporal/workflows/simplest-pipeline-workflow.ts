@@ -17,7 +17,6 @@ const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface SimplestPipelineWorkflowOpts {
   state?: Record<string, unknown>
-  reconInterval?: number
 }
 
 export async function simplestPipelineWorkflow(
@@ -51,7 +50,6 @@ export async function simplestPipelineWorkflow(
     if (iteration >= CONTINUE_AS_NEW_THRESHOLD) {
       await continueAsNew<typeof simplestPipelineWorkflow>(pipeline, {
         state: syncState,
-        reconInterval: opts?.reconInterval,
       })
     }
   }
@@ -72,7 +70,7 @@ export async function simplestPipelineWorkflow(
     }
 
     // Backfill complete — wait for recon interval then re-sync from latest state.
-    const gotSignal = await condition(() => !paused || deleted, opts?.reconInterval ?? ONE_WEEK_MS)
+    const gotSignal = await condition(() => !paused || deleted, ONE_WEEK_MS)
     if (!gotSignal && !deleted) readComplete = false
   }
 }
