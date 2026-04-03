@@ -13,16 +13,16 @@ export interface ConnectorInfo {
   config_schema: Record<string, unknown>
 }
 
-export async function getSources(): Promise<{ data: ConnectorInfo[] }> {
+export async function getSources(): Promise<{ items: ConnectorInfo[] }> {
   const { data, error, response } = await engine.GET('/meta/sources')
   if (error) throw new Error(`GET /meta/sources: ${(response as Response).status}`)
-  return data as { data: ConnectorInfo[] }
+  return data as { items: ConnectorInfo[] }
 }
 
-export async function getDestinations(): Promise<{ data: ConnectorInfo[] }> {
+export async function getDestinations(): Promise<{ items: ConnectorInfo[] }> {
   const { data, error, response } = await engine.GET('/meta/destinations')
   if (error) throw new Error(`GET /meta/destinations: ${(response as Response).status}`)
-  return data as { data: ConnectorInfo[] }
+  return data as { items: ConnectorInfo[] }
 }
 
 export interface CatalogResponse {
