@@ -15,7 +15,7 @@ import { endpointTable, addDiscriminators, injectConnectorSchemas } from './open
 import {
   Message as MessageSchema,
   DestinationOutput as DestinationOutputSchema,
-  CatalogMessage as CatalogMessageSchema,
+  CatalogPayload as CatalogPayloadSchema,
 } from '@stripe/sync-protocol'
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
 import { logger } from '../logger.js'
@@ -60,8 +60,8 @@ async function* logApiStream<T>(
 
 // ── App factory ────────────────────────────────────────────────
 
-export function createApp(resolver: ConnectorResolver) {
-  const engine = createEngine(resolver)
+export async function createApp(resolver: ConnectorResolver) {
+  const engine = await createEngine(resolver)
 
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -303,7 +303,7 @@ export function createApp(resolver: ConnectorResolver) {
           description: 'Available streams',
           content: {
             'application/json': {
-              schema: CatalogMessageSchema,
+              schema: CatalogPayloadSchema,
             },
           },
         },

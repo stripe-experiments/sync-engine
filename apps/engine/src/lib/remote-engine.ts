@@ -3,8 +3,8 @@ import type { paths } from '../__generated__/openapi.js'
 import type { Engine, SetupResult, SyncOpts, ConnectorInfo, ConnectorListItem } from './engine.js'
 import { parseNdjsonStream, toNdjsonStream } from './ndjson.js'
 import type {
-  CheckResult,
-  CatalogMessage,
+  ConnectionStatusPayload,
+  CatalogPayload,
   DestinationOutput,
   Message,
   PipelineConfig,
@@ -144,10 +144,13 @@ export function createRemoteEngine(engineUrl: string): Engine {
         params: { header: { 'x-pipeline': JSON.stringify(pipeline) } },
       })
       if (error) throw new Error(`Engine /check failed: ${JSON.stringify(error)}`)
-      return data as { source: CheckResult; destination: CheckResult }
+      return data as {
+        source: ConnectionStatusPayload
+        destination: ConnectionStatusPayload
+      }
     },
 
-    async source_discover(source: PipelineConfig['source']): Promise<CatalogMessage> {
+    async source_discover(source: PipelineConfig['source']): Promise<CatalogPayload> {
       // Only source config is needed for discover — pass a minimal pipeline header
       const ph = JSON.stringify({ source, destination: { type: '_' } })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,7 +158,7 @@ export function createRemoteEngine(engineUrl: string): Engine {
         params: { header: { 'x-pipeline': ph } },
       })
       if (error) throw new Error(`Engine /discover failed: ${JSON.stringify(error)}`)
-      return data as CatalogMessage
+      return data as CatalogPayload
     },
 
     async *pipeline_read(
