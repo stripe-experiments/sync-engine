@@ -166,9 +166,11 @@ export async function pipelineGoogleSheetsWorkflow(
       if (deleted) break
 
       if (pendingWrites) {
+        if (!catalog) catalog = await discoverCatalog(toConfig(pipeline))
         const result = await writeGoogleSheetsFromQueue(toConfig(pipeline), pipeline.id, {
           maxBatch: 50,
           rowIndex,
+          catalog,
         })
         pendingWrites = result.written > 0
         sourceState = { ...sourceState, ...result.state }

@@ -343,4 +343,73 @@ describe('pipelineGoogleSheetsWorkflow (unit — stubbed activities)', () => {
       expect(syncCalls).toBe(0)
     })
   })
+
+  it('passes the discovered catalog into the Sheets write activity', async () => {
+    const discoveredCatalog = {
+      streams: [
+        {
+          stream: {
+            name: 'customers',
+            primary_key: [['id']],
+            json_schema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+              },
+            },
+          },
+          sync_mode: 'full_refresh' as const,
+          destination_sync_mode: 'append' as const,
+        },
+      ],
+    }
+    let readCalls = 0
+    let writeCatalog: unknown
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      taskQueue: 'test-queue-gs-2',
+      workflowsPath,
+      activities: stubActivities({
+        discoverCatalog: async () => discoveredCatalog,
+        readIntoQueueWithState: async () => {
+          readCalls++
+          return readCalls === 1
+            ? { count: 1, state: { customers: { cursor: 'cus_1' } } }
+            : { count: 0, state: { customers: { cursor: 'cus_1' } } }
+        },
+        writeGoogleSheetsFromQueue: async (_config, _pipelineId, opts) => {
+          writeCatalog = opts?.catalog
+          return {
+            errors: [],
+            state: { customers: { cursor: 'cus_1' } },
+            written: 0,
+            rowAssignments: {},
+          }
+        },
+      }),
+    })
+
+    await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start('pipelineGoogleSheetsWorkflow', {
+        args: [
+          {
+            ...testPipeline,
+            destination: {
+              type: 'google-sheets',
+              spreadsheet_id: 'sheet_456',
+            },
+          },
+        ],
+        workflowId: 'test-gs-sync-2',
+        taskQueue: 'test-queue-gs-2',
+      })
+
+      await new Promise((r) => setTimeout(r, 1500))
+      await handle.signal('delete')
+      await handle.result()
+
+      expect(writeCatalog).toEqual(discoveredCatalog)
+    })
+  })
 })

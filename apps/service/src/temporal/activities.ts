@@ -1,7 +1,13 @@
 import { heartbeat } from '@temporalio/activity'
-import { applySelection, buildCatalog, createRemoteEngine } from '@stripe/sync-engine'
+import {
+  applySelection,
+  buildCatalog,
+  createRemoteEngine,
+  enforceCatalog,
+} from '@stripe/sync-engine'
 import type {
   ConfiguredCatalog,
+  DestinationInput,
   Message,
   PipelineConfig,
   RecordMessage,
@@ -9,10 +15,13 @@ import type {
   Stream,
 } from '@stripe/sync-engine'
 import {
+  configSchema as googleSheetsConfigSchema,
+  createDestination as createGoogleSheetsDestination,
   parseGoogleSheetsMetaLog,
   ROW_KEY_FIELD,
   ROW_NUMBER_FIELD,
   serializeRowKey,
+  type Config as GoogleSheetsConfig,
 } from '@stripe/sync-destination-google-sheets'
 import { Kafka } from 'kafkajs'
 
@@ -111,6 +120,33 @@ function addRowNumbers(
       },
     }
   })
+}
+
+function augmentGoogleSheetsCatalog(catalog: ConfiguredCatalog): ConfiguredCatalog {
+  return {
+    streams: catalog.streams.map((configuredStream) => {
+      const props = configuredStream.stream.json_schema?.properties as
+        | Record<string, unknown>
+        | undefined
+
+      if (!props) return configuredStream
+
+      return {
+        ...configuredStream,
+        stream: {
+          ...configuredStream.stream,
+          json_schema: {
+            ...configuredStream.stream.json_schema,
+            properties: {
+              ...props,
+              [ROW_KEY_FIELD]: { type: 'string' },
+              [ROW_NUMBER_FIELD]: { type: 'number' },
+            },
+          },
+        },
+      }
+    }),
+  }
 }
 
 /** Iterate a message stream, collecting errors/state/records and heartbeating. */
@@ -338,6 +374,7 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
       opts?: {
         maxBatch?: number
         rowIndex?: Record<string, Record<string, number>>
+        catalog?: ConfiguredCatalog
       }
     ): Promise<
       RunResult & {
@@ -355,15 +392,30 @@ export function createActivities(opts: { engineUrl: string; kafkaBroker?: string
       }
 
       const writeBatch = addRowNumbers(compactGoogleSheetsMessages(queued), opts?.rowIndex ?? {})
+      if (config.destination.type !== 'google-sheets') {
+        throw new Error('writeGoogleSheetsFromQueue requires a google-sheets destination')
+      }
+      if (!opts?.catalog) {
+        throw new Error('catalog is required for Google Sheets workflow writes')
+      }
 
-      const engine = createRemoteEngine(engineUrl, config)
+      const destinationConfig = googleSheetsConfigSchema.parse(config.destination)
+      const filteredCatalog = augmentGoogleSheetsCatalog(opts.catalog)
+      const destination = createGoogleSheetsDestination()
       const errors: RunResult['errors'] = []
       const state: Record<string, unknown> = {}
       const rowAssignments: Record<string, Record<string, number>> = {}
+      const input = enforceCatalog(filteredCatalog)(
+        asIterable(writeBatch)
+      ) as AsyncIterable<DestinationInput>
 
-      for await (const raw of engine.write(asIterable(writeBatch)) as AsyncIterable<
-        Record<string, unknown>
-      >) {
+      for await (const raw of destination.write(
+        {
+          config: destinationConfig,
+          catalog: filteredCatalog,
+        },
+        input
+      )) {
         const error = collectError(raw)
         if (error) {
           errors.push(error)

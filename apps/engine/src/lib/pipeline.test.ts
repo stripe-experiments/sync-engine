@@ -93,7 +93,7 @@ describe('enforceCatalog()', () => {
     expect((result[0] as { data: unknown }).data).toEqual({ id: 'sub_1', status: 'active' })
   })
 
-  it('preserves explicit system fields used by Google Sheets row remapping', async () => {
+  it('drops unknown internal fields that are not present in the catalog schema', async () => {
     const msgs: Message[] = [
       {
         type: 'record',
@@ -125,8 +125,6 @@ describe('enforceCatalog()', () => {
     expect((result[0] as { data: unknown }).data).toEqual({
       id: 'sub_1',
       status: 'active',
-      _row_key: '["sub_1"]',
-      _row_number: 12,
     })
   })
 

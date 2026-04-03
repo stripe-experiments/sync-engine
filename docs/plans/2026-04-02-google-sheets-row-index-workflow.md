@@ -103,19 +103,28 @@ Sheets add destination-specific bookkeeping on top.
 - merge those row assignments into `rowIndex`
 - advance `sourceState` only after the write succeeds
 
-## Why we preserve `_row_key` and `_row_number`
+## Why `_row_key` and `_row_number` stay local to the Sheets workflow
 
-The engine's catalog enforcement normally strips unknown fields from records.
-That would remove the internal fields needed for Sheets row remapping.
-
-We explicitly preserve:
+These fields are still needed on the write side:
 
 - `_row_key`: stable identifier derived from the stream primary key
 - `_row_number`: known row number for updates
 
-These fields are internal transport metadata. They are not part of the public
-catalog schema and are stripped before the destination writes visible sheet
-cells.
+But the generic engine write path should not know about them. To keep that
+boundary intact, the dedicated Sheets write activity calls the Sheets
+destination directly instead of routing through the generic engine `/write`
+pipeline.
+
+Inside that activity we:
+
+- take the workflow-owned discovered catalog
+- add the two Sheets-only metadata fields to a local copy of the catalog
+- run catalog enforcement there
+- pass the filtered records to the Sheets destination
+
+That keeps `_row_key` and `_row_number` as internal workflow transport
+metadata, not engine-wide protocol behavior. The destination still strips them
+before writing visible sheet cells.
 
 ## Why the destination reports row assignments
 
@@ -176,5 +185,6 @@ complexity into the generic pipeline path.
 ## Outcome
 
 The implementation in PR #228 adds a dedicated Google Sheets workflow that
-preserves connector isolation, keeps Kafka in the service design, and stores the
-minimum extra durable state needed to make row-based upserts work.
+preserves connector isolation, keeps Kafka in the service design, stores the
+minimum extra durable state needed to make row-based upserts work, and keeps
+Sheets-only metadata out of the generic engine write path.
