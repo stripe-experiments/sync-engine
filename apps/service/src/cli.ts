@@ -7,6 +7,7 @@ import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import { createApp } from './api/app.js'
+import { filePipelineStore } from './lib/stores-fs.js'
 import type { WorkflowClient } from '@temporalio/client'
 import { logger } from './logger.js'
 
@@ -44,6 +45,11 @@ const serveCmd = defineCommand({
       default: 'sync-engine',
       description: 'Temporal task queue name (default: sync-engine)',
     },
+    'data-dir': {
+      type: 'string',
+      description:
+        'Directory to persist pipeline configs as JSON files (recommended). When omitted, Temporal is the sole source of truth.',
+    },
   },
   async run({ args }) {
     const port = Number(args.port)
@@ -59,7 +65,12 @@ const serveCmd = defineCommand({
     )
 
     const resolver = await resolverPromise
-    const app = createApp({ temporal, resolver })
+    const pipelines = args['data-dir'] ? filePipelineStore(args['data-dir']) : undefined
+    if (pipelines) {
+      logger.info({ dataDir: args['data-dir'] }, 'Pipeline store enabled')
+    }
+
+    const app = createApp({ temporal, resolver, pipelines })
 
     serve({ fetch: app.fetch, port }, () => {
       logger.info({ port }, `Sync Service listening on http://localhost:${port}`)
@@ -194,7 +205,8 @@ export async function createProgram() {
       const taskQueue = process.env.TEMPORAL_TASK_QUEUE || 'sync-engine'
       const temporal = await createTemporalClient(address, taskQueue)
       const r = await resolverPromise
-      realApp = createApp({ temporal, resolver: r })
+      const pipelines = process.env.DATA_DIR ? filePipelineStore(process.env.DATA_DIR) : undefined
+      realApp = createApp({ temporal, resolver: r, pipelines })
     }
     return realApp
   }

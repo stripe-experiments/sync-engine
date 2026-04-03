@@ -6,6 +6,7 @@ import type { ConnectorResolver } from '@stripe/sync-engine'
 import { endpointTable, addDiscriminators } from '@stripe/sync-engine/api/openapi-utils'
 import { createSchemas } from '../lib/createSchemas.js'
 import type { Pipeline } from '../lib/createSchemas.js'
+import type { PipelineStore } from '../lib/stores.js'
 import type { WorkflowStatus } from '../temporal/workflows/_shared.js'
 
 const DEFAULT_PIPELINE_WORKFLOW = 'pipelineWorkflow'
@@ -47,6 +48,8 @@ function ListResponse<T extends z.ZodType>(itemSchema: T) {
 export interface AppOptions {
   temporal: { client: WorkflowClient; taskQueue: string }
   resolver: ConnectorResolver
+  /** When set, pipelines are persisted here and Temporal is used only for execution. */
+  pipelines?: PipelineStore
 }
 
 export function createApp(options: AppOptions) {
@@ -122,6 +125,23 @@ export function createApp(options: AppOptions) {
       },
     }),
     async (c) => {
+      if (options.pipelines) {
+        // FS store is authoritative — read from disk, enrich with Temporal status
+        const stored = await options.pipelines.list()
+        const pipelines = await Promise.all(
+          stored.map(async (pipeline) => {
+            try {
+              const status = await temporal.getHandle(pipeline.id).query<WorkflowStatus>('status')
+              return { ...pipeline, status }
+            } catch {
+              return pipeline
+            }
+          })
+        )
+        return c.json({ data: pipelines, has_more: false } as any, 200)
+      }
+
+      // Temporal-only fallback: iterate visibility API
       // Completed = soft-deleted (via delete signal). Show everything else
       // including failed/terminated so operators can see broken pipelines.
       const pipelines: Array<Pipeline & { status?: WorkflowStatus }> = []
@@ -181,6 +201,9 @@ export function createApp(options: AppOptions) {
       const body = c.req.valid('json')
       const id = genId('pipe')
       const pipeline = { id, ...(body as Record<string, unknown>) } as Pipeline
+      if (options.pipelines) {
+        await options.pipelines.set(id, pipeline)
+      }
       await temporal.start(workflowTypeForPipeline(pipeline), {
         workflowId: id,
         taskQueue,
@@ -212,6 +235,23 @@ export function createApp(options: AppOptions) {
     }),
     async (c) => {
       const { id } = c.req.valid('param')
+
+      if (options.pipelines) {
+        let pipeline: Pipeline
+        try {
+          pipeline = await options.pipelines.get(id)
+        } catch {
+          return c.json({ error: `Pipeline ${id} not found` }, 404)
+        }
+        try {
+          const status = await temporal.getHandle(id).query<WorkflowStatus>('status')
+          return c.json({ ...pipeline, status } as any, 200)
+        } catch {
+          return c.json(pipeline as any, 200)
+        }
+      }
+
+      // Temporal-only fallback
       try {
         const handle = temporal.getHandle(id)
         const desc = await handle.describe()
@@ -273,7 +313,36 @@ export function createApp(options: AppOptions) {
     }),
     async (c) => {
       const { id } = c.req.valid('param')
-      const patch = c.req.valid('json')
+      const patch = c.req.valid('json') as Partial<Pipeline>
+
+      if (options.pipelines) {
+        let pipeline: Pipeline
+        try {
+          pipeline = await options.pipelines.get(id)
+        } catch {
+          return c.json({ error: `Pipeline ${id} not found` }, 404)
+        }
+        // Merge patch into stored pipeline (top-level fields only)
+        const updated: Pipeline = { ...pipeline }
+        if (patch.source) updated.source = patch.source
+        if (patch.destination) updated.destination = patch.destination
+        if (patch.streams !== undefined) updated.streams = patch.streams
+        await options.pipelines.set(id, updated)
+        // Best-effort: signal the in-flight workflow if it's running
+        try {
+          await temporal.getHandle(id).signal('update', patch)
+        } catch {
+          // Workflow may not be running — config is persisted, that's fine
+        }
+        try {
+          const status = await temporal.getHandle(id).query<WorkflowStatus>('status')
+          return c.json({ ...updated, status } as any, 200)
+        } catch {
+          return c.json(updated as any, 200)
+        }
+      }
+
+      // Temporal-only fallback
       try {
         const handle = temporal.getHandle(id)
         const current = await handle.query<Pipeline>('config')
@@ -415,6 +484,30 @@ export function createApp(options: AppOptions) {
     }),
     async (c) => {
       const { id } = c.req.valid('param')
+
+      if (options.pipelines) {
+        // Check store existence first — this is the authoritative 404 check
+        try {
+          await options.pipelines.get(id)
+        } catch {
+          return c.json({ error: `Pipeline ${id} not found` }, 404)
+        }
+        // Signal the workflow to run teardown, if it's running
+        try {
+          const handle = temporal.getHandle(id)
+          const desc = await handle.describe()
+          if (desc.status.name === 'RUNNING') {
+            await handle.signal('delete')
+            await handle.result()
+          }
+        } catch {
+          // Workflow not found or already finished — proceed to delete from store
+        }
+        await options.pipelines.delete(id)
+        return c.json({ id, deleted: true as const }, 200)
+      }
+
+      // Temporal-only fallback
       try {
         const handle = temporal.getHandle(id)
         // Verify the workflow exists and is running before signaling
