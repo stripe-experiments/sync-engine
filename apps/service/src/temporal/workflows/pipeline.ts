@@ -16,7 +16,7 @@ import {
   WorkflowStatus,
   writeFromQueue,
 } from './_shared.js'
-import { CONTINUE_AS_NEW_THRESHOLD, deepEqual, EVENT_BATCH_SIZE } from '../../lib/utils.js'
+import { CONTINUE_AS_NEW_THRESHOLD, EVENT_BATCH_SIZE } from '../../lib/utils.js'
 
 export interface PipelineWorkflowOpts {
   phase?: string
@@ -130,14 +130,13 @@ export async function pipelineWorkflow(
         }
 
         if (!readComplete) {
-          const before = readState
-          const { count, state: nextReadState } = await readIntoQueue(config, pipeline.id, {
+          const { count, state: nextReadState, eof } = await readIntoQueue(config, pipeline.id, {
             state: readState,
             stateLimit: 1,
           })
           if (count > 0) pendingWrites = true
           readState = { ...readState, ...nextReadState }
-          readComplete = deepEqual(readState, before)
+          readComplete = eof?.reason === 'complete'
           await tickIteration()
           continue
         }
@@ -181,10 +180,9 @@ export async function pipelineWorkflow(
       }
 
       if (!readComplete) {
-        const before = syncState
         const result = await syncImmediate(config, { state: syncState, stateLimit: 1 })
         syncState = { ...syncState, ...result.state }
-        readComplete = deepEqual(syncState, before)
+        readComplete = result.eof?.reason === 'complete'
         await tickIteration()
         continue
       }
