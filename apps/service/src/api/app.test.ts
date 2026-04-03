@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest'
+import { describe, expect, it, beforeAll, afterAll, inject } from 'vitest'
 import type { WorkflowClient } from '@temporalio/client'
 import { TestWorkflowEnvironment } from '@temporalio/testing'
 import { Worker } from '@temporalio/worker'
@@ -90,7 +90,10 @@ let worker: Worker
 let workerRunning: Promise<void>
 
 beforeAll(async () => {
-  testEnv = await TestWorkflowEnvironment.createLocal()
+  // Connect to the shared dev server started in vitest.global-setup.ts instead of
+  // spawning a new one per file — avoids concurrent startup races under file parallelism.
+  const address = inject('temporalTestServerAddress')
+  testEnv = await TestWorkflowEnvironment.createFromExistingServer({ address })
   worker = await Worker.create({
     connection: testEnv.nativeConnection,
     taskQueue: 'test-api',
@@ -103,6 +106,7 @@ beforeAll(async () => {
 afterAll(async () => {
   worker?.shutdown()
   await workerRunning
+  // teardown() on an existing-server env only closes connections, not the server itself.
   await testEnv?.teardown()
 })
 
