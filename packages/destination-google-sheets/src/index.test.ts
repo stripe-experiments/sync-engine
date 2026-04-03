@@ -328,6 +328,36 @@ describe('destination-google-sheets', () => {
       assignments: { customers: { '["cus_2"]': 3 } },
     })
   })
+
+  it('extends existing headers when a later write introduces new fields', async () => {
+    const { sheets, getData } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    await collect(
+      dest.write(
+        { config: cfg(), catalog },
+        toAsyncIter([record('customers', { id: 'cus_1', name: 'Alice' })])
+      )
+    )
+
+    await collect(
+      dest.write(
+        { config: cfg({ spreadsheet_id: dest.spreadsheetId! }), catalog },
+        toAsyncIter([
+          record('customers', {
+            id: 'cus_2',
+            name: 'Bob',
+            email: 'bob@test.invalid',
+          }),
+        ])
+      )
+    )
+
+    const rows = getData(dest.spreadsheetId!, 'customers')!
+    expect(rows[0]).toEqual(['id', 'name', 'email'])
+    expect(rows[1]).toEqual(['cus_1', 'Alice'])
+    expect(rows[2]).toEqual(['cus_2', 'Bob', 'bob@test.invalid'])
+  })
 })
 
 describe('envVars', () => {

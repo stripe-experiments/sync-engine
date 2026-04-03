@@ -97,6 +97,21 @@ function isTransient(err: unknown): boolean {
   return code === 429 || code >= 500
 }
 
+function extendHeaders(
+  existingHeaders: string[],
+  data: Record<string, unknown>
+): { headers: string[]; changed: boolean } {
+  const headers = [...existingHeaders]
+  let changed = false
+  for (const key of Object.keys(data)) {
+    if (!headers.includes(key)) {
+      headers.push(key)
+      changed = true
+    }
+  }
+  return { headers, changed }
+}
+
 // MARK: - Destination
 
 /**
@@ -193,6 +208,44 @@ export function createDestination(
       const updateBuffers = new Map<string, Array<{ rowNumber: number; values: string[] }>>()
       const rowAssignments: Record<string, Record<string, number>> = {}
 
+      const ensureHeadersForRecord = async (
+        streamName: string,
+        cleanData: Record<string, unknown>
+      ): Promise<string[]> => {
+        let headers = streamHeaders.get(streamName)
+
+        if (!headers) {
+          try {
+            headers = await readHeaderRow(sheets, spreadsheetId!, streamName)
+          } catch (error) {
+            const code =
+              error instanceof Error && 'code' in error
+                ? (error as { code?: number }).code
+                : undefined
+            if (code !== 400 && code !== 404) throw error
+            headers = []
+          }
+
+          if (headers.length === 0) {
+            headers = Object.keys(cleanData)
+            await ensureSheet(sheets, spreadsheetId!, streamName, headers)
+          }
+
+          streamHeaders.set(streamName, headers)
+          appendBuffers.set(streamName, [])
+          updateBuffers.set(streamName, [])
+        }
+
+        const next = extendHeaders(headers, cleanData)
+        if (next.changed) {
+          await ensureSheet(sheets, spreadsheetId!, streamName, next.headers)
+          streamHeaders.set(streamName, next.headers)
+          headers = next.headers
+        }
+
+        return headers
+      }
+
       const flushStream = async (streamName: string) => {
         const updates = updateBuffers.get(streamName)
         if (updates && updates.length > 0) {
@@ -237,30 +290,7 @@ export function createDestination(
           if (msg.type === 'record') {
             const { stream, data } = msg
             const cleanData = stripSystemFields(data)
-
-            // First record for this stream — discover headers, create tab
-            if (!streamHeaders.has(stream)) {
-              let headers: string[]
-              try {
-                headers = await readHeaderRow(sheets, spreadsheetId!, stream)
-              } catch (error) {
-                const code =
-                  error instanceof Error && 'code' in error
-                    ? (error as { code?: number }).code
-                    : undefined
-                if (code !== 400 && code !== 404) throw error
-                headers = []
-              }
-              if (headers.length === 0) {
-                headers = Object.keys(cleanData)
-                await ensureSheet(sheets, spreadsheetId!, stream, headers)
-              }
-              streamHeaders.set(stream, headers)
-              appendBuffers.set(stream, [])
-              updateBuffers.set(stream, [])
-            }
-
-            const headers = streamHeaders.get(stream)!
+            const headers = await ensureHeadersForRecord(stream, cleanData)
             const row = headers.map((header) => stringify(cleanData[header]))
             const rowNumber =
               typeof data[ROW_NUMBER_FIELD] === 'number' ? data[ROW_NUMBER_FIELD] : undefined
