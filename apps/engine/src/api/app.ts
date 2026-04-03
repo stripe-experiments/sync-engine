@@ -4,7 +4,7 @@ import { apiReference } from '@scalar/hono-api-reference'
 import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
 import type { Message, DestinationOutput, ConnectorResolver, SyncParams } from '../lib/index.js'
-import { createEngine, PipelineConfig, parseNdjsonStream } from '../lib/index.js'
+import { createEngine, PipelineConfig, parseNdjsonStream, ConnectorInfo } from '../lib/index.js'
 import { endpointTable, addDiscriminators, injectConnectorSchemas } from './openapi-utils.js'
 import {
   Message as MessageSchema,
@@ -438,14 +438,8 @@ export function createApp(resolver: ConnectorResolver) {
           content: {
             'application/json': {
               schema: z.object({
-                sources: z.record(
-                  z.string(),
-                  z.object({ config_schema: z.record(z.string(), z.unknown()) })
-                ),
-                destinations: z.record(
-                  z.string(),
-                  z.object({ config_schema: z.record(z.string(), z.unknown()) })
-                ),
+                sources: z.record(z.string(), ConnectorInfo),
+                destinations: z.record(z.string(), ConnectorInfo),
               }),
             },
           },

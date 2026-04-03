@@ -29,9 +29,10 @@ export const SyncOpts = z.object({
 })
 export type SyncOpts = z.infer<typeof SyncOpts>
 
-export interface ConnectorInfo {
-  config_schema: Record<string, unknown>
-}
+export const ConnectorInfo = z.object({
+  config_schema: z.record(z.string(), z.unknown()),
+})
+export type ConnectorInfo = z.infer<typeof ConnectorInfo>
 
 export interface Engine {
   listConnectors(): Promise<{
