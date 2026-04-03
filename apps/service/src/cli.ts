@@ -100,8 +100,10 @@ const workerCmd = defineCommand({
     const engineUrl = args['engine-url'] || 'http://localhost:4010'
     const temporalAddress = args['temporal-address']
 
-    // Resolve relative to this file: dist/cli.js → dist/temporal/workflows.js
-    const workflowsPath = fileURLToPath(new URL('./temporal/workflows.js', import.meta.url))
+    // Support both compiled mode (dist/cli.js → dist/temporal/workflows.js) and
+    // source/tsx mode (src/cli.ts → src/temporal/workflows.ts)
+    const ext = import.meta.url.endsWith('.ts') ? '.ts' : '.js'
+    const workflowsPath = fileURLToPath(new URL(`./temporal/workflows${ext}`, import.meta.url))
 
     const worker = await createWorker({
       temporalAddress,
