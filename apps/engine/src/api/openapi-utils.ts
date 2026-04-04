@@ -60,7 +60,7 @@ export function connectorInputSchemaName(name: string): string {
     .split(/[-_]/)
     .map((w) => capitalize(w))
     .join('')
-  return `${pascal}WebhookInput`
+  return `${pascal}EventInput`
 }
 
 /**

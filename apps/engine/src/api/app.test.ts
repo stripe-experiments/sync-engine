@@ -588,8 +588,6 @@ describe('error handling', () => {
 
     const res = await app.request('/pipeline_check')
     expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(body.error).toContain('Missing X-Pipeline')
   })
 
   it('returns 400 when X-Pipeline header is invalid JSON', async () => {

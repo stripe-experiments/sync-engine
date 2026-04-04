@@ -753,7 +753,7 @@ export interface components {
             };
         };
         SourceConfig: components["schemas"]["StripeSourceConfig"];
-        StripeWebhookInput: {
+        StripeEventInput: {
             /** @description Unique identifier for the object. */
             id: string;
             /**
@@ -790,7 +790,7 @@ export interface components {
         SourceInput: {
             /** @enum {string} */
             type: "stripe";
-            stripe?: components["schemas"]["StripeWebhookInput"];
+            stripe?: components["schemas"]["StripeEventInput"];
         };
         DestinationConfig: components["schemas"]["PostgresDestinationConfig"] | components["schemas"]["GoogleSheetsDestinationConfig"];
         PipelineConfig: {
@@ -838,9 +838,9 @@ export interface operations {
     pipeline_setup: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
             };
             path?: never;
             cookie?: never;
@@ -874,9 +874,9 @@ export interface operations {
     pipeline_teardown: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
             };
             path?: never;
             cookie?: never;
@@ -906,9 +906,9 @@ export interface operations {
     pipeline_check: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
             };
             path?: never;
             cookie?: never;
@@ -951,9 +951,9 @@ export interface operations {
     source_discover: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
             };
             path?: never;
             cookie?: never;
@@ -990,9 +990,9 @@ export interface operations {
                 /** @description Stop streaming after N seconds. */
                 time_limit?: number;
             };
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
                 /** @description JSON-encoded per-stream cursor state. Engine uses this if present, falls back to StateStore. */
                 "x-state"?: string;
             };
@@ -1030,9 +1030,9 @@ export interface operations {
     pipeline_write: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
             };
             path?: never;
             cookie?: never;
@@ -1073,9 +1073,9 @@ export interface operations {
                 /** @description Stop streaming after N seconds. */
                 time_limit?: number;
             };
-            header?: {
+            header: {
                 /** @description JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams } */
-                "x-pipeline"?: string;
+                "x-pipeline": string;
                 /** @description JSON-encoded per-stream cursor state. Engine uses this if present, falls back to StateStore. */
                 "x-state"?: string;
             };

@@ -38,6 +38,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -83,6 +84,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -117,6 +119,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -182,6 +185,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -221,6 +225,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -303,6 +308,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -350,6 +356,7 @@
           {
             "in": "header",
             "name": "x-pipeline",
+            "required": true,
             "description": "JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/PipelineConfig" } }
@@ -1448,7 +1455,7 @@
         "discriminator": { "propertyName": "type" },
         "oneOf": [{ "$ref": "#/components/schemas/StripeSourceConfig" }]
       },
-      "StripeWebhookInput": {
+      "StripeEventInput": {
         "type": "object",
         "properties": {
           "id": { "type": "string", "description": "Unique identifier for the object." },
@@ -1535,7 +1542,7 @@
             "required": ["type"],
             "properties": {
               "type": { "type": "string", "enum": ["stripe"] },
-              "stripe": { "$ref": "#/components/schemas/StripeWebhookInput" }
+              "stripe": { "$ref": "#/components/schemas/StripeEventInput" }
             }
           }
         ]

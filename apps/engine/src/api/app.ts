@@ -124,21 +124,18 @@ export async function createApp(resolver: ConnectorResolver) {
 
   // ── Shared header param schemas ─────────────────────────────────
 
-  const xPipelineHeader = z
-    .string()
-    .optional()
-    .meta({
-      description:
-        'JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }',
-      example: JSON.stringify({
-        source: { type: 'stripe', stripe: { api_key: 'sk_test_...' } },
-        destination: {
-          type: 'postgres',
-          postgres: { connection_string: 'postgres://localhost/db' },
-        },
-        streams: [{ name: 'products' }],
-      }),
-    })
+  const xPipelineHeader = z.string().meta({
+    description:
+      'JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }',
+    example: JSON.stringify({
+      source: { type: 'stripe', stripe: { api_key: 'sk_test_...' } },
+      destination: {
+        type: 'postgres',
+        postgres: { connection_string: 'postgres://localhost/db' },
+      },
+      streams: [{ name: 'products' }],
+    }),
+  })
 
   const xStateHeader = z
     .string()
