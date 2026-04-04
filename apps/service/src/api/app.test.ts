@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest'
+import { describe, expect, it, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import type { WorkflowClient } from '@temporalio/client'
 import { TestWorkflowEnvironment } from '@temporalio/testing'
 import { Worker } from '@temporalio/worker'
@@ -81,6 +81,57 @@ describe('GET /health', () => {
   })
 })
 
+describe('pipeline query fallbacks', () => {
+  it('GET /pipelines returns stored pipelines when status queries fail', async () => {
+    const pipeline = {
+      id: 'pipe_failed',
+      source: { type: 'test' },
+      destination: { type: 'test' },
+    }
+    const store = memoryPipelineStore()
+    await store.set(pipeline.id, pipeline)
+
+    const getHandle = vi.fn(() => ({
+      query: vi.fn().mockRejectedValue(new Error('query unavailable')),
+    }))
+
+    const res = await createApp({
+      temporal: { client: { getHandle } as unknown as WorkflowClient, taskQueue: 'unused' },
+      resolver,
+      pipelines: store,
+    }).request('/pipelines')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      data: [pipeline],
+      has_more: false,
+    })
+  })
+
+  it('GET /pipelines/:id returns the stored pipeline when status queries fail', async () => {
+    const pipeline = {
+      id: 'pipe_failed',
+      source: { type: 'test' },
+      destination: { type: 'test' },
+    }
+    const store = memoryPipelineStore()
+    await store.set(pipeline.id, pipeline)
+
+    const getHandle = vi.fn(() => ({
+      query: vi.fn().mockRejectedValue(new Error('query unavailable')),
+    }))
+
+    const res = await createApp({
+      temporal: { client: { getHandle } as unknown as WorkflowClient, taskQueue: 'unused' },
+      resolver,
+      pipelines: store,
+    }).request(`/pipelines/${pipeline.id}`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(pipeline)
+  })
+})
+
 describe('POST /pipelines workflow dispatch', () => {
   it('starts google-sheets pipelines on the dedicated workflow', async () => {
     const start = vi.fn(async () => ({}))
@@ -114,6 +165,91 @@ describe('POST /pipelines workflow dispatch', () => {
         args: [expect.stringMatching(/^pipe_/)],
       })
     )
+  })
+})
+
+describe('pipeline mutation responses', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('PATCH /pipelines returns the stored update plus queried status', async () => {
+    const currentPipeline = {
+      id: 'pipe_123',
+      source: { type: 'test' },
+      destination: { type: 'test' },
+      streams: [{ name: 'customers' }],
+    }
+    const updatedPipeline = {
+      ...currentPipeline,
+      streams: [{ name: 'products' }],
+    }
+    const store = memoryPipelineStore()
+    await store.set(currentPipeline.id, currentPipeline)
+
+    const handle = {
+      query: vi.fn().mockResolvedValue({ phase: 'live', paused: false, iteration: 1 }),
+      signal: vi.fn(async () => undefined),
+    }
+
+    const res = await createApp({
+      temporal: {
+        client: { getHandle: vi.fn(() => handle) } as unknown as WorkflowClient,
+        taskQueue: 'unused',
+      },
+      resolver,
+      pipelines: store,
+    }).request('/pipelines/pipe_123', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ streams: [{ name: 'products' }] }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ...updatedPipeline,
+      status: { phase: 'live', paused: false, iteration: 1 },
+    })
+    expect(handle.signal).toHaveBeenCalledWith('update', {})
+  })
+
+  it.each([
+    { path: '/pause', patch: { paused: true }, paused: true },
+    { path: '/resume', patch: { paused: false }, paused: false },
+  ])('POST $path returns the pipeline plus refreshed status', async ({ path, patch, paused }) => {
+    vi.useFakeTimers()
+
+    const pipeline = {
+      id: 'pipe_123',
+      source: { type: 'test' },
+      destination: { type: 'test' },
+    }
+    const store = memoryPipelineStore()
+    await store.set(pipeline.id, pipeline)
+
+    const handle = {
+      query: vi.fn().mockResolvedValue({ phase: 'live', paused, iteration: 1 }),
+      signal: vi.fn(async () => undefined),
+    }
+
+    const responsePromise = createApp({
+      temporal: {
+        client: { getHandle: vi.fn(() => handle) } as unknown as WorkflowClient,
+        taskQueue: 'unused',
+      },
+      resolver,
+      pipelines: store,
+    }).request(`/pipelines/${pipeline.id}${path}`, { method: 'POST' })
+
+    await vi.advanceTimersByTimeAsync(200)
+
+    const res = await responsePromise
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ...pipeline,
+      status: { phase: 'live', paused, iteration: 1 },
+    })
+    expect(handle.signal).toHaveBeenCalledWith('update', patch)
   })
 })
 

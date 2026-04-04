@@ -11,6 +11,11 @@ import type { WorkflowStatus } from '../temporal/workflows/_shared.js'
 
 const DEFAULT_PIPELINE_WORKFLOW = 'pipelineWorkflow'
 const GOOGLE_SHEETS_PIPELINE_WORKFLOW = 'googleSheetPipelineWorkflow'
+const SIGNAL_RESPONSE_DELAY_MS = 200
+
+type PipelineHandle = ReturnType<WorkflowClient['getHandle']>
+type PipelineWithStatus = Pipeline & { status?: WorkflowStatus }
+type PipelineListResponse = { data: PipelineWithStatus[]; has_more: boolean }
 
 function workflowTypeForPipeline(pipeline: Pipeline): string {
   return pipeline.destination.type === 'google-sheets'
@@ -25,6 +30,10 @@ function genId(prefix: string): string {
   return `${prefix}_${(_idCounter++).toString(36)}`
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function queryStatus(
   temporal: WorkflowClient,
   id: string
@@ -33,6 +42,28 @@ async function queryStatus(
     return await temporal.getHandle(id).query<WorkflowStatus>('status')
   } catch {
     return undefined
+  }
+}
+
+function pipelineWithStatus(pipeline: Pipeline, status?: WorkflowStatus): PipelineWithStatus {
+  return status ? { ...pipeline, status } : pipeline
+}
+
+async function queryPipelineWithStatus(
+  temporal: WorkflowClient,
+  pipeline: Pipeline
+): Promise<PipelineWithStatus> {
+  return pipelineWithStatus(pipeline, await queryStatus(temporal, pipeline.id))
+}
+
+async function signalPipelineUpdate(
+  handle: PipelineHandle,
+  patch: Record<string, unknown>,
+  settleMs = 0
+): Promise<void> {
+  await handle.signal('update', patch)
+  if (settleMs > 0) {
+    await sleep(settleMs)
   }
 }
 
@@ -79,6 +110,12 @@ export function createApp(options: AppOptions) {
       .optional()
       .describe('Live workflow status. Absent if no workflow is running for this pipeline.'),
   })
+
+  const jsonResponse = <T>(
+    c: { json: (body: T, status: number) => Response },
+    body: T,
+    status: number
+  ) => c.json(body, status)
 
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -136,12 +173,9 @@ export function createApp(options: AppOptions) {
     async (c) => {
       const stored = await pipelines.list()
       const result = await Promise.all(
-        stored.map(async (pipeline) => {
-          const status = await queryStatus(temporal, pipeline.id)
-          return status ? { ...pipeline, status } : pipeline
-        })
+        stored.map((pipeline) => queryPipelineWithStatus(temporal, pipeline))
       )
-      return c.json({ data: result, has_more: false } as any, 200)
+      return jsonResponse(c, { data: result, has_more: false } satisfies PipelineListResponse, 200)
     }
   )
 
@@ -176,7 +210,7 @@ export function createApp(options: AppOptions) {
         taskQueue,
         args: [id],
       })
-      return c.json(pipeline as any, 201)
+      return jsonResponse(c, pipeline, 201)
     }
   )
 
@@ -207,8 +241,7 @@ export function createApp(options: AppOptions) {
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
+      return jsonResponse(c, await queryPipelineWithStatus(temporal, pipeline), 200)
     }
   )
 
@@ -287,13 +320,12 @@ export function createApp(options: AppOptions) {
 
       // Best-effort: notify the workflow that config changed
       try {
-        await temporal.getHandle(id).signal('update', {})
+        await signalPipelineUpdate(temporal.getHandle(id), {})
       } catch {
         // Workflow may not be running — config is persisted, that's fine
       }
 
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...updated, status } : (updated as any), 200)
+      return jsonResponse(c, await queryPipelineWithStatus(temporal, updated), 200)
     }
   )
 
@@ -325,13 +357,15 @@ export function createApp(options: AppOptions) {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
       try {
-        await temporal.getHandle(id).signal('update', { paused: true })
-        await new Promise((r) => setTimeout(r, 200))
+        await signalPipelineUpdate(
+          temporal.getHandle(id),
+          { paused: true },
+          SIGNAL_RESPONSE_DELAY_MS
+        )
       } catch {
         return c.json({ error: `Pipeline ${id} workflow not found` }, 404)
       }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
+      return jsonResponse(c, await queryPipelineWithStatus(temporal, pipeline), 200)
     }
   )
 
@@ -363,13 +397,15 @@ export function createApp(options: AppOptions) {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
       try {
-        await temporal.getHandle(id).signal('update', { paused: false })
-        await new Promise((r) => setTimeout(r, 200))
+        await signalPipelineUpdate(
+          temporal.getHandle(id),
+          { paused: false },
+          SIGNAL_RESPONSE_DELAY_MS
+        )
       } catch {
         return c.json({ error: `Pipeline ${id} workflow not found` }, 404)
       }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
+      return jsonResponse(c, await queryPipelineWithStatus(temporal, pipeline), 200)
     }
   )
 
