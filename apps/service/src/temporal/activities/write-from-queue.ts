@@ -24,12 +24,7 @@ export function createWriteFromQueueActivity(context: ActivitiesContext) {
     const pipeline = await context.pipelines.get(pipelineId)
     const { id: _, ...config } = pipeline
     const { errors, state } = await drainMessages(
-      context.engine.pipeline_write(
-        config,
-        asIterable(records) as AsyncIterable<Message>
-      ) as AsyncIterable<
-        Record<string, unknown>
-      >
+      context.engine.pipeline_write(config, asIterable(records) as AsyncIterable<Message>)
     )
 
     return { errors, state, written: records.length }

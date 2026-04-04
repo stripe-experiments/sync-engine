@@ -13,9 +13,7 @@ export function createSyncImmediateActivity(context: ActivitiesContext) {
     const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
     const { errors, state, controls, eof } = await drainMessages(
-      context.engine.pipeline_sync(config, readOpts, input) as AsyncIterable<
-        Record<string, unknown>
-      >
+      context.engine.pipeline_sync(config, readOpts, input)
     )
     // Persist source config updates from control messages (e.g. OAuth token refresh)
     if (controls.length > 0) {

@@ -13,9 +13,7 @@ export function createReadIntoQueueActivity(context: ActivitiesContext) {
     const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
     const { records, state, eof } = await drainMessages(
-      context.engine.pipeline_read(config, readOpts, input) as AsyncIterable<
-        Record<string, unknown>
-      >
+      context.engine.pipeline_read(config, readOpts, input)
     )
 
     if (context.kafkaBroker && records.length > 0) {

@@ -46,25 +46,16 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
     const errors: RunResult['errors'] = []
     let seen = 0
 
-    for await (const raw of context.engine.pipeline_read(
-      config,
-      readOpts,
-      input
-    ) as AsyncIterable<
-      Record<string, unknown>
-    >) {
+    for await (const raw of context.engine.pipeline_read(config, readOpts, input)) {
       seen++
       const error = collectError(raw)
       if (error) {
         errors.push(error)
       } else if (raw.type === 'record') {
-        queued.push(withRowKey(raw as RecordMessage, catalog))
+        queued.push(withRowKey(raw, catalog))
       } else if (raw.type === 'state') {
-        const statePayload = (raw as Record<string, unknown>).state as Record<string, unknown>
-        if (typeof statePayload?.stream === 'string') {
-          state[statePayload.stream] = statePayload.data
-        }
-        queued.push(raw as Message)
+        state[raw.state.stream] = raw.state.data
+        queued.push(raw)
       }
       if (seen % 50 === 0) heartbeat({ messages: seen })
     }
