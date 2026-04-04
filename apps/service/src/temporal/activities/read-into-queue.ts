@@ -1,12 +1,13 @@
 import type { SourceReadOptions } from '@stripe/sync-engine'
-
 import type { ActivitiesContext } from './_shared.js'
+
+type SourceInput = unknown
 import { asIterable, drainMessages } from './_shared.js'
 
 export function createReadIntoQueueActivity(context: ActivitiesContext) {
   return async function readIntoQueue(
     pipelineId: string,
-    opts?: SourceReadOptions & { input?: unknown[] }
+    opts?: SourceReadOptions & { input?: SourceInput[] }
   ): Promise<{ count: number; state: Record<string, unknown>; eof?: { reason: string } }> {
     const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline

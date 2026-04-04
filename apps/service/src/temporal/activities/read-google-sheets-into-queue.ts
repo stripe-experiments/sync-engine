@@ -10,6 +10,8 @@ import { ROW_KEY_FIELD, serializeRowKey } from '@stripe/sync-destination-google-
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult } from './_shared.js'
 
+type SourceInput = unknown
+
 function withRowKey(record: RecordMessage, catalog?: ConfiguredCatalog): RecordMessage {
   const primaryKey = catalog?.streams.find((stream) => stream.stream.name === record.record.stream)
     ?.stream.primary_key
@@ -30,7 +32,7 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
   return async function readGoogleSheetsIntoQueue(
     pipelineId: string,
     opts?: SourceReadOptions & {
-      input?: unknown[]
+      input?: SourceInput[]
       catalog?: ConfiguredCatalog
     }
   ): Promise<{ count: number; state: Record<string, unknown> }> {
