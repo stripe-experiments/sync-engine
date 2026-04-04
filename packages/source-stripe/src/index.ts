@@ -10,7 +10,7 @@ import type {
 } from '@stripe/sync-protocol'
 import Stripe from 'stripe'
 import { z } from 'zod'
-import { configSchema } from './spec.js'
+import defaultSpec, { configSchema } from './spec.js'
 import type { Config } from './spec.js'
 import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromRegistry, catalogFromOpenApi } from './catalog.js'
@@ -72,29 +72,6 @@ export type StripeStreamState = {
   backfill?: BackfillState
 }
 
-const segmentStateSpec = z.object({
-  index: z.number(),
-  gte: z.number(),
-  lt: z.number(),
-  pageCursor: z.string().nullable(),
-  status: z.enum(['pending', 'complete']),
-})
-
-const backfillStateSpec = z.object({
-  range: z.object({ gte: z.number(), lt: z.number() }),
-  numSegments: z.number(),
-  completed: z.array(z.object({ gte: z.number(), lt: z.number() })),
-  inFlight: z.array(z.object({ gte: z.number(), lt: z.number(), pageCursor: z.string() })),
-})
-
-const streamStateSpec = z.object({
-  pageCursor: z.string().nullable(),
-  status: z.enum(['pending', 'complete']),
-  events_cursor: z.number().optional(),
-  segments: z.array(segmentStateSpec).optional(),
-  backfill: backfillStateSpec.optional(),
-})
-
 // MARK: - Source
 
 export type StripeSourceDeps = {
@@ -108,13 +85,7 @@ export function createStripeSource(
 
   return {
     async *spec(): AsyncGenerator<SpecOutput> {
-      yield {
-        type: 'spec' as const,
-        spec: {
-          config: z.toJSONSchema(configSchema),
-          stream_state: z.toJSONSchema(streamStateSpec),
-        },
-      }
+      yield { type: 'spec' as const, spec: defaultSpec }
     },
 
     async *check({ config }): AsyncGenerator<CheckOutput> {

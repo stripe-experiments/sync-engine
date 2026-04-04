@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ConnectorSpecification } from '@stripe/sync-protocol'
 
 export const configSchema = z.object({
   api_key: z.string().describe('Stripe API key (sk_test_... or sk_live_...)'),
@@ -54,3 +55,31 @@ export const configSchema = z.object({
 })
 
 export type Config = z.infer<typeof configSchema>
+
+const segmentStateSpec = z.object({
+  index: z.number(),
+  gte: z.number(),
+  lt: z.number(),
+  pageCursor: z.string().nullable(),
+  status: z.enum(['pending', 'complete']),
+})
+
+const backfillStateSpec = z.object({
+  range: z.object({ gte: z.number(), lt: z.number() }),
+  numSegments: z.number(),
+  completed: z.array(z.object({ gte: z.number(), lt: z.number() })),
+  inFlight: z.array(z.object({ gte: z.number(), lt: z.number(), pageCursor: z.string() })),
+})
+
+export const streamStateSpec = z.object({
+  pageCursor: z.string().nullable(),
+  status: z.enum(['pending', 'complete']),
+  events_cursor: z.number().optional(),
+  segments: z.array(segmentStateSpec).optional(),
+  backfill: backfillStateSpec.optional(),
+})
+
+export default {
+  config: z.toJSONSchema(configSchema),
+  stream_state: z.toJSONSchema(streamStateSpec),
+} satisfies ConnectorSpecification

@@ -11,7 +11,7 @@ import {
   serializeRowKey,
   stripSystemFields,
 } from './metadata.js'
-import { configSchema } from './spec.js'
+import defaultSpec, { configSchema } from './spec.js'
 import type { Config } from './spec.js'
 import {
   appendRows,
@@ -123,10 +123,7 @@ export function createDestination(
     },
 
     async *spec() {
-      yield {
-        type: 'spec' as const,
-        spec: { config: z.toJSONSchema(configSchema) },
-      }
+      yield { type: 'spec' as const, spec: defaultSpec }
     },
 
     async *setup({ config, catalog }) {
