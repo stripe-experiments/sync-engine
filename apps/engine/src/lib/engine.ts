@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   DestinationOutput,
+  DiscoverOutput,
   Message,
   PipelineConfig,
   Stream,
@@ -13,7 +14,7 @@ import {
   collectControls,
   drainStream,
 } from '@stripe/sync-protocol'
-import type { CatalogPayload } from '@stripe/sync-protocol'
+
 import { enforceCatalog, filterType, log, pipe, takeLimits } from './pipeline.js'
 import { applySelection } from './destination-filter.js'
 import type { ConnectorResolver } from './resolver.js'
@@ -52,7 +53,7 @@ export interface Engine {
   pipeline_check(
     pipeline: PipelineConfig
   ): Promise<{ source: ConnectionStatusPayload; destination: ConnectionStatusPayload }>
-  source_discover(source: PipelineConfig['source']): Promise<CatalogPayload>
+  source_discover(source: PipelineConfig['source']): AsyncIterable<DiscoverOutput>
   pipeline_read(
     pipeline: PipelineConfig,
     opts?: SyncOpts,
@@ -196,12 +197,11 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       return { config_schema: r.rawConfigJsonSchema }
     },
 
-    async source_discover(sourceInput: PipelineConfig['source']): Promise<CatalogPayload> {
+    async *source_discover(sourceInput: PipelineConfig['source']): AsyncIterable<DiscoverOutput> {
       const connector = await resolver.resolveSource(sourceInput.type)
       const { type: _, ...rawSrc } = sourceInput
       const sourceConfig = await getSpecConfig(connector, rawSrc)
-      const { catalog } = await collectCatalog(connector.discover({ config: sourceConfig }))
-      return catalog
+      yield* connector.discover({ config: sourceConfig })
     },
 
     async pipeline_setup(pipeline: PipelineConfig): Promise<SetupResult> {
@@ -217,7 +217,9 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         getSpecConfig(destConnector, rawDest),
       ])
 
-      const catalogPayload = await engine.source_discover(pipeline.source)
+      const { catalog: catalogPayload } = await collectCatalog(
+        engine.source_discover(pipeline.source)
+      )
       const catalog = buildCatalog(catalogPayload.streams, pipeline.streams)
       const filteredCatalog = applySelection(catalog)
 
@@ -309,7 +311,9 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       const connector = await resolver.resolveSource(pipeline.source.type)
       const { type: _, ...rawSrc } = pipeline.source
       const sourceConfig = await getSpecConfig(connector, rawSrc)
-      const catalogPayload = await engine.source_discover(pipeline.source)
+      const { catalog: catalogPayload } = await collectCatalog(
+        engine.source_discover(pipeline.source)
+      )
       const catalog = buildCatalog(catalogPayload.streams, pipeline.streams)
       const state = opts?.state
 
@@ -342,7 +346,9 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       const connector = await resolver.resolveDestination(pipeline.destination.type)
       const { type: _, ...rawDest } = pipeline.destination
       const destConfig = await getSpecConfig(connector, rawDest)
-      const catalogPayload = await engine.source_discover(pipeline.source)
+      const { catalog: catalogPayload } = await collectCatalog(
+        engine.source_discover(pipeline.source)
+      )
       const catalog = buildCatalog(catalogPayload.streams, pipeline.streams)
       const filteredCatalog = applySelection(catalog)
 

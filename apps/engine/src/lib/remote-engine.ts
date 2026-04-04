@@ -4,8 +4,8 @@ import type { Engine, SetupResult, SyncOpts, ConnectorInfo, ConnectorListItem } 
 import { parseNdjsonStream, toNdjsonStream } from './ndjson.js'
 import type {
   ConnectionStatusPayload,
-  CatalogPayload,
   DestinationOutput,
+  DiscoverOutput,
   Message,
   PipelineConfig,
 } from '@stripe/sync-protocol'
@@ -68,7 +68,7 @@ export function createRemoteEngine(engineUrl: string): Engine {
   }
 
   async function post(
-    path: '/read' | '/write' | '/sync' | '/setup' | '/teardown',
+    path: '/read' | '/write' | '/sync' | '/setup' | '/teardown' | '/discover',
     pipeline: PipelineConfig,
     opts?: SyncOpts,
     body?: ReadableStream<Uint8Array>
@@ -150,15 +150,10 @@ export function createRemoteEngine(engineUrl: string): Engine {
       }
     },
 
-    async source_discover(source: PipelineConfig['source']): Promise<CatalogPayload> {
+    async *source_discover(source: PipelineConfig['source']): AsyncIterable<DiscoverOutput> {
       // Only source config is needed for discover — pass a minimal pipeline header
-      const ph = JSON.stringify({ source, destination: { type: '_' } })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (client.POST as any)('/discover', {
-        params: { header: { 'x-pipeline': ph } },
-      })
-      if (error) throw new Error(`Engine /discover failed: ${JSON.stringify(error)}`)
-      return data as CatalogPayload
+      const res = await post('/discover', { source, destination: { type: '_' } } as PipelineConfig)
+      yield* parseNdjsonStream<DiscoverOutput>(res.body!)
     },
 
     async *pipeline_read(

@@ -15,7 +15,6 @@ import { endpointTable, addDiscriminators, injectConnectorSchemas } from './open
 import {
   Message as MessageSchema,
   DestinationOutput as DestinationOutputSchema,
-  CatalogPayload as CatalogPayloadSchema,
 } from '@stripe/sync-protocol'
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
 import { logger } from '../logger.js'
@@ -295,26 +294,21 @@ export async function createApp(resolver: ConnectorResolver) {
       path: '/discover',
       tags: ['Stateless Sync API'],
       summary: 'Discover available streams',
-      description:
-        'Returns the catalog of available streams for the configured source. Each stream includes its name, primary key, and optional JSON schema.',
+      description: 'Streams NDJSON messages (catalog, logs, traces) for the configured source.',
       requestParams: { header: pipelineHeaders },
       responses: {
         200: {
-          description: 'Available streams',
-          content: {
-            'application/json': {
-              schema: CatalogPayloadSchema,
-            },
-          },
+          description: 'NDJSON stream of discover messages',
+          content: { 'application/x-ndjson': { schema: MessageSchema } },
         },
         400: errorResponse,
       },
     }),
-    async (c) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((c: any) => {
       const params = parseSyncParams(c)
-      const catalog = await engine.source_discover(params.pipeline.source)
-      return c.json(catalog, 200)
-    }
+      return ndjsonResponse(engine.source_discover(params.pipeline.source))
+    }) as any
   )
 
   // For streaming NDJSON routes the handler returns a raw Response (not c.json),
