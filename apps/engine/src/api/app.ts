@@ -325,26 +325,13 @@ export async function createApp(resolver: ConnectorResolver) {
       let input: AsyncIterable<unknown> | undefined
       if (inputPresent) {
         const sourceType = pipeline.source.type
-        const resolvedSource = resolver.sources().get(sourceType)
-        const rawInputJsonSchema = resolvedSource?.rawInputJsonSchema
-        if (rawInputJsonSchema) {
-          const inputValidator = z.fromJSONSchema(rawInputJsonSchema)
+        if (SourceInput) {
+          // Validate each NDJSON line against the SourceInput discriminated union,
+          // then unwrap the connector-specific payload for source.read().
           input = (async function* () {
             for await (const msg of parseNdjsonStream(c.req.raw.body!)) {
-              const wrapped = msg as Record<string, unknown>
-              const unwrapped = wrapped[sourceType]
-              if (unwrapped === undefined) {
-                throw new Error(
-                  `pipeline_read: expected each input line wrapped under "${sourceType}" key, e.g. {"type":"${sourceType}","${sourceType}":{...}}`
-                )
-              }
-              const result = inputValidator.safeParse(unwrapped)
-              if (!result.success) {
-                throw new Error(
-                  `pipeline_read: invalid input for source "${sourceType}": ${result.error.message}`
-                )
-              }
-              yield result.data
+              const parsed = SourceInput.parse(msg)
+              yield (parsed as Record<string, unknown>)[sourceType]
             }
           })()
         } else {
