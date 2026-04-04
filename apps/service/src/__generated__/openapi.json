@@ -967,7 +967,10 @@
             ]
           }
         ],
-        "type": "object"
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "SourceStripeConfig": {
         "type": "object",
@@ -1082,7 +1085,10 @@
             ]
           }
         ],
-        "type": "object"
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "DestinationPostgresConfig": {
         "type": "object",

@@ -1362,7 +1362,10 @@
             ]
           }
         ],
-        "type": "object"
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "SourceStripeConfig": {
         "type": "object",
@@ -1477,7 +1480,10 @@
             ]
           }
         ],
-        "type": "object"
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "DestinationPostgresConfig": {
         "type": "object",
@@ -1702,7 +1708,10 @@
             "additionalProperties": false
           }
         ],
-        "type": "object"
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "PipelineConfig": {
         "type": "object",

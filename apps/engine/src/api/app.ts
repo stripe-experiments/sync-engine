@@ -11,7 +11,7 @@ import {
   ConnectorInfo,
   ConnectorListItem,
 } from '../lib/index.js'
-import { endpointTable } from './openapi-utils.js'
+import { endpointTable, addDiscriminators } from './openapi-utils.js'
 import {
   Message as MessageSchema,
   DiscoverOutput as DiscoverOutputSchema,
@@ -433,7 +433,20 @@ export async function createApp(resolver: ConnectorResolver) {
       const pipeline = c.req.valid('header')['x-pipeline']
       const state = c.req.valid('header')['x-state'] as Record<string, unknown> | undefined
       const { state_limit: stateLimit, time_limit: timeLimit } = c.req.valid('query')
-      const input = hasBody(c) ? parseNdjsonStream(c.req.raw.body!) : undefined
+      let input: AsyncIterable<unknown> | undefined
+      if (hasBody(c)) {
+        const sourceType = pipeline.source.type
+        if (SourceInput) {
+          input = (async function* () {
+            for await (const msg of parseNdjsonStream(c.req.raw.body!)) {
+              const parsed = SourceInput.parse(msg)
+              yield (parsed as Record<string, unknown>)[sourceType]
+            }
+          })()
+        } else {
+          input = parseNdjsonStream(c.req.raw.body!)
+        }
+      }
       const output = engine.pipeline_sync(pipeline, { state, stateLimit, timeLimit }, input)
       return ndjsonResponse(output)
     }) as any
@@ -559,6 +572,7 @@ export async function createApp(resolver: ConnectorResolver) {
       },
     }) as any
 
+    addDiscriminators(spec)
     spec.info.description += '\n\n## Endpoints\n\n' + endpointTable(spec)
     return c.json(spec)
   })
