@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { apiReference } from '@scalar/hono-api-reference'
 import type { WorkflowClient } from '@temporalio/client'
 import type { ConnectorResolver } from '@stripe/sync-engine'
-import { endpointTable, addDiscriminators } from '@stripe/sync-engine/api/openapi-utils'
+import { endpointTable } from '@stripe/sync-engine/api/openapi-utils'
 import { createSchemas } from '../lib/createSchemas.js'
 import type { Pipeline } from '../lib/createSchemas.js'
 import type { PipelineStore } from '../lib/stores.js'
@@ -471,9 +471,6 @@ export function createApp(options: AppOptions) {
       },
     })
     spec.info.description += '\n\n## Endpoints\n\n' + endpointTable(spec)
-    // @hono/zod-openapi doesn't emit discriminator for z.discriminatedUnion —
-    // walk the spec and inject it wherever oneOf variants share a `type` enum.
-    addDiscriminators(spec)
     return c.json(spec)
   })
 

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ConnectorResolver } from '@stripe/sync-engine'
+import { connectorSchemaName, connectorVariantName } from '@stripe/sync-engine'
 
 // MARK: - Static schemas (independent of connector set)
 
@@ -37,30 +38,42 @@ export const LogEntry = z.object({
  * which require an async call to discover their spec at runtime.
  */
 export function createSchemas(resolver: ConnectorResolver) {
-  // Build source config discriminated union
+  // Build source config discriminated union with .meta({ id }) for OAS component registration
   const sourceVariants = [...resolver.sources()].map(([name, r]) => {
     const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = base instanceof z.ZodObject ? base : z.object({})
-    return z.object({ type: z.literal(name), [name]: obj })
+    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
+      id: connectorSchemaName(name, 'Source'),
+    })
+    return z.object({ type: z.literal(name), [name]: obj }).meta({
+      id: connectorVariantName(name, 'Source'),
+    })
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const SourceConfig =
     sourceVariants.length > 0
-      ? z.discriminatedUnion('type', sourceVariants as [any, any, ...any[]])
+      ? z
+          .discriminatedUnion('type', sourceVariants as [any, any, ...any[]])
+          .meta({ id: 'SourceConfig' })
       : z.object({ type: z.string() }).catchall(z.unknown())
 
   // Build destination config discriminated union
   const destVariants = [...resolver.destinations()].map(([name, r]) => {
     const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = base instanceof z.ZodObject ? base : z.object({})
-    return z.object({ type: z.literal(name), [name]: obj })
+    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
+      id: connectorSchemaName(name, 'Destination'),
+    })
+    return z.object({ type: z.literal(name), [name]: obj }).meta({
+      id: connectorVariantName(name, 'Destination'),
+    })
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const DestinationConfig =
     destVariants.length > 0
-      ? z.discriminatedUnion('type', destVariants as [any, any, ...any[]])
+      ? z
+          .discriminatedUnion('type', destVariants as [any, any, ...any[]])
+          .meta({ id: 'DestinationConfig' })
       : z.object({ type: z.string() }).catchall(z.unknown())
 
   // Composed schemas

@@ -32,5 +32,7 @@ export { maybeDestinationStateStore } from './select-state-store.js'
 export {
   createConnectorSchemas,
   connectorSchemaName,
+  connectorVariantName,
   connectorInputSchemaName,
+  connectorInputVariantName,
 } from './createSchemas.js'
