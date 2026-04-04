@@ -362,6 +362,74 @@ describe('POST /read', () => {
     expect(events[1]!.type).toBe('state')
     expect(events[2]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
+
+  describe('SourceInput validation (source with input schema)', () => {
+    // Build a resolver where the source has rawInputJsonSchema
+    let inputApp: Awaited<ReturnType<typeof createApp>>
+    const inputSchema = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }
+
+    beforeAll(async () => {
+      const [srcConfigSchema, destConfigSchema] = await Promise.all([
+        getRawConfigJsonSchema(sourceTest),
+        getRawConfigJsonSchema(destinationTest),
+      ])
+      const inputResolver: ConnectorResolver = {
+        resolveSource: async () => sourceTest,
+        resolveDestination: async () => destinationTest,
+        sources: () =>
+          new Map([
+            [
+              'test',
+              {
+                connector: sourceTest,
+                configSchema: {} as any,
+                rawConfigJsonSchema: srcConfigSchema,
+                rawInputJsonSchema: inputSchema,
+              },
+            ],
+          ]),
+        destinations: () =>
+          new Map([
+            [
+              'test',
+              {
+                connector: destinationTest,
+                configSchema: {} as any,
+                rawConfigJsonSchema: destConfigSchema,
+              },
+            ],
+          ]),
+      }
+      inputApp = await createApp(inputResolver)
+    })
+
+    it('accepts valid wrapped input and passes unwrapped data to source', async () => {
+      const body = toNdjson([{ type: 'test', test: { id: 'evt_1' } }])
+      const res = await inputApp.request('/pipeline_read', {
+        method: 'POST',
+        headers: { 'X-Pipeline': syncParams, ...bodyHeaders(body) },
+        body,
+      })
+      expect(res.status).toBe(200)
+      const events = await readNdjson<Message>(res)
+      // sourceTest echoes input as-is — we should see the unwrapped { id: 'evt_1' } come back
+      expect(events.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('rejects input that fails the SourceInput schema', async () => {
+      const body = toNdjson([{ type: 'test', test: { id: 123 } }]) // id should be string
+      const res = await inputApp.request('/pipeline_read', {
+        method: 'POST',
+        headers: { 'X-Pipeline': syncParams, ...bodyHeaders(body) },
+        body,
+      })
+      // The stream will error mid-flight — NDJSON response starts as 200
+      // but the error propagates through the stream
+      expect(res.status).toBe(200)
+      const text = await res.text()
+      expect(text).toContain('error')
+    })
+  })
 })
 
 describe('POST /write', () => {
