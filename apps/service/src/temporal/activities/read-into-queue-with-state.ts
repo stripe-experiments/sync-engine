@@ -1,12 +1,6 @@
 import { heartbeat } from '@temporalio/activity'
 import { createRemoteEngine } from '@stripe/sync-engine'
-import type {
-  ConfiguredCatalog,
-  Message,
-  PipelineConfig,
-  RecordMessage,
-  SyncOpts,
-} from '@stripe/sync-engine'
+import type { Message, PipelineConfig, RecordMessage, SourceReadOptions } from '@stripe/sync-engine'
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult, withRowKey } from './_shared.js'
 
@@ -14,15 +8,14 @@ export function createReadIntoQueueWithStateActivity(context: ActivitiesContext)
   return async function readIntoQueueWithState(
     config: PipelineConfig,
     pipelineId: string,
-    opts?: SyncOpts & {
+    opts?: SourceReadOptions & {
       input?: unknown[]
-      catalog?: ConfiguredCatalog
     }
   ): Promise<{ count: number; state: Record<string, unknown> }> {
     if (!context.kafkaBroker) throw new Error('kafkaBroker is required for Google Sheets workflow')
 
     const engine = createRemoteEngine(context.engineUrl)
-    const { input: inputArr, catalog, ...syncOpts } = opts ?? {}
+    const { input: inputArr, ...syncOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
 
     const queued: Message[] = []
@@ -38,7 +31,7 @@ export function createReadIntoQueueWithStateActivity(context: ActivitiesContext)
       if (error) {
         errors.push(error)
       } else if (raw.type === 'record') {
-        queued.push(withRowKey(raw as RecordMessage, catalog))
+        queued.push(withRowKey(raw as RecordMessage, syncOpts.catalog))
       } else if (raw.type === 'state' && typeof raw.stream === 'string') {
         state[raw.stream] = raw.data
         queued.push(raw as Message)
