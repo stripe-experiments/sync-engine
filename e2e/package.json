@@ -14,6 +14,7 @@
     "@stripe/sync-protocol": "workspace:*",
     "@stripe/sync-service": "workspace:*",
     "@stripe/sync-source-stripe": "workspace:*",
+    "@stripe/sync-test-utils": "workspace:*",
     "@temporalio/client": "^1",
     "@temporalio/worker": "^1",
     "@types/pg": "^8.20.0",
