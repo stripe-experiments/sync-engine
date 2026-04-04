@@ -754,44 +754,47 @@ export interface components {
         };
         SourceConfig: components["schemas"]["SourceStripe"];
         SourceStripeInput: {
-            /** @description Unique identifier for the object. */
-            id: string;
             /**
-             * @description String representing the object's type. Objects of the same type share the same value.
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            object: "event";
-            /** @description The connected account that originates the event. */
-            account?: string;
-            /** @description The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014. */
-            api_version: string | null;
-            /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
-            created: number;
-            data: {
-                object: {
-                    [key: string]: unknown;
+            type: "SourceStripeInput";
+            stripe?: {
+                /** @description Unique identifier for the object. */
+                id: string;
+                /**
+                 * @description String representing the object's type. Objects of the same type share the same value.
+                 * @constant
+                 */
+                object: "event";
+                /** @description The connected account that originates the event. */
+                account?: string;
+                /** @description The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014. */
+                api_version: string | null;
+                /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
+                created: number;
+                data: {
+                    object: {
+                        [key: string]: unknown;
+                    };
+                    previous_attributes?: {
+                        [key: string]: unknown;
+                    };
                 };
-                previous_attributes?: {
-                    [key: string]: unknown;
-                };
+                /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
+                livemode: boolean;
+                /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
+                pending_webhooks: number;
+                /** @description Information on the API request that triggers the event. */
+                request: {
+                    id: string | null;
+                    idempotency_key: string | null;
+                } | null;
+                /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
+                type: string;
             };
-            /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
-            livemode: boolean;
-            /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
-            pending_webhooks: number;
-            /** @description Information on the API request that triggers the event. */
-            request: {
-                id: string | null;
-                idempotency_key: string | null;
-            } | null;
-            /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
-            type: string;
         };
-        SourceInput: {
-            /** @enum {string} */
-            type: "stripe";
-            stripe?: components["schemas"]["SourceStripeInput"];
-        };
+        SourceInput: components["schemas"]["SourceStripeInput"];
         DestinationConfig: components["schemas"]["DestinationPostgres"] | components["schemas"]["DestinationGoogleSheets"];
         PipelineConfig: {
             source: components["schemas"]["SourceConfig"];

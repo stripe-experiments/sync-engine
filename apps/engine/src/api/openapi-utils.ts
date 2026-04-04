@@ -108,12 +108,19 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
     }
   }
 
-  // Inject source input schemas and build SourceInput oneOf wrapper
+  // Inject source input schemas and build SourceInput discriminated union.
+  // Each named wrapper (e.g. SourceStripeInput) mirrors the SourceStripe config pattern:
+  //   { type: "stripe", stripe: { ...raw event schema... } }
   for (const [name, r] of resolver.sources()) {
     if (r.rawInputJsonSchema) {
-      spec.components.schemas[connectorInputSchemaName(name)] = JSON.parse(
-        JSON.stringify(r.rawInputJsonSchema)
-      )
+      spec.components.schemas[connectorInputSchemaName(name)] = {
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: [name] },
+          [name]: JSON.parse(JSON.stringify(r.rawInputJsonSchema)),
+        },
+      }
     }
   }
   const sourceInputNames = [...resolver.sources().entries()]
@@ -123,12 +130,7 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
     spec.components.schemas['SourceInput'] = {
       discriminator: { propertyName: 'type' },
       oneOf: sourceInputNames.map((n) => ({
-        type: 'object',
-        required: ['type'],
-        properties: {
-          type: { type: 'string', enum: [n] },
-          [n]: { $ref: `#/components/schemas/${connectorInputSchemaName(n)}` },
-        },
+        $ref: `#/components/schemas/${connectorInputSchemaName(n)}`,
       })),
     }
     if (spec.paths?.['/pipeline_read']?.post) {
