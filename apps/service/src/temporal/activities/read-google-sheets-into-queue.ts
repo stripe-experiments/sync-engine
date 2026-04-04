@@ -36,7 +36,7 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
   ): Promise<{ count: number; state: Record<string, unknown> }> {
     if (!context.kafkaBroker) throw new Error('kafkaBroker is required for Google Sheets workflow')
 
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const { input: inputArr, catalog, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined

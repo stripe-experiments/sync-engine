@@ -9,7 +9,7 @@ export interface ActivitiesContext {
   /** Remote engine client — satisfies the {@link Engine} interface over HTTP. Drop-in replacement for a local engine. */
   engine: Engine
   kafkaBroker?: string
-  pipelines: PipelineStore
+  pipelineStore: PipelineStore
   getProducer(): Promise<Producer>
   consumeQueueBatch(pipelineId: string, maxBatch: number): Promise<Message[]>
 }
@@ -17,9 +17,9 @@ export interface ActivitiesContext {
 export function createActivitiesContext(opts: {
   engineUrl: string
   kafkaBroker?: string
-  pipelines: PipelineStore
+  pipelineStore: PipelineStore
 }): ActivitiesContext {
-  const { engineUrl, kafkaBroker, pipelines } = opts
+  const { engineUrl, kafkaBroker, pipelineStore } = opts
 
   let kafka: Kafka | undefined
   let producerConnected: Promise<Producer> | undefined
@@ -97,7 +97,7 @@ export function createActivitiesContext(opts: {
   return {
     engine: createRemoteEngine(engineUrl),
     kafkaBroker,
-    pipelines,
+    pipelineStore,
     getProducer,
     consumeQueueBatch,
   }

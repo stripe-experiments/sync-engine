@@ -57,12 +57,12 @@ function ListResponse<T extends z.ZodType>(itemSchema: T) {
 export interface AppOptions {
   temporal: { client: WorkflowClient; taskQueue: string }
   resolver: ConnectorResolver
-  pipelines: PipelineStore
+  pipelineStore: PipelineStore
 }
 
 export function createApp(options: AppOptions) {
   const { client: temporal, taskQueue } = options.temporal
-  const { pipelines } = options
+  const { pipelineStore } = options
   const {
     Pipeline: PipelineSchema,
     CreatePipeline: CreatePipelineSchema,
@@ -134,7 +134,7 @@ export function createApp(options: AppOptions) {
       },
     }),
     async (c) => {
-      const stored = await pipelines.list()
+      const stored = await pipelineStore.list()
       const result = await Promise.all(
         stored.map(async (pipeline) => {
           const status = await queryStatus(temporal, pipeline.id)
@@ -170,7 +170,7 @@ export function createApp(options: AppOptions) {
       const body = c.req.valid('json')
       const id = genId('pipe')
       const pipeline = { id, ...(body as Record<string, unknown>) } as Pipeline
-      await pipelines.set(id, pipeline)
+      await pipelineStore.set(id, pipeline)
       await temporal.start(workflowTypeForPipeline(pipeline), {
         workflowId: id,
         taskQueue,
@@ -203,7 +203,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
       let pipeline: Pipeline
       try {
-        pipeline = await pipelines.get(id)
+        pipeline = await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
@@ -244,7 +244,7 @@ export function createApp(options: AppOptions) {
 
       let current: Pipeline
       try {
-        current = await pipelines.get(id)
+        current = await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
@@ -282,7 +282,7 @@ export function createApp(options: AppOptions) {
       }
 
       // Write to store
-      const updated = await pipelines.update(id, {
+      const updated = await pipelineStore.update(id, {
         ...(patch.source ? { source: patch.source } : {}),
         ...(patch.destination ? { destination: patch.destination } : {}),
         ...(patch.streams !== undefined ? { streams: patch.streams } : {}),
@@ -323,7 +323,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
       let pipeline: Pipeline
       try {
-        pipeline = await pipelines.get(id)
+        pipeline = await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
@@ -361,7 +361,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
       let pipeline: Pipeline
       try {
-        pipeline = await pipelines.get(id)
+        pipeline = await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
@@ -403,7 +403,7 @@ export function createApp(options: AppOptions) {
       const { id } = c.req.valid('param')
 
       try {
-        await pipelines.get(id)
+        await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
@@ -420,7 +420,7 @@ export function createApp(options: AppOptions) {
         // Workflow not found or already finished — proceed to delete from store
       }
 
-      await pipelines.delete(id)
+      await pipelineStore.delete(id)
       return c.json({ id, deleted: true as const }, 200)
     }
   )

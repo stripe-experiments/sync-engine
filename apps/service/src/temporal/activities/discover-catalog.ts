@@ -7,7 +7,7 @@ import type { ActivitiesContext } from './_shared.js'
 
 export function createDiscoverCatalogActivity(context: ActivitiesContext) {
   return async function discoverCatalog(pipelineId: string): Promise<ConfiguredCatalog> {
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const catalogMsg = await collectFirst(
       context.engine.source_discover(config.source),

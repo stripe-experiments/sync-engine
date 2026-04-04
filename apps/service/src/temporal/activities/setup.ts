@@ -5,7 +5,7 @@ import type { ActivitiesContext } from './_shared.js'
 
 export function createSetupActivity(context: ActivitiesContext) {
   return async function setup(pipelineId: string): Promise<void> {
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const { messages: controlMsgs } = await collectMessages(
       context.engine.pipeline_setup(config),
@@ -23,7 +23,7 @@ export function createSetupActivity(context: ActivitiesContext) {
     if (destConfigs.length > 0)
       patch.destination = { ...pipeline.destination, ...Object.assign({}, ...destConfigs) }
     if (Object.keys(patch).length > 0) {
-      await context.pipelines.update(pipelineId, patch)
+      await context.pipelineStore.update(pipelineId, patch)
     }
   }
 }

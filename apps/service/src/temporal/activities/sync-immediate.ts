@@ -8,7 +8,7 @@ export function createSyncImmediateActivity(context: ActivitiesContext) {
     pipelineId: string,
     opts?: SourceReadOptions & { input?: unknown[] }
   ): Promise<RunResult & { eof?: { reason: string } }> {
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
@@ -18,7 +18,7 @@ export function createSyncImmediateActivity(context: ActivitiesContext) {
     // Persist source config updates from control messages (e.g. OAuth token refresh)
     if (controls.length > 0) {
       const merged = controls.reduce((acc, c) => ({ ...acc, ...c }), {})
-      await context.pipelines.update(pipelineId, {
+      await context.pipelineStore.update(pipelineId, {
         source: { ...pipeline.source, ...merged },
       })
     }

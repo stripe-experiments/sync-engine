@@ -8,7 +8,7 @@ export function createReadIntoQueueActivity(context: ActivitiesContext) {
     pipelineId: string,
     opts?: SourceReadOptions & { input?: unknown[] }
   ): Promise<{ count: number; state: Record<string, unknown>; eof?: { reason: string } }> {
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined

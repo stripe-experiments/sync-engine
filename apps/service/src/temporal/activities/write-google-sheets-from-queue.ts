@@ -132,7 +132,7 @@ export function createWriteGoogleSheetsFromQueueActivity(context: ActivitiesCont
       return { errors: [], state: {}, written: 0, rowAssignments: {} }
     }
 
-    const pipeline = await context.pipelines.get(pipelineId)
+    const pipeline = await context.pipelineStore.get(pipelineId)
     const { id: _, ...config } = pipeline
     const writeBatch = addRowNumbers(compactGoogleSheetsMessages(queued), opts?.rowIndex ?? {})
     if (config.destination.type !== 'google-sheets') {
