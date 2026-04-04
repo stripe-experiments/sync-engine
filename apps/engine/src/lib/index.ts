@@ -29,3 +29,8 @@ export type { DestinationTestConfig } from './destination-test.js'
 export { readonlyStateStore } from './state-store.js'
 export type { StateStore } from './state-store.js'
 export { maybeDestinationStateStore } from './select-state-store.js'
+export {
+  createConnectorSchemas,
+  connectorSchemaName,
+  connectorInputSchemaName,
+} from './createSchemas.js'
