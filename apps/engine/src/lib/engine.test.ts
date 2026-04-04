@@ -69,7 +69,10 @@ function makeResolver(source: Source, destination: Destination): ConnectorResolv
   }
 }
 
-const defaultPipeline = { source: { type: 'test', test: {} }, destination: { type: 'test', test: {} } }
+const defaultPipeline = {
+  source: { type: 'test', test: {} },
+  destination: { type: 'test', test: {} },
+}
 
 // ---------------------------------------------------------------------------
 // Protocol schema tests

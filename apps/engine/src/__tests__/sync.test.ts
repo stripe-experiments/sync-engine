@@ -127,7 +127,10 @@ describe('sync lifecycle — run, checkpoint, resume', () => {
     const engine = await createEngine(makeResolver())
     const pipeline = {
       source: { type: 'test', test: { streams: { customers: {} } } },
-      destination: { type: 'postgres', postgres: { connection_string: connectionString, schema: SCHEMA } },
+      destination: {
+        type: 'postgres',
+        postgres: { connection_string: connectionString, schema: SCHEMA },
+      },
     }
 
     const input = [
@@ -174,7 +177,10 @@ describe('sync lifecycle — run, checkpoint, resume', () => {
     const engine = await createEngine(makeResolver())
     const pipeline = {
       source: { type: 'test', test: { streams: { customers: {} } } },
-      destination: { type: 'postgres', postgres: { connection_string: connectionString, schema: SCHEMA } },
+      destination: {
+        type: 'postgres',
+        postgres: { connection_string: connectionString, schema: SCHEMA },
+      },
     }
 
     const input = [
