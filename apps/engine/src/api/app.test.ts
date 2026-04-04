@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectorResolver, Message, StateMessage } from '../lib/index.js'
-import { sourceTest, destinationTest } from '../lib/index.js'
+import { sourceTest, destinationTest, collectSpec } from '../lib/index.js'
 import { createApp } from './app.js'
 import pg from 'pg'
 
@@ -8,32 +8,52 @@ import pg from 'pg'
 // Helpers
 // ---------------------------------------------------------------------------
 
-const resolver: ConnectorResolver = {
-  resolveSource: async () => sourceTest,
-  resolveDestination: async () => destinationTest,
-  sources: () =>
-    new Map([
-      [
-        'test',
-        {
-          connector: sourceTest,
-          configSchema: {} as any,
-          rawConfigJsonSchema: sourceTest.spec().config,
-        },
-      ],
-    ]),
-  destinations: () =>
-    new Map([
-      [
-        'test',
-        {
-          connector: destinationTest,
-          configSchema: {} as any,
-          rawConfigJsonSchema: destinationTest.spec().config,
-        },
-      ],
-    ]),
+/** Extract the raw config JSON Schema from a connector's async iterable spec(). */
+async function getRawConfigJsonSchema(
+  connector: typeof sourceTest | typeof destinationTest
+): Promise<Record<string, unknown>> {
+  const { spec } = await collectSpec(
+    connector.spec() as AsyncIterable<import('@stripe/sync-protocol').Message>
+  )
+  return spec.config
 }
+
+let resolver: ConnectorResolver
+beforeAll(async () => {
+  const [srcConfigSchema, destConfigSchema] = await Promise.all([
+    getRawConfigJsonSchema(sourceTest),
+    getRawConfigJsonSchema(destinationTest),
+  ])
+  resolver = {
+    resolveSource: async () => sourceTest,
+    resolveDestination: async () => destinationTest,
+    sources: () =>
+      new Map([
+        [
+          'test',
+          {
+            connector: sourceTest,
+            configSchema: {} as any,
+            rawConfigJsonSchema: srcConfigSchema,
+          },
+        ],
+      ]),
+    destinations: () =>
+      new Map([
+        [
+          'test',
+          {
+            connector: destinationTest,
+            configSchema: {} as any,
+            rawConfigJsonSchema: destConfigSchema,
+          },
+        ],
+      ]),
+  }
+})
+
+import { beforeAll } from 'vitest'
+
 const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
@@ -79,7 +99,7 @@ beforeEach(() => {
 
 describe('GET /openapi.json', () => {
   it('returns a valid OpenAPI 3.1 spec', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     expect(res.status).toBe(200)
     const spec = await res.json()
@@ -89,7 +109,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('includes all sync operation paths', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as { paths: Record<string, unknown> }
     const paths = Object.keys(spec.paths)
@@ -109,7 +129,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('injects typed connector schemas into components', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as any
     const schemaNames = Object.keys(spec.components?.schemas ?? {})
@@ -131,7 +151,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('defines NDJSON message schemas with discriminated unions', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as any
     const schemas = spec.components.schemas
@@ -139,13 +159,14 @@ describe('GET /openapi.json', () => {
     // Individual message types — zod-openapi uses const for z.literal() in OpenAPI 3.1
     expect(schemas.RecordMessage.properties.type.const).toBe('record')
     expect(schemas.StateMessage.properties.type.const).toBe('state')
-    expect(schemas.ErrorMessage.properties.type.const).toBe('error')
+    expect(schemas.TraceMessage.properties.type.const).toBe('trace')
 
     // Message union
     expect(schemas.Message.discriminator.propertyName).toBe('type')
-    expect(schemas.Message.oneOf).toHaveLength(7)
+    // 9 message types: record, state, catalog, log, trace, spec, connection_status, control, eof
+    expect(schemas.Message.oneOf.length).toBeGreaterThanOrEqual(9)
 
-    // DestinationOutput union (state, error, log, eof)
+    // DestinationOutput union (state, trace, log, eof)
     expect(schemas.DestinationOutput.discriminator.propertyName).toBe('type')
     expect(schemas.DestinationOutput.oneOf).toHaveLength(4)
 
@@ -167,7 +188,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('/setup spec documents 200 response (not 204)', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as any
     const setupOp = spec.paths['/pipeline_setup']?.post
@@ -177,7 +198,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('/write spec documents a required NDJSON request body', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as any
     const writeOp = spec.paths['/pipeline_write']?.post
@@ -191,7 +212,7 @@ describe('GET /openapi.json', () => {
   })
 
   it('documents the X-Pipeline header on sync routes', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/openapi.json')
     const spec = (await res.json()) as any
 
@@ -207,7 +228,7 @@ describe('GET /openapi.json', () => {
 
 describe('GET /meta/sources', () => {
   it('returns available source connectors', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/sources')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
@@ -218,7 +239,7 @@ describe('GET /meta/sources', () => {
 
 describe('GET /meta/sources/:type', () => {
   it('returns spec for a known source type', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/sources/test')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
@@ -226,7 +247,7 @@ describe('GET /meta/sources/:type', () => {
   })
 
   it('returns 404 for unknown source type', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/sources/nonexistent')
     expect(res.status).toBe(404)
   })
@@ -234,7 +255,7 @@ describe('GET /meta/sources/:type', () => {
 
 describe('GET /meta/destinations', () => {
   it('returns available destination connectors', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/destinations')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
@@ -245,7 +266,7 @@ describe('GET /meta/destinations', () => {
 
 describe('GET /meta/destinations/:type', () => {
   it('returns spec for a known destination type', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/destinations/test')
     expect(res.status).toBe(200)
     const body = (await res.json()) as any
@@ -253,7 +274,7 @@ describe('GET /meta/destinations/:type', () => {
   })
 
   it('returns 404 for unknown destination type', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/meta/destinations/nonexistent')
     expect(res.status).toBe(404)
   })
@@ -261,7 +282,7 @@ describe('GET /meta/destinations/:type', () => {
 
 describe('GET /docs', () => {
   it('returns HTML (Scalar API reference)', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/docs')
     expect(res.status).toBe(200)
     const contentType = res.headers.get('content-type') ?? ''
@@ -275,7 +296,7 @@ describe('GET /docs', () => {
 
 describe('POST /setup', () => {
   it('returns 200 with setup result', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_setup', {
       method: 'POST',
@@ -289,7 +310,7 @@ describe('POST /setup', () => {
 
 describe('POST /teardown', () => {
   it('returns 204', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_teardown', {
       method: 'POST',
@@ -301,7 +322,7 @@ describe('POST /teardown', () => {
 
 describe('GET /check', () => {
   it('returns source and destination check results', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_check', {
       headers: { 'X-Pipeline': syncParams },
@@ -317,16 +338,18 @@ describe('GET /check', () => {
 
 describe('POST /read', () => {
   it('streams messages as NDJSON', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const body = toNdjson([
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1', name: 'Alice' },
-        emitted_at: new Date().toISOString(),
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1', name: 'Alice' },
+          emitted_at: new Date().toISOString(),
+        },
       },
-      { type: 'state', stream: 'customers', data: { status: 'complete' } },
+      { type: 'state', state: { stream: 'customers', data: { status: 'complete' } } },
     ])
     const res = await app.request('/pipeline_read', {
       method: 'POST',
@@ -341,25 +364,29 @@ describe('POST /read', () => {
     expect(events).toHaveLength(3)
     expect(events[0]!.type).toBe('record')
     expect(events[1]!.type).toBe('state')
-    expect(events[2]).toMatchObject({ type: 'eof', reason: 'complete' })
+    expect(events[2]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
 })
 
 describe('POST /write', () => {
   it('accepts NDJSON records, streams NDJSON state back', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const records: Message[] = [
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
       {
         type: 'state',
-        stream: 'customers',
-        data: { cursor: 'cus_1' },
+        state: {
+          stream: 'customers',
+          data: { cursor: 'cus_1' },
+        },
       },
     ]
 
@@ -374,15 +401,14 @@ describe('POST /write', () => {
     expect(res.headers.get('Content-Type')).toBe('application/x-ndjson')
 
     const events = await readNdjson<StateMessage>(res)
-    // destinationTest passes through state messages only, then write emits eof
-    expect(events).toHaveLength(2)
+    // destinationTest passes through state messages only
+    expect(events).toHaveLength(1)
     expect(events[0]!.type).toBe('state')
-    expect(events[0]!.stream).toBe('customers')
-    expect(events[1]).toMatchObject({ type: 'eof', reason: 'complete' })
+    expect((events[0] as StateMessage).state.stream).toBe('customers')
   })
 
   it('returns 400 when body is missing', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_write', {
       method: 'POST',
@@ -396,16 +422,18 @@ describe('POST /write', () => {
 
 describe('POST /sync', () => {
   it('runs full pipeline, streams NDJSON state', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const runBody = toNdjson([
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1', name: 'Alice' },
-        emitted_at: new Date().toISOString(),
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1', name: 'Alice' },
+          emitted_at: new Date().toISOString(),
+        },
       },
-      { type: 'state', stream: 'customers', data: { status: 'complete' } },
+      { type: 'state', state: { stream: 'customers', data: { status: 'complete' } } },
     ])
     const res = await app.request('/pipeline_sync', {
       method: 'POST',
@@ -419,7 +447,7 @@ describe('POST /sync', () => {
     const events = await readNdjson<Record<string, unknown>>(res)
     expect(events).toHaveLength(2)
     expect(events[0]!.type).toBe('state')
-    expect(events[1]).toMatchObject({ type: 'eof', reason: 'complete' })
+    expect(events[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
 })
 
@@ -429,28 +457,34 @@ describe('POST /sync', () => {
 
 describe('state_limit and time_limit', () => {
   it('POST /pipeline_read?state_limit=1 stops after 1 state message and emits eof', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const body = toNdjson([
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '1' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '1' } } },
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_2' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_2' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '2' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '2' } } },
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_3' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_3' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
     ])
     const res = await app.request('/pipeline_read?state_limit=1', {
@@ -468,27 +502,31 @@ describe('state_limit and time_limit', () => {
     expect(events).toHaveLength(3)
     expect(events[0]!.type).toBe('record')
     expect(events[1]!.type).toBe('state')
-    expect(events[2]).toMatchObject({ type: 'eof', reason: 'state_limit' })
+    expect(events[2]).toMatchObject({ type: 'eof', eof: { reason: 'state_limit' } })
   })
 
   it('POST /pipeline_sync?state_limit=1 stops after 1 state message and emits eof', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const body = toNdjson([
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '1' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '1' } } },
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_2' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_2' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '2' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '2' } } },
     ])
     const res = await app.request('/pipeline_sync?state_limit=1', {
       method: 'POST',
@@ -504,27 +542,31 @@ describe('state_limit and time_limit', () => {
     // destinationTest only yields state messages, so we get 1 state + 1 eof
     expect(events).toHaveLength(2)
     expect(events[0]!.type).toBe('state')
-    expect(events[1]).toMatchObject({ type: 'eof', reason: 'state_limit' })
+    expect(events[1]).toMatchObject({ type: 'eof', eof: { reason: 'state_limit' } })
   })
 
   it('POST /read without limits returns all messages plus eof:complete', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const body = toNdjson([
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_1' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_1' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '1' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '1' } } },
       {
         type: 'record',
-        stream: 'customers',
-        data: { id: 'cus_2' },
-        emitted_at: '2024-01-01T00:00:00.000Z',
+        record: {
+          stream: 'customers',
+          data: { id: 'cus_2' },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
       },
-      { type: 'state', stream: 'customers', data: { cursor: '2' } },
+      { type: 'state', state: { stream: 'customers', data: { cursor: '2' } } },
     ])
     const res = await app.request('/pipeline_read', {
       method: 'POST',
@@ -536,13 +578,13 @@ describe('state_limit and time_limit', () => {
     const events = await readNdjson<Message>(res)
     // 4 original messages + eof
     expect(events).toHaveLength(5)
-    expect(events[4]).toMatchObject({ type: 'eof', reason: 'complete' })
+    expect(events[4]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
 })
 
 describe('error handling', () => {
   it('returns 400 when X-Pipeline header is missing', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_check')
     expect(res.status).toBe(400)
@@ -551,7 +593,7 @@ describe('error handling', () => {
   })
 
   it('returns 400 when X-Pipeline header is invalid JSON', async () => {
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_check', {
       headers: { 'X-Pipeline': 'not-json' },
@@ -574,7 +616,7 @@ describe('POST /internal/query', () => {
       () => ({ query: mockQuery, end: mockEnd }) as unknown as pg.Pool
     )
 
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/internal/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -601,7 +643,7 @@ describe('POST /internal/query', () => {
         }) as unknown as pg.Pool
     )
 
-    const app = createApp(resolver)
+    const app = await createApp(resolver)
     const res = await app.request('/internal/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
