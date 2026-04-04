@@ -131,8 +131,11 @@ export async function createApp(resolver: ConnectorResolver) {
       description:
         'JSON-encoded PipelineConfig: { source: { type, ...config }, destination: { type, ...config }, streams }',
       example: JSON.stringify({
-        source: { type: 'stripe', api_key: 'sk_test_...' },
-        destination: { type: 'postgres', connection_string: 'postgres://localhost/db' },
+        source: { type: 'stripe', stripe: { api_key: 'sk_test_...' } },
+        destination: {
+          type: 'postgres',
+          postgres: { connection_string: 'postgres://localhost/db' },
+        },
         streams: [{ name: 'products' }],
       }),
     })

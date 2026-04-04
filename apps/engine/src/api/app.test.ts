@@ -58,8 +58,8 @@ const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined
 const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
 const syncParams = JSON.stringify({
-  source: { type: 'test', streams: { customers: {} } },
-  destination: { type: 'test' },
+  source: { type: 'test', test: { streams: { customers: {} } } },
+  destination: { type: 'test', test: {} },
 })
 
 /** Read an NDJSON response body into an array of parsed lines. */

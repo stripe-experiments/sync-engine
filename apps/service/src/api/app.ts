@@ -267,7 +267,10 @@ export function createApp(options: AppOptions) {
       }
       if (
         current.destination.type === 'google-sheets' &&
-        current.destination.spreadsheet_id !== next.destination.spreadsheet_id
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (current.destination as any)['google-sheets']?.spreadsheet_id !==
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (next.destination as any)['google-sheets']?.spreadsheet_id
       ) {
         return c.json(
           {

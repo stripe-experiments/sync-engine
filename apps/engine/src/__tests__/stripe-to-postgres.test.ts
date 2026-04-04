@@ -93,8 +93,8 @@ function makeResolver(): ConnectorResolver {
 
 function makePipeline(overrides: { streams?: Array<{ name: string }> } = {}) {
   return {
-    source: { type: 'stripe', api_key: 'sk_test_fake', base_url: STRIPE_MOCK_URL },
-    destination: { type: 'postgres', connection_string: connectionString, schema: SCHEMA },
+    source: { type: 'stripe', stripe: { api_key: 'sk_test_fake', base_url: STRIPE_MOCK_URL } },
+    destination: { type: 'postgres', postgres: { connection_string: connectionString, schema: SCHEMA } },
     streams: overrides.streams,
   }
 }
@@ -116,8 +116,7 @@ beforeAll(async () => {
   const { catalog: discovered } = await collectCatalog(
     engine.source_discover({
       type: 'stripe',
-      api_key: 'sk_test_fake',
-      base_url: STRIPE_MOCK_URL,
+      stripe: { api_key: 'sk_test_fake', base_url: STRIPE_MOCK_URL },
     })
   )
   targetStream = discovered.streams[0]!.name

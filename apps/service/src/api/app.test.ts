@@ -92,15 +92,17 @@ describe('POST /pipelines workflow dispatch', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
+        source: { type: 'test', test: {} },
         destination: {
           type: 'google-sheets',
-          spreadsheet_id: 'sheet_123',
-          spreadsheet_title: 'Test Sheet',
-          client_id: 'client',
-          client_secret: 'secret',
-          access_token: 'token',
-          refresh_token: 'refresh',
+          'google-sheets': {
+            spreadsheet_id: 'sheet_123',
+            spreadsheet_title: 'Test Sheet',
+            client_id: 'client',
+            client_secret: 'secret',
+            access_token: 'token',
+            refresh_token: 'refresh',
+          },
         },
       }),
     })
@@ -193,8 +195,8 @@ describe('pipeline CRUD', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
-        destination: { type: 'test' },
+        source: { type: 'test', test: {} },
+        destination: { type: 'test', test: {} },
         streams: [{ name: 'customers' }],
       }),
     })
@@ -213,8 +215,8 @@ describe('pipeline CRUD', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
-        destination: { type: 'test' },
+        source: { type: 'test', test: {} },
+        destination: { type: 'test', test: {} },
         streams: [{ name: 'customers' }],
       }),
     })
@@ -245,15 +247,17 @@ describe('pipeline CRUD', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
+        source: { type: 'test', test: {} },
         destination: {
           type: 'google-sheets',
-          spreadsheet_id: 'sheet_123',
-          spreadsheet_title: 'Original Sheet',
-          client_id: 'client',
-          client_secret: 'secret',
-          access_token: 'token',
-          refresh_token: 'refresh',
+          'google-sheets': {
+            spreadsheet_id: 'sheet_123',
+            spreadsheet_title: 'Original Sheet',
+            client_id: 'client',
+            client_secret: 'secret',
+            access_token: 'token',
+            refresh_token: 'refresh',
+          },
         },
       }),
     })
@@ -266,12 +270,14 @@ describe('pipeline CRUD', () => {
       body: JSON.stringify({
         destination: {
           type: 'google-sheets',
-          spreadsheet_id: 'sheet_456',
-          spreadsheet_title: 'Replacement Sheet',
-          client_id: 'client',
-          client_secret: 'secret',
-          access_token: 'token',
-          refresh_token: 'refresh',
+          'google-sheets': {
+            spreadsheet_id: 'sheet_456',
+            spreadsheet_title: 'Replacement Sheet',
+            client_id: 'client',
+            client_secret: 'secret',
+            access_token: 'token',
+            refresh_token: 'refresh',
+          },
         },
       }),
     })
@@ -292,15 +298,17 @@ describe('pipeline CRUD', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
+        source: { type: 'test', test: {} },
         destination: {
           type: 'google-sheets',
-          spreadsheet_id: 'sheet_123',
-          spreadsheet_title: 'Original Sheet',
-          client_id: 'client',
-          client_secret: 'secret',
-          access_token: 'token',
-          refresh_token: 'refresh',
+          'google-sheets': {
+            spreadsheet_id: 'sheet_123',
+            spreadsheet_title: 'Original Sheet',
+            client_id: 'client',
+            client_secret: 'secret',
+            access_token: 'token',
+            refresh_token: 'refresh',
+          },
         },
       }),
     })
@@ -313,20 +321,22 @@ describe('pipeline CRUD', () => {
       body: JSON.stringify({
         destination: {
           type: 'google-sheets',
-          spreadsheet_id: 'sheet_123',
-          spreadsheet_title: 'Renamed Sheet',
-          client_id: 'client',
-          client_secret: 'secret',
-          access_token: 'token',
-          refresh_token: 'refresh',
+          'google-sheets': {
+            spreadsheet_id: 'sheet_123',
+            spreadsheet_title: 'Renamed Sheet',
+            client_id: 'client',
+            client_secret: 'secret',
+            access_token: 'token',
+            refresh_token: 'refresh',
+          },
         },
       }),
     })
 
     expect(updateRes.status).toBe(200)
     const updated = await updateRes.json()
-    expect(updated.destination.spreadsheet_id).toBe('sheet_123')
-    expect(updated.destination.spreadsheet_title).toBe('Renamed Sheet')
+    expect(updated.destination['google-sheets'].spreadsheet_id).toBe('sheet_123')
+    expect(updated.destination['google-sheets'].spreadsheet_title).toBe('Renamed Sheet')
 
     await a.request(`/pipelines/${created.id}`, { method: 'DELETE' })
   })
@@ -339,8 +349,8 @@ describe('pipeline CRUD', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        source: { type: 'test' },
-        destination: { type: 'test' },
+        source: { type: 'test', test: {} },
+        destination: { type: 'test', test: {} },
       }),
     })
     const created = await createRes.json()

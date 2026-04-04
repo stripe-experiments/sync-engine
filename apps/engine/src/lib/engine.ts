@@ -205,6 +205,14 @@ export function buildCatalog(
   return { streams }
 }
 
+/** Extract the connector-specific config from a nested { type, [type]: payload } envelope. */
+function configPayload(envelope: {
+  type: string
+  [key: string]: unknown
+}): Record<string, unknown> {
+  return (envelope[envelope.type] as Record<string, unknown>) ?? {}
+}
+
 /** Helper to get spec config from a connector (spec() is now async iterable). */
 async function getSpecConfig(
   connector: { spec(): AsyncIterable<Message> },
@@ -255,7 +263,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
 
     async *source_discover(sourceInput) {
       const connector = await resolver.resolveSource(sourceInput.type)
-      const { type: _, ...rawSrc } = sourceInput
+      const rawSrc = configPayload(sourceInput)
       const sourceConfig = await getSpecConfig(connector, rawSrc)
       yield* connector.discover({ config: sourceConfig })
     },
@@ -266,8 +274,8 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         resolver.resolveSource(pipeline.source.type),
         resolver.resolveDestination(pipeline.destination.type),
       ])
-      const { type: _s, ...rawSrc } = pipeline.source
-      const { type: _d, ...rawDest } = pipeline.destination
+      const rawSrc = configPayload(pipeline.source)
+      const rawDest = configPayload(pipeline.destination)
       const [sourceConfig, destConfig] = await Promise.all([
         getSpecConfig(srcConnector, rawSrc),
         getSpecConfig(destConnector, rawDest),
@@ -316,8 +324,8 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         resolver.resolveSource(pipeline.source.type),
         resolver.resolveDestination(pipeline.destination.type),
       ])
-      const { type: _s, ...rawSrc } = pipeline.source
-      const { type: _d, ...rawDest } = pipeline.destination
+      const rawSrc = configPayload(pipeline.source)
+      const rawDest = configPayload(pipeline.destination)
       const [sourceConfig, destConfig] = await Promise.all([
         getSpecConfig(srcConnector, rawSrc),
         getSpecConfig(destConnector, rawDest),
@@ -337,8 +345,8 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         resolver.resolveSource(pipeline.source.type),
         resolver.resolveDestination(pipeline.destination.type),
       ])
-      const { type: _s, ...rawSrc } = pipeline.source
-      const { type: _d, ...rawDest } = pipeline.destination
+      const rawSrc = configPayload(pipeline.source)
+      const rawDest = configPayload(pipeline.destination)
       const [sourceConfig, destConfig] = await Promise.all([
         getSpecConfig(srcConnector, rawSrc),
         getSpecConfig(destConnector, rawDest),
@@ -359,7 +367,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
     async *pipeline_read(pipeline, opts?, input?) {
       const baseContext = engineLogContext(pipeline)
       const connector = await resolver.resolveSource(pipeline.source.type)
-      const { type: _, ...rawSrc } = pipeline.source
+      const rawSrc = configPayload(pipeline.source)
       const sourceConfig = await getSpecConfig(connector, rawSrc)
       const { catalog: catalogPayload } = await collectCatalog(
         engine.source_discover(pipeline.source)
@@ -391,7 +399,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
     async *pipeline_write(pipeline, messages) {
       const baseContext = engineLogContext(pipeline)
       const connector = await resolver.resolveDestination(pipeline.destination.type)
-      const { type: _, ...rawDest } = pipeline.destination
+      const rawDest = configPayload(pipeline.destination)
       const destConfig = await getSpecConfig(connector, rawDest)
       const { catalog: catalogPayload } = await collectCatalog(
         engine.source_discover(pipeline.source)

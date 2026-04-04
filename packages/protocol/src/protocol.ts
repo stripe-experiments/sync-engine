@@ -287,7 +287,15 @@ export type EofMessage = z.infer<typeof EofMessage>
 
 // MARK: - Pipeline params
 
-/** Parameters for a sync pipeline — source/destination config and optional stream selection. */
+/**
+ * Parameters for a sync pipeline — source/destination config and optional stream selection.
+ *
+ * Source and destination use a nested envelope format:
+ *   `{ type: 'stripe', stripe: { api_key: '...' } }`
+ *
+ * The loose `catchall` schema accepts any extra keys (including the nested payload key)
+ * without validating the inner shape — validation happens in the engine via the connector spec.
+ */
 export const PipelineConfig = z.object({
   source: z.object({ type: z.string() }).catchall(z.unknown()),
   destination: z.object({ type: z.string() }).catchall(z.unknown()),

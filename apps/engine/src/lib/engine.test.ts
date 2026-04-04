@@ -69,7 +69,7 @@ function makeResolver(source: Source, destination: Destination): ConnectorResolv
   }
 }
 
-const defaultPipeline = { source: { type: 'test' }, destination: { type: 'test' } }
+const defaultPipeline = { source: { type: 'test', test: {} }, destination: { type: 'test', test: {} } }
 
 // ---------------------------------------------------------------------------
 // Protocol schema tests
@@ -384,8 +384,8 @@ describe('protocol schemas', () => {
 
     it('parses with all fields', () => {
       const result = PipelineConfig.parse({
-        source: { type: 'stripe', api_key: 'sk_test' },
-        destination: { type: 'postgres', url: 'pg://...' },
+        source: { type: 'stripe', stripe: { api_key: 'sk_test' } },
+        destination: { type: 'postgres', postgres: { url: 'pg://...' } },
         streams: [{ name: 'customers', sync_mode: 'incremental' }],
       })
       expect(result.streams).toHaveLength(1)
@@ -432,7 +432,7 @@ describe('engine config validation', () => {
       },
       async *read() {},
     }
-    const pipeline = { source: { type: 'test' }, destination: { type: 'test' } }
+    const pipeline = { source: { type: 'test', test: {} }, destination: { type: 'test', test: {} } }
     const engine = await createEngine(makeResolver(source, destinationTest))
     await expect(drain(engine.pipeline_read(pipeline))).rejects.toThrow()
   })
@@ -457,8 +457,8 @@ describe('engine config validation', () => {
       },
     }
     const pipeline = {
-      source: { type: 'test', streams: {} },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: {} } },
+      destination: { type: 'test', test: {} },
     }
     const engine = await createEngine(makeResolver(sourceTest, destination))
     await expect(drain(engine.pipeline_write(pipeline, toAsync([])))).rejects.toThrow()
@@ -483,7 +483,7 @@ describe('engine config validation', () => {
       async *read() {},
     }
 
-    const pipeline = { source: { type: 'test' }, destination: { type: 'test' } }
+    const pipeline = { source: { type: 'test', test: {} }, destination: { type: 'test', test: {} } }
     const engine = await createEngine(makeResolver(source, destinationTest))
     return drain(engine.pipeline_sync(pipeline))
   })
@@ -505,8 +505,8 @@ describe('engine message validation', () => {
   it('valid messages pass through engine.pipeline_read()', async () => {
     const engine = await createEngine(makeResolver(sourceTest, destinationTest))
     const pipeline = {
-      source: { type: 'test', streams: { customers: {} } },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: { customers: {} } } },
+      destination: { type: 'test', test: {} },
     }
 
     const results = await drain(
@@ -576,8 +576,8 @@ describe('engine message validation', () => {
     }
 
     const pipeline = {
-      source: { type: 'test', streams: { customers: {} } },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: { customers: {} } } },
+      destination: { type: 'test', test: {} },
     }
     const engine = await createEngine(makeResolver(sourceTest, badDest))
 
@@ -611,8 +611,8 @@ describe('engine stream membership validation', () => {
   it('record with known stream passes through', async () => {
     const engine = await createEngine(makeResolver(sourceTest, destinationTest))
     const pipeline = {
-      source: { type: 'test', streams: { customers: {} } },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: { customers: {} } } },
+      destination: { type: 'test', test: {} },
     }
 
     const results = await drain(
@@ -685,8 +685,8 @@ describe('engine.pipeline_sync() pipeline', () => {
   it('basic pipeline: yields state messages from source → destination', async () => {
     const engine = await createEngine(makeResolver(sourceTest, destinationTest))
     const pipeline = {
-      source: { type: 'test', streams: { customers: {} } },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: { customers: {} } } },
+      destination: { type: 'test', test: {} },
     }
     const results = await drain(
       engine.pipeline_sync(
@@ -734,8 +734,8 @@ describe('engine.pipeline_sync() pipeline', () => {
   it('stream filtering: only configures requested streams', async () => {
     const engine = await createEngine(makeResolver(sourceTest, destinationTest))
     const pipeline = {
-      source: { type: 'test', streams: { customers: {}, invoices: {} } },
-      destination: { type: 'test' },
+      source: { type: 'test', test: { streams: { customers: {}, invoices: {} } } },
+      destination: { type: 'test', test: {} },
       streams: [{ name: 'customers' }],
     }
     const results = await drain(

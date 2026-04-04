@@ -59,12 +59,14 @@ describeWithEnv('stripe → postgres e2e', ['STRIPE_API_KEY'], ({ STRIPE_API_KEY
     return {
       source: {
         type: 'stripe',
-        api_key: STRIPE_API_KEY,
-        backfill_limit: BACKFILL_LIMIT,
-        backfill_concurrency: 1,
-        ...(opts.websocket && { websocket: true }),
+        stripe: {
+          api_key: STRIPE_API_KEY,
+          backfill_limit: BACKFILL_LIMIT,
+          backfill_concurrency: 1,
+          ...(opts.websocket && { websocket: true }),
+        },
       },
-      destination: { type: 'postgres', connection_string: POSTGRES_URL, schema: SCHEMA },
+      destination: { type: 'postgres', postgres: { connection_string: POSTGRES_URL, schema: SCHEMA } },
       streams: STREAMS.map((name) => ({ name })),
     }
   }

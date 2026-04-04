@@ -29,8 +29,8 @@ let server: any
 let engineUrl: string
 
 const pipeline: PipelineConfig = {
-  source: { type: 'test', streams: { customers: {} } },
-  destination: { type: 'test' },
+  source: { type: 'test', test: { streams: { customers: {} } } },
+  destination: { type: 'test', test: {} },
 }
 
 beforeAll(async () => {

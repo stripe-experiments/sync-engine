@@ -41,7 +41,7 @@ export function createSchemas(resolver: ConnectorResolver) {
   const sourceVariants = [...resolver.sources()].map(([name, r]) => {
     const base = z.fromJSONSchema(r.rawConfigJsonSchema)
     const obj = base instanceof z.ZodObject ? base : z.object({})
-    return obj.extend({ type: z.literal(name) })
+    return z.object({ type: z.literal(name), [name]: obj })
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,7 +54,7 @@ export function createSchemas(resolver: ConnectorResolver) {
   const destVariants = [...resolver.destinations()].map(([name, r]) => {
     const base = z.fromJSONSchema(r.rawConfigJsonSchema)
     const obj = base instanceof z.ZodObject ? base : z.object({})
-    return obj.extend({ type: z.literal(name) })
+    return z.object({ type: z.literal(name), [name]: obj })
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
