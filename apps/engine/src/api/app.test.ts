@@ -181,7 +181,7 @@ describe('GET /openapi.json', () => {
 
     const syncNdjson =
       spec.paths['/pipeline_sync']?.post?.responses?.['200']?.content?.['application/x-ndjson']
-    expect(syncNdjson.schema.$ref).toBe('#/components/schemas/DestinationOutput')
+    expect(syncNdjson.schema.$ref).toBe('#/components/schemas/SyncOutput')
   })
 
   it('/setup spec documents 200 response (not 204)', async () => {
@@ -581,9 +581,11 @@ describe('POST /sync', () => {
     expect(res.headers.get('Content-Type')).toBe('application/x-ndjson')
 
     const events = await readNdjson<Record<string, unknown>>(res)
-    expect(events).toHaveLength(2)
-    expect(events[0]!.type).toBe('state')
-    expect(events[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+    // pipeline_sync now yields source signals alongside dest output
+    const stateAndEof = events.filter((e) => e.type === 'state' || e.type === 'eof')
+    expect(stateAndEof).toHaveLength(2)
+    expect(stateAndEof[0]!.type).toBe('state')
+    expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
 })
 

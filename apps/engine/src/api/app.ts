@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { apiReference } from '@scalar/hono-api-reference'
 import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
-import type { Message, DestinationOutput, ConnectorResolver } from '../lib/index.js'
+import type { Message, ConnectorResolver } from '../lib/index.js'
 import {
   createEngine,
   createConnectorSchemas,
@@ -16,6 +16,7 @@ import {
   Message as MessageSchema,
   DiscoverOutput as DiscoverOutputSchema,
   DestinationOutput as DestinationOutputSchema,
+  SyncOutput as SyncOutputSchema,
 } from '@stripe/sync-protocol'
 
 // Raw $refs for NDJSON content schemas — avoids zod-openapi generating *Output
@@ -25,6 +26,7 @@ const ndjsonRef = {
   Message: { $ref: '#/components/schemas/Message' },
   DiscoverOutput: { $ref: '#/components/schemas/DiscoverOutput' },
   DestinationOutput: { $ref: '#/components/schemas/DestinationOutput' },
+  SyncOutput: { $ref: '#/components/schemas/SyncOutput' },
   SourceInput: { $ref: '#/components/schemas/SourceInput' },
 }
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
@@ -427,7 +429,7 @@ export async function createApp(resolver: ConnectorResolver) {
       responses: {
         200: {
           description: 'NDJSON stream of sync messages',
-          content: { 'application/x-ndjson': { schema: ndjsonRef.DestinationOutput } },
+          content: { 'application/x-ndjson': { schema: ndjsonRef.SyncOutput } },
         },
         400: errorResponse,
       },
@@ -558,6 +560,7 @@ export async function createApp(resolver: ConnectorResolver) {
           Message: MessageSchema,
           DiscoverOutput: DiscoverOutputSchema,
           DestinationOutput: DestinationOutputSchema,
+          SyncOutput: SyncOutputSchema,
           ...(SourceInput ? { SourceInput } : {}),
         },
       },

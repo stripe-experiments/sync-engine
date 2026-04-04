@@ -29,3 +29,4 @@ export {
   drainStream,
 } from './helpers.js'
 export { parseNdjsonChunks, writeLine } from './ndjson.js'
+export { channel, merge, split, map } from './stream-utils.js'

@@ -725,13 +725,14 @@ describe('engine.pipeline_sync() pipeline', () => {
       )
     )
 
-    // Pipeline yields 1 state message (destinationTest passes state through) + eof:complete
-    expect(results).toHaveLength(2)
-    expect(results[0]).toMatchObject({
+    // pipeline_sync now yields source signals alongside dest output — filter to state+eof
+    const stateAndEof = results.filter((m) => m.type === 'state' || m.type === 'eof')
+    expect(stateAndEof).toHaveLength(2)
+    expect(stateAndEof[0]).toMatchObject({
       type: 'state',
       state: { stream: 'customers', data: { status: 'complete' } },
     })
-    expect(results[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+    expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
   })
 
   it('stream filtering: only configures requested streams', async () => {
@@ -837,11 +838,15 @@ describe('engine.pipeline_sync() pipeline', () => {
     const engine = await createEngine(makeResolver(mixedSource, destinationTest))
     const results = await drain(engine.pipeline_sync(defaultPipeline))
 
-    // Only the state message passes through engine.pipeline_sync() (record goes to dest but
-    // dest only yields state back; log/trace are routed to callbacks) + eof:complete
-    expect(results).toHaveLength(2)
-    expect(results[0]!.type).toBe('state')
-    expect(results[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+    // pipeline_sync now yields source signals (log/trace) alongside dest output
+    // Filter to state+eof to verify destination processing
+    const stateAndEof = results.filter((m) => m.type === 'state' || m.type === 'eof')
+    expect(stateAndEof).toHaveLength(2)
+    expect(stateAndEof[0]!.type).toBe('state')
+    expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+    // Source signals (log, trace) are also present in the output
+    const sourceSignals = results.filter((m) => m.type === 'log' || m.type === 'trace')
+    expect(sourceSignals.length).toBeGreaterThan(0)
 
     vi.restoreAllMocks()
   })

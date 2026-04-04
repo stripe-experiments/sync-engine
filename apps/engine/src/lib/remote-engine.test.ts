@@ -197,16 +197,19 @@ describe('createRemoteEngine', () => {
         { type: 'state', state: { stream: 'customers', data: { cursor: 'cus_1' } } },
       ]
       const output = await collect(engine.pipeline_sync(pipeline, undefined, asIterable(input)))
-      expect(output).toHaveLength(2)
-      expect(output[0]!.type).toBe('state')
-      expect(output[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+      // pipeline_sync now yields source signals alongside dest output
+      const stateAndEof = output.filter((m) => m.type === 'state' || m.type === 'eof')
+      expect(stateAndEof).toHaveLength(2)
+      expect(stateAndEof[0]!.type).toBe('state')
+      expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
     })
 
     it('returns eof:complete without input (no source data)', async () => {
       const engine = createRemoteEngine(engineUrl)
       const output = await collect(engine.pipeline_sync(pipeline))
-      expect(output).toHaveLength(1)
-      expect(output[0]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
+      const eofMsgs = output.filter((m) => m.type === 'eof')
+      expect(eofMsgs).toHaveLength(1)
+      expect(eofMsgs[0]).toMatchObject({ type: 'eof', eof: { reason: 'complete' } })
     })
   })
 

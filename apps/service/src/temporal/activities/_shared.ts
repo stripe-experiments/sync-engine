@@ -133,11 +133,13 @@ export async function drainMessages(stream: AsyncIterable<Record<string, unknown
   errors: RunResult['errors']
   state: Record<string, unknown>
   records: unknown[]
+  controls: Array<Record<string, unknown>>
   eof?: { reason: string }
 }> {
   const errors: RunResult['errors'] = []
   const state: Record<string, unknown> = {}
   const records: unknown[] = []
+  const controls: Array<Record<string, unknown>> = []
   let eof: { reason: string } | undefined
   let count = 0
 
@@ -146,6 +148,11 @@ export async function drainMessages(stream: AsyncIterable<Record<string, unknown
     if (message.type === 'eof') {
       const eofPayload = message.eof as Record<string, unknown>
       eof = { reason: eofPayload.reason as string }
+    } else if (message.type === 'control') {
+      const ctrl = message.control as Record<string, unknown>
+      if (ctrl.control_type === 'connector_config') {
+        controls.push(ctrl.config as Record<string, unknown>)
+      }
     } else {
       const error = collectError(message)
       if (error) {
@@ -161,5 +168,5 @@ export async function drainMessages(stream: AsyncIterable<Record<string, unknown
   }
   if (count % 50 !== 0) heartbeat({ messages: count })
 
-  return { errors, state, records, eof }
+  return { errors, state, records, controls, eof }
 }

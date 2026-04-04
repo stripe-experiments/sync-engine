@@ -8,11 +8,17 @@ import {
   ConfiguredStream,
   ConfiguredCatalog,
   ConnectionStatusPayload,
+  SyncOutput,
+  RecordMessage,
+  StateMessage,
   collectSpec,
   collectConnectionStatus,
   collectCatalog,
   collectControls,
   drainStream,
+  split,
+  merge,
+  map,
 } from '@stripe/sync-protocol'
 
 import { enforceCatalog, filterType, log, pipe, takeLimits } from './pipeline.js'
@@ -107,15 +113,15 @@ export interface Engine {
   ): AsyncIterable<DestinationOutput>
 
   /**
-   * Full sync: setup → read → write, wired as a single streaming pipeline.
-   * Yields {@link DestinationOutput} messages; state messages should be persisted
-   * by the caller for resumability.
+   * Full sync: read → write, wired as a single streaming pipeline.
+   * Yields {@link SyncOutput} messages: destination output (state, trace, log, eof)
+   * plus source signals (control, trace, log) tagged with `_emitted_by`.
    */
   pipeline_sync(
     pipeline: PipelineConfig,
     opts?: SourceReadOptions,
     input?: AsyncIterable<unknown>
-  ): AsyncIterable<DestinationOutput>
+  ): AsyncIterable<SyncOutput>
 }
 
 function engineLogContext(pipeline: PipelineConfig): Record<string, unknown> {
@@ -439,15 +445,57 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
     },
 
     async *pipeline_sync(pipeline, opts?, input?) {
-      // Pass state to read() but not stateLimit — stateLimit on sync controls destination output
-      const writeOutput = engine.pipeline_write(
-        pipeline,
-        engine.pipeline_read(pipeline, { state: opts?.state }, input)
+      const baseContext = engineLogContext(pipeline)
+      const sourceTag = `source/${pipeline.source.type}`
+      const destTag = `destination/${pipeline.destination.type}`
+      const now = () => new Date().toISOString()
+
+      // Read from source (pass state but not stateLimit — stateLimit controls sync output)
+      const readOutput = engine.pipeline_read(pipeline, { state: opts?.state }, input)
+
+      // Split: data + eof → destination path, source signals → caller
+      // Eof from pipeline_read is excluded from source signals (pipeline_sync adds its own)
+      const isDataOrEof = (msg: Message): msg is RecordMessage | StateMessage =>
+        msg.type === 'record' || msg.type === 'state' || msg.type === 'eof'
+      const [dataStream, sourceSignals] = split(readOutput, isDataOrEof)
+
+      // Set up destination inline — we need control of the stream split
+      const destConnector = await resolver.resolveDestination(pipeline.destination.type)
+      const rawDest = configPayload(pipeline.destination)
+      const destConfig = await getSpecConfig(destConnector, rawDest)
+      const { catalog: catalogPayload } = await collectCatalog(
+        engine.source_discover(pipeline.source)
       )
-      yield* takeLimits<DestinationOutput>({
+      const catalog = buildCatalog(catalogPayload.streams, pipeline.streams)
+      const filteredCatalog = applySelection(catalog)
+
+      const destInput = pipe(
+        dataStream as AsyncIterable<Message>,
+        enforceCatalog(filteredCatalog),
+        log,
+        filterType('record', 'state')
+      )
+      const destOutput = destConnector.write(
+        { config: destConfig, catalog: filteredCatalog },
+        destInput
+      )
+      const parsedDest = withLoggedStream('Engine destination write', baseContext, destOutput)
+
+      // Tag origin on both streams, narrowing to SyncOutput
+      const taggedDest: AsyncIterable<SyncOutput> = map(parsedDest, (msg) => ({
+        ...DestinationOutput.parse(msg),
+        _emitted_by: destTag,
+        _ts: now(),
+      }))
+      const taggedSource: AsyncIterable<SyncOutput> = map(sourceSignals, (msg) =>
+        SyncOutput.parse({ ...msg, _emitted_by: sourceTag, _ts: now() })
+      )
+
+      // Merge both streams and apply limits
+      yield* takeLimits<SyncOutput>({
         stateLimit: opts?.stateLimit,
         timeLimit: opts?.timeLimit,
-      })(writeOutput)
+      })(merge(taggedDest, taggedSource))
     },
   }
   return engine

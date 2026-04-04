@@ -173,7 +173,7 @@ export async function collectControls(
       logs.push(`[${msg.log.level}] ${msg.log.message}`)
     } else if (msg.type === 'trace' && msg.trace.trace_type === 'error') {
       throw new Error(msg.trace.error.message)
-    } else if (msg.type === 'control' && msg.control.control_type === 'config_update') {
+    } else if (msg.type === 'control' && msg.control.control_type === 'connector_config') {
       configs.push(msg.control.config)
     }
   }

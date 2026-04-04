@@ -14,6 +14,7 @@ import type {
   DiscoverOutput,
   Message,
   PipelineConfig,
+  SyncOutput,
 } from '@stripe/sync-protocol'
 
 // openapi-typescript does not model NDJSON streaming bodies correctly:
@@ -190,10 +191,10 @@ export function createRemoteEngine(engineUrl: string): Engine {
       pipeline: PipelineConfig,
       opts?: SourceReadOptions,
       input?: AsyncIterable<unknown>
-    ): AsyncIterable<DestinationOutput> {
+    ): AsyncIterable<SyncOutput> {
       const body = input ? toNdjsonStream(input) : undefined
       const res = await post('/pipeline_sync', pipeline, opts, body)
-      yield* parseNdjsonStream<DestinationOutput>(res.body!)
+      yield* parseNdjsonStream<SyncOutput>(res.body!)
     },
   }
 }
