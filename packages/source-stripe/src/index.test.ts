@@ -191,9 +191,9 @@ describe('StripeSource', () => {
       // 1. trace(stream_status started)
       // 2. record(cus_1)
       // 3. record(cus_2)
-      // 4. state(pageCursor: cus_2, status: pending)
+      // 4. state(page_cursor: cus_2, status: pending)
       // 5. record(cus_3)
-      // 6. state(pageCursor: null, status: complete)
+      // 6. state(page_cursor: null, status: complete)
       // 7. trace(stream_status complete)
       expect(messages).toHaveLength(7)
 
@@ -211,7 +211,7 @@ describe('StripeSource', () => {
       })
       expect(messages[3]).toMatchObject({
         type: 'state',
-        state: { stream: 'customers', data: { pageCursor: 'cus_2', status: 'pending' } },
+        state: { stream: 'customers', data: { page_cursor: 'cus_2', status: 'pending' } },
       })
       expect(messages[4]).toMatchObject({
         type: 'record',
@@ -219,7 +219,7 @@ describe('StripeSource', () => {
       })
       expect(messages[5]).toMatchObject({
         type: 'state',
-        state: { stream: 'customers', data: { pageCursor: null, status: 'complete' } },
+        state: { stream: 'customers', data: { page_cursor: null, status: 'complete' } },
       })
       expect(messages[6]).toMatchObject({
         type: 'trace',
@@ -321,7 +321,7 @@ describe('StripeSource', () => {
       }
 
       const priorState: Record<string, unknown> = {
-        customers: { pageCursor: 'cus_2', status: 'pending' },
+        customers: { page_cursor: 'cus_2', status: 'pending' },
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -372,7 +372,7 @@ describe('StripeSource', () => {
       })
       expect(messages[1]).toMatchObject({
         type: 'state',
-        state: { stream: 'customers', data: { pageCursor: null, status: 'complete' } },
+        state: { stream: 'customers', data: { page_cursor: null, status: 'complete' } },
       })
       expect(messages[2]).toMatchObject({
         type: 'trace',
@@ -703,7 +703,7 @@ describe('StripeSource', () => {
       expect(messages[1]).toMatchObject({ type: 'record', record: { stream: 'customers' } })
       expect(messages[2]).toMatchObject({
         type: 'state',
-        state: { data: { pageCursor: null, status: 'complete' } },
+        state: { data: { page_cursor: null, status: 'complete' } },
       })
       expect(messages[3]).toMatchObject({
         type: 'trace',
@@ -799,7 +799,7 @@ describe('StripeSource', () => {
     it('backfill + prior webhook state: resumes pagination from cursor', async () => {
       // Simulates: webhook events were processed (state has eventId),
       // then backfill is invoked with that state to fill historical data.
-      // The backfill reads pageCursor from state, ignoring webhook-specific fields.
+      // The backfill reads page_cursor from state, ignoring webhook-specific fields.
       listFn.mockResolvedValueOnce({
         data: [{ id: 'cus_3', name: 'Charlie' }],
         has_more: false,
@@ -810,7 +810,7 @@ describe('StripeSource', () => {
         source.read({
           config,
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { pageCursor: 'cus_2', status: 'pending' } },
+          state: { customers: { page_cursor: 'cus_2', status: 'pending' } },
           // no input → backfill mode, but with state from prior run
         })
       )
@@ -838,7 +838,7 @@ describe('StripeSource', () => {
         source.read({
           config,
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { pageCursor: 'cus_3', status: 'pending' } },
+          state: { customers: { page_cursor: 'cus_3', status: 'pending' } },
         })
       )
 
@@ -851,7 +851,7 @@ describe('StripeSource', () => {
       // Final state should be complete
       const states = messages.filter((m): m is StateMessage => m.type === 'state')
       expect(states[states.length - 1].state.data).toMatchObject({
-        pageCursor: null,
+        page_cursor: null,
         status: 'complete',
       })
     })
@@ -1521,7 +1521,7 @@ describe('StripeSource', () => {
         source.read({
           config: { ...config, poll_events: true },
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { pageCursor: null, status: 'complete' } },
+          state: { customers: { page_cursor: null, status: 'complete' } },
         })
       )
 
@@ -1554,7 +1554,7 @@ describe('StripeSource', () => {
         source.read({
           config: { ...config, poll_events: true },
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { pageCursor: null, status: 'complete' } },
+          state: { customers: { page_cursor: null, status: 'complete' } },
         })
       )
 
@@ -1583,7 +1583,7 @@ describe('StripeSource', () => {
         source.read({
           config, // no poll_events
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { pageCursor: null, status: 'complete' } },
+          state: { customers: { page_cursor: null, status: 'complete' } },
         })
       )
 
@@ -1627,7 +1627,7 @@ describe('StripeSource', () => {
             { name: 'invoices', primary_key: [['id']] }
           ),
           // customers is complete, but invoices is pending
-          state: { customers: { pageCursor: null, status: 'complete' } },
+          state: { customers: { page_cursor: null, status: 'complete' } },
         })
       )
 
@@ -1666,9 +1666,9 @@ describe('StripeSource', () => {
       }
 
       const priorSegments: SegmentState[] = [
-        { index: 0, gte: 1000000, lt: 1100000, pageCursor: null, status: 'complete' },
-        { index: 1, gte: 1100000, lt: 1200000, pageCursor: 'cus_halfway', status: 'pending' },
-        { index: 2, gte: 1200000, lt: 1300001, pageCursor: null, status: 'complete' },
+        { index: 0, gte: 1000000, lt: 1100000, page_cursor: null, status: 'complete' },
+        { index: 1, gte: 1100000, lt: 1200000, page_cursor: 'cus_halfway', status: 'pending' },
+        { index: 2, gte: 1200000, lt: 1300001, page_cursor: null, status: 'complete' },
       ]
 
       const mockStripe = {} as unknown as Stripe
@@ -1678,7 +1678,7 @@ describe('StripeSource', () => {
         listApiBackfill({
           catalog: catalog({ name: 'customers' }),
           state: {
-            customers: { pageCursor: null, status: 'pending', segments: priorSegments },
+            customers: { page_cursor: null, status: 'pending', segments: priorSegments },
           },
           registry,
           stripe: mockStripe,
@@ -1704,7 +1704,7 @@ describe('StripeSource', () => {
       const lastState = states[states.length - 1]
       expect(lastState.state.data).toMatchObject({ status: 'complete' })
       const backfill = (lastState.state.data as StripeStreamState).backfill!
-      expect(backfill.inFlight).toEqual([])
+      expect(backfill.in_flight).toEqual([])
       expect(backfill.completed.length).toBeGreaterThan(0)
     })
 
@@ -1751,7 +1751,7 @@ describe('StripeSource', () => {
       const lastData = states[states.length - 1].state.data as StripeStreamState
       expect(lastData.status).toBe('complete')
       // All work done — completed ranges should cover the full range
-      expect(lastData.backfill!.inFlight).toEqual([])
+      expect(lastData.backfill!.in_flight).toEqual([])
     })
   })
 

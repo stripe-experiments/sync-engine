@@ -51,20 +51,20 @@ export type SegmentState = {
   index: number
   gte: number
   lt: number
-  pageCursor: string | null
+  page_cursor: string | null
   status: 'pending' | 'complete'
 }
 
 /** Compact backfill state — O(concurrency) not O(total segments). */
 export type BackfillState = {
   range: { gte: number; lt: number }
-  numSegments: number
+  num_segments: number
   completed: Array<{ gte: number; lt: number }>
-  inFlight: Array<{ gte: number; lt: number; pageCursor: string }>
+  in_flight: Array<{ gte: number; lt: number; page_cursor: string }>
 }
 
 export type StripeStreamState = {
-  pageCursor: string | null
+  page_cursor: string | null
   status: 'pending' | 'complete'
   events_cursor?: number
   /** @deprecated Legacy — use backfill instead */
