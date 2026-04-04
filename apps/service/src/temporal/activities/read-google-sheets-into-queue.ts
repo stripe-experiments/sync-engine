@@ -6,7 +6,7 @@ import type {
   SourceReadOptions,
 } from '@stripe/sync-engine'
 import { ROW_KEY_FIELD, serializeRowKey } from '@stripe/sync-destination-google-sheets'
-import { toConfig } from '../../lib/stores.js'
+
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult } from './_shared.js'
 
@@ -37,8 +37,8 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
     if (!context.kafkaBroker) throw new Error('kafkaBroker is required for Google Sheets workflow')
 
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
-    const { input: inputArr, catalog, ...syncOpts } = opts ?? {}
+    const { id: _, ...config } = pipeline
+    const { input: inputArr, catalog, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
 
     const queued: Message[] = []
@@ -48,7 +48,7 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
 
     for await (const raw of context.engine.pipeline_read(
       config,
-      syncOpts,
+      readOpts,
       input
     ) as AsyncIterable<
       Record<string, unknown>

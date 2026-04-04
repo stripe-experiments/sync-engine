@@ -1,10 +1,12 @@
-import { toConfig } from '../../lib/stores.js'
+import { collectMessages } from '@stripe/sync-protocol'
+import type { Message } from '@stripe/sync-protocol'
+
 import type { ActivitiesContext } from './_shared.js'
 
 export function createTeardownActivity(context: ActivitiesContext) {
   return async function teardown(pipelineId: string): Promise<void> {
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
-    await context.engine.pipeline_teardown(config)
+    const { id: _, ...config } = pipeline
+    await collectMessages(context.engine.pipeline_teardown(config) as AsyncIterable<Message>)
   }
 }

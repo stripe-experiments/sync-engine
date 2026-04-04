@@ -1,5 +1,5 @@
 import type { SourceReadOptions } from '@stripe/sync-engine'
-import { toConfig } from '../../lib/stores.js'
+
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, drainMessages, type RunResult } from './_shared.js'
 
@@ -9,11 +9,11 @@ export function createSyncImmediateActivity(context: ActivitiesContext) {
     opts?: SourceReadOptions & { input?: unknown[] }
   ): Promise<RunResult & { eof?: { reason: string } }> {
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
-    const { input: inputArr, ...syncOpts } = opts ?? {}
+    const { id: _, ...config } = pipeline
+    const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
     const { errors, state, controls, eof } = await drainMessages(
-      context.engine.pipeline_sync(config, syncOpts, input) as AsyncIterable<
+      context.engine.pipeline_sync(config, readOpts, input) as AsyncIterable<
         Record<string, unknown>
       >
     )

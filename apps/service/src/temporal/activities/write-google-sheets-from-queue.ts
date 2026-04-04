@@ -13,7 +13,7 @@ import {
   ROW_NUMBER_FIELD,
   serializeRowKey,
 } from '@stripe/sync-destination-google-sheets'
-import { toConfig } from '../../lib/stores.js'
+
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult } from './_shared.js'
 
@@ -133,7 +133,7 @@ export function createWriteGoogleSheetsFromQueueActivity(context: ActivitiesCont
     }
 
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
+    const { id: _, ...config } = pipeline
     const writeBatch = addRowNumbers(compactGoogleSheetsMessages(queued), opts?.rowIndex ?? {})
     if (config.destination.type !== 'google-sheets') {
       throw new Error('writeGoogleSheetsFromQueue requires a google-sheets destination')

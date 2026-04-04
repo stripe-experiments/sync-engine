@@ -11,11 +11,3 @@ export interface PipelineStore {
   list(): Promise<Pipeline[]>
 }
 
-/** Strip `id` from a Pipeline to produce the PipelineConfig expected by the engine. */
-export function toConfig(pipeline: Pipeline): PipelineConfig {
-  return {
-    source: pipeline.source,
-    destination: pipeline.destination,
-    streams: pipeline.streams,
-  }
-}

@@ -340,8 +340,8 @@ export type PipelineConfig = z.infer<typeof PipelineConfig>
 export interface SyncParams {
   pipeline: PipelineConfig
   state?: Record<string, unknown>
-  stateLimit?: number
-  timeLimit?: number
+  state_limit?: number
+  time_limit?: number
 }
 
 // MARK: - Message unions

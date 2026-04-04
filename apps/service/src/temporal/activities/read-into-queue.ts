@@ -1,5 +1,5 @@
 import type { SourceReadOptions } from '@stripe/sync-engine'
-import { toConfig } from '../../lib/stores.js'
+
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, drainMessages } from './_shared.js'
 
@@ -9,11 +9,11 @@ export function createReadIntoQueueActivity(context: ActivitiesContext) {
     opts?: SourceReadOptions & { input?: unknown[] }
   ): Promise<{ count: number; state: Record<string, unknown>; eof?: { reason: string } }> {
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
-    const { input: inputArr, ...syncOpts } = opts ?? {}
+    const { id: _, ...config } = pipeline
+    const { input: inputArr, ...readOpts } = opts ?? {}
     const input = inputArr?.length ? asIterable(inputArr) : undefined
     const { records, state, eof } = await drainMessages(
-      context.engine.pipeline_read(config, syncOpts, input) as AsyncIterable<
+      context.engine.pipeline_read(config, readOpts, input) as AsyncIterable<
         Record<string, unknown>
       >
     )

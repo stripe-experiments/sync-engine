@@ -1,5 +1,5 @@
 import type { Message } from '@stripe/sync-engine'
-import { toConfig } from '../../lib/stores.js'
+
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, drainMessages, type RunResult } from './_shared.js'
 
@@ -22,7 +22,7 @@ export function createWriteFromQueueActivity(context: ActivitiesContext) {
     }
 
     const pipeline = await context.pipelines.get(pipelineId)
-    const config = toConfig(pipeline)
+    const { id: _, ...config } = pipeline
     const { errors, state } = await drainMessages(
       context.engine.pipeline_write(
         config,
