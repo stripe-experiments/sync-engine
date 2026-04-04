@@ -27,7 +27,7 @@ export async function simplestPipelineWorkflow(
   let deleted = false
   let iteration = 0
   let syncState: Record<string, unknown> = opts?.state ?? {}
-  let readComplete = false
+  let backfillComplete = false
 
   setHandler(updateSignal, (patch: Partial<Pipeline>) => {
     if (patch.source) pipeline = { ...pipeline, source: patch.source }
@@ -58,19 +58,19 @@ export async function simplestPipelineWorkflow(
     await condition(() => !paused || deleted)
     if (deleted) break
 
-    if (!readComplete) {
+    if (!backfillComplete) {
       const result = await syncImmediate(toConfig(pipeline), {
         state: syncState,
         stateLimit: 1,
       })
       syncState = { ...syncState, ...result.state }
-      readComplete = result.eof?.reason === 'complete'
+      backfillComplete = result.eof?.reason === 'complete'
       await tickIteration()
       continue
     }
 
     // Backfill complete — wait for recon interval then re-sync from latest state.
     const gotSignal = await condition(() => !paused || deleted, ONE_WEEK_MS)
-    if (!gotSignal && !deleted) readComplete = false
+    if (!gotSignal && !deleted) backfillComplete = false
   }
 }
