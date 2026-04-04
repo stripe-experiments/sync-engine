@@ -284,6 +284,12 @@
               }
             }
           }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/x-ndjson": { "schema": { "$ref": "#/components/schemas/SourceInput" } }
+          }
         }
       }
     },
@@ -1414,6 +1420,94 @@
       "SourceConfig": {
         "discriminator": { "propertyName": "type" },
         "oneOf": [{ "$ref": "#/components/schemas/StripeSourceConfig" }]
+      },
+      "StripeWebhookInput": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Unique identifier for the object." },
+          "object": {
+            "type": "string",
+            "const": "event",
+            "description": "String representing the object's type. Objects of the same type share the same value."
+          },
+          "account": {
+            "description": "The connected account that originates the event.",
+            "type": "string"
+          },
+          "api_version": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "description": "The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014."
+          },
+          "created": {
+            "type": "number",
+            "description": "Time at which the object was created. Measured in seconds since the Unix epoch."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "object": {
+                "type": "object",
+                "propertyNames": { "type": "string" },
+                "additionalProperties": {}
+              },
+              "previous_attributes": {
+                "type": "object",
+                "propertyNames": { "type": "string" },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["object"],
+            "additionalProperties": false
+          },
+          "livemode": {
+            "type": "boolean",
+            "description": "Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode."
+          },
+          "pending_webhooks": {
+            "type": "number",
+            "description": "Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify."
+          },
+          "request": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                  "idempotency_key": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+                },
+                "required": ["id", "idempotency_key"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ],
+            "description": "Information on the API request that triggers the event."
+          },
+          "type": {
+            "type": "string",
+            "description": "Description of the event (for example, `invoice.created` or `charge.refunded`)."
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "api_version",
+          "created",
+          "data",
+          "livemode",
+          "pending_webhooks",
+          "request",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "SourceInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["stripe"],
+            "properties": { "stripe": { "$ref": "#/components/schemas/StripeWebhookInput" } }
+          }
+        ]
       },
       "DestinationConfig": {
         "discriminator": { "propertyName": "type" },

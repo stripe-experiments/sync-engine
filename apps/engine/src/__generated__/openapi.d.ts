@@ -747,6 +747,43 @@ export interface components {
             batch_size: number;
         };
         SourceConfig: components["schemas"]["StripeSourceConfig"];
+        StripeWebhookInput: {
+            /** @description Unique identifier for the object. */
+            id: string;
+            /**
+             * @description String representing the object's type. Objects of the same type share the same value.
+             * @constant
+             */
+            object: "event";
+            /** @description The connected account that originates the event. */
+            account?: string;
+            /** @description The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014. */
+            api_version: string | null;
+            /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
+            created: number;
+            data: {
+                object: {
+                    [key: string]: unknown;
+                };
+                previous_attributes?: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
+            livemode: boolean;
+            /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
+            pending_webhooks: number;
+            /** @description Information on the API request that triggers the event. */
+            request: {
+                id: string | null;
+                idempotency_key: string | null;
+            } | null;
+            /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
+            type: string;
+        };
+        SourceInput: {
+            stripe: components["schemas"]["StripeWebhookInput"];
+        };
         DestinationConfig: components["schemas"]["PostgresDestinationConfig"] | components["schemas"]["GoogleSheetsDestinationConfig"];
         PipelineConfig: {
             source: components["schemas"]["SourceConfig"];
@@ -954,7 +991,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/x-ndjson": components["schemas"]["SourceInput"];
+            };
+        };
         responses: {
             /** @description NDJSON stream of sync messages */
             200: {
