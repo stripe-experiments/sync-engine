@@ -112,16 +112,16 @@ export function persistState(
  * Applies stream limits and emits an `eof` terminal message as the final item.
  *
  * - `stateLimit`: stop after N state messages (state message boundary)
- * - `timeLimitMs`: stop after N milliseconds (any message boundary)
+ * - `timeLimit`: stop after N seconds (any message boundary)
  *
  * When both are set, whichever fires first wins. All non-matching messages
  * pass through unchanged. The last yielded item is always `{ type: 'eof', eof: { reason } }`.
  */
 export function takeLimits<T extends { type: string }>(
-  opts: { stateLimit?: number; timeLimitMs?: number } = {}
+  opts: { stateLimit?: number; timeLimit?: number } = {}
 ): (msgs: AsyncIterable<T>) => AsyncIterable<T> {
   return async function* (messages) {
-    const deadline = opts.timeLimitMs ? Date.now() + opts.timeLimitMs : undefined
+    const deadline = opts.timeLimit ? Date.now() + opts.timeLimit * 1000 : undefined
     let stateCount = 0
     for await (const msg of messages) {
       yield msg

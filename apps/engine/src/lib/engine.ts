@@ -222,7 +222,7 @@ async function getSpecConfig(
  * @param resolver - Resolves connector type names to connector instances.
  */
 export async function createEngine(resolver: ConnectorResolver): Promise<Engine> {
-  const engine: Engine = {
+  const engine = {
     async meta_sources_list() {
       return {
         items: [...resolver.sources()].map(([type, r]) => ({
@@ -232,7 +232,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       }
     },
 
-    async meta_sources_get(type: string): Promise<ConnectorInfo> {
+    async meta_sources_get(type) {
       const r = resolver.sources().get(type)
       if (!r) throw new Error(`Unknown source connector: ${type}`)
       return { config_schema: r.rawConfigJsonSchema }
@@ -247,20 +247,20 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       }
     },
 
-    async meta_destinations_get(type: string): Promise<ConnectorInfo> {
+    async meta_destinations_get(type) {
       const r = resolver.destinations().get(type)
       if (!r) throw new Error(`Unknown destination connector: ${type}`)
       return { config_schema: r.rawConfigJsonSchema }
     },
 
-    async *source_discover(sourceInput: PipelineConfig['source']): AsyncIterable<DiscoverOutput> {
+    async *source_discover(sourceInput) {
       const connector = await resolver.resolveSource(sourceInput.type)
       const { type: _, ...rawSrc } = sourceInput
       const sourceConfig = await getSpecConfig(connector, rawSrc)
       yield* connector.discover({ config: sourceConfig })
     },
 
-    async pipeline_setup(pipeline: PipelineConfig): Promise<SetupResult> {
+    async pipeline_setup(pipeline) {
       const baseContext = engineLogContext(pipeline)
       const [srcConnector, destConnector] = await Promise.all([
         resolver.resolveSource(pipeline.source.type),
@@ -311,7 +311,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       return result
     },
 
-    async pipeline_teardown(pipeline: PipelineConfig): Promise<void> {
+    async pipeline_teardown(pipeline) {
       const [srcConnector, destConnector] = await Promise.all([
         resolver.resolveSource(pipeline.source.type),
         resolver.resolveDestination(pipeline.destination.type),
@@ -332,9 +332,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       ])
     },
 
-    async pipeline_check(
-      pipeline: PipelineConfig
-    ): Promise<{ source: ConnectionStatusPayload; destination: ConnectionStatusPayload }> {
+    async pipeline_check(pipeline) {
       const [srcConnector, destConnector] = await Promise.all([
         resolver.resolveSource(pipeline.source.type),
         resolver.resolveDestination(pipeline.destination.type),
@@ -358,11 +356,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       return { source, destination }
     },
 
-    async *pipeline_read(
-      pipeline: PipelineConfig,
-      opts?: SourceReadOptions,
-      input?: AsyncIterable<unknown>
-    ): AsyncIterable<Message> {
+    async *pipeline_read(pipeline, opts?, input?) {
       const baseContext = engineLogContext(pipeline)
       const connector = await resolver.resolveSource(pipeline.source.type)
       const { type: _, ...rawSrc } = pipeline.source
@@ -390,14 +384,11 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       })()
       yield* takeLimits<Message>({
         stateLimit: opts?.stateLimit,
-        timeLimitMs: opts?.timeLimit ? opts.timeLimit * 1000 : undefined,
+        timeLimit: opts?.timeLimit,
       })(parsed)
     },
 
-    async *pipeline_write(
-      pipeline: PipelineConfig,
-      messages: AsyncIterable<Message>
-    ): AsyncIterable<DestinationOutput> {
+    async *pipeline_write(pipeline, messages) {
       const baseContext = engineLogContext(pipeline)
       const connector = await resolver.resolveDestination(pipeline.destination.type)
       const { type: _, ...rawDest } = pipeline.destination
@@ -427,22 +418,10 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       }
     },
 
-    async *pipeline_sync(
-      pipeline: PipelineConfig,
-      opts?: SourceReadOptions,
-      input?: AsyncIterable<unknown>
-    ): AsyncIterable<DestinationOutput> {
-      await engine.pipeline_setup(pipeline)
-      // Pass state to read() but not stateLimit — stateLimit on sync controls destination output
-      const writeOutput = engine.pipeline_write(
-        pipeline,
-        engine.pipeline_read(pipeline, { state: opts?.state }, input)
-      )
-      yield* takeLimits<DestinationOutput>({
-        stateLimit: opts?.stateLimit,
-        timeLimitMs: opts?.timeLimit ? opts.timeLimit * 1000 : undefined,
-      })(writeOutput)
+    async *pipeline_sync(pipeline, opts?, input?) {
+      const self = engine as Engine
+      yield* self.pipeline_write(pipeline, self.pipeline_read(pipeline, opts, input))
     },
-  }
+  } satisfies Engine
   return engine
 }
