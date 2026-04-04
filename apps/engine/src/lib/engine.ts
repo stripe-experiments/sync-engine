@@ -22,50 +22,98 @@ import { logger } from '../logger.js'
 
 // MARK: - Engine interface
 
+/** Config updates returned by a connector's `setup()` call that should be merged back into the pipeline config. */
 export const SetupResult = z.object({
   source: z.record(z.string(), z.unknown()).optional(),
   destination: z.record(z.string(), z.unknown()).optional(),
 })
 export type SetupResult = z.infer<typeof SetupResult>
 
-export const SyncOpts = z.object({
+export const SourceReadOptions = z.object({
+  /** Per-stream state cursors carried in from the previous sync run. */
   state: z.record(z.string(), z.unknown()).optional(),
+  /** Stop after emitting this many state messages (useful for paging). */
   stateLimit: z.number().int().positive().optional(),
+  /** Wall-clock time limit in seconds; the stream stops after this duration. */
   timeLimit: z.number().positive().optional(),
 })
-export type SyncOpts = z.infer<typeof SyncOpts>
+export type SourceReadOptions = z.infer<typeof SourceReadOptions>
 
+/** Metadata for a single connector type, including its configuration JSON Schema. */
 export const ConnectorInfo = z.object({
   config_schema: z.record(z.string(), z.unknown()),
 })
 export type ConnectorInfo = z.infer<typeof ConnectorInfo>
 
+/** {@link ConnectorInfo} plus the connector's `type` identifier, as returned by the list endpoints. */
 export const ConnectorListItem = ConnectorInfo.extend({ type: z.string() })
 export type ConnectorListItem = z.infer<typeof ConnectorListItem>
 
+/**
+ * The core sync engine abstraction.
+ *
+ * Implementations include:
+ * - `createEngine()` — in-process, backed by connector instances directly
+ * - `createRemoteEngine()` — HTTP client that forwards calls to an engine HTTP API
+ */
 export interface Engine {
+  /** List all registered source connector types with their config schemas. */
   meta_sources_list(): Promise<{ data: ConnectorListItem[] }>
+  /** Fetch metadata (config schema) for a single source connector type. */
   meta_source(type: string): Promise<ConnectorInfo>
+  /** List all registered destination connector types with their config schemas. */
   meta_destinations_list(): Promise<{ data: ConnectorListItem[] }>
+  /** Fetch metadata (config schema) for a single destination connector type. */
   meta_destination(type: string): Promise<ConnectorInfo>
+
+  /**
+   * Run connector `setup()` hooks for both source and destination.
+   * Returns any config updates the connectors want written back to the pipeline record.
+   */
   pipeline_setup(pipeline: PipelineConfig): Promise<SetupResult>
+  /** Run connector `teardown()` hooks for both source and destination. */
   pipeline_teardown(pipeline: PipelineConfig): Promise<void>
+  /** Run connector `check()` for both source and destination and return their statuses. */
   pipeline_check(
     pipeline: PipelineConfig
   ): Promise<{ source: ConnectionStatusPayload; destination: ConnectionStatusPayload }>
+
+  /**
+   * Discover the streams available from a source.
+   * Yields a stream of {@link DiscoverOutput} messages (catalog, log, trace).
+   * Use `collectCatalog()` from `@stripe/sync-protocol` to consume the result.
+   */
   source_discover(source: PipelineConfig['source']): AsyncIterable<DiscoverOutput>
+
+  /**
+   * Read records from the source.
+   * Yields raw {@link Message} objects (records, states, logs).
+   * Optionally accepts previously persisted state and an upstream input iterable.
+   */
   pipeline_read(
     pipeline: PipelineConfig,
-    opts?: SyncOpts,
+    opts?: SourceReadOptions,
     input?: AsyncIterable<unknown>
   ): AsyncIterable<Message>
+
+  /**
+   * Write a stream of messages to the destination.
+   * Filters for record and state messages, enforces the configured catalog,
+   * and yields {@link DestinationOutput} messages (states, logs) from the destination.
+   */
   pipeline_write(
     pipeline: PipelineConfig,
     messages: AsyncIterable<Message>
   ): AsyncIterable<DestinationOutput>
+
+  /**
+   * Full sync: setup → read → write, wired as a single streaming pipeline.
+   * Yields {@link DestinationOutput} messages; state messages should be persisted
+   * by the caller for resumability.
+   */
   pipeline_sync(
     pipeline: PipelineConfig,
-    opts?: SyncOpts,
+    opts?: SourceReadOptions,
     input?: AsyncIterable<unknown>
   ): AsyncIterable<DestinationOutput>
 }
@@ -120,8 +168,11 @@ async function* withLoggedStream<T>(
 }
 
 /**
- * Build a ConfiguredCatalog from discovered streams, optionally filtered
- * by the streams listed in config.
+ * Build a {@link ConfiguredCatalog} from the streams discovered by the source.
+ *
+ * If `configStreams` is provided, only the listed stream names are included
+ * and their `sync_mode`/`fields`/`backfill_limit` overrides are applied.
+ * If omitted, all discovered streams are included with `full_refresh` mode.
  */
 export function buildCatalog(
   discovered: Stream[],
@@ -165,6 +216,11 @@ async function getSpecConfig(
 
 // MARK: - Factory
 
+/**
+ * Create an in-process {@link Engine} backed by the given connector resolver.
+ *
+ * @param resolver - Resolves connector type names to connector instances.
+ */
 export async function createEngine(resolver: ConnectorResolver): Promise<Engine> {
   const engine: Engine = {
     async meta_sources_list() {
@@ -304,7 +360,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
 
     async *pipeline_read(
       pipeline: PipelineConfig,
-      opts?: SyncOpts,
+      opts?: SourceReadOptions,
       input?: AsyncIterable<unknown>
     ): AsyncIterable<Message> {
       const baseContext = engineLogContext(pipeline)
@@ -373,7 +429,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
 
     async *pipeline_sync(
       pipeline: PipelineConfig,
-      opts?: SyncOpts,
+      opts?: SourceReadOptions,
       input?: AsyncIterable<unknown>
     ): AsyncIterable<DestinationOutput> {
       await engine.pipeline_setup(pipeline)

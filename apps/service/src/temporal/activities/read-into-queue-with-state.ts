@@ -5,7 +5,7 @@ import type {
   Message,
   PipelineConfig,
   RecordMessage,
-  SyncOpts,
+  SourceReadOptions,
 } from '@stripe/sync-engine'
 import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult, withRowKey } from './_shared.js'
@@ -14,7 +14,7 @@ export function createReadIntoQueueWithStateActivity(context: ActivitiesContext)
   return async function readIntoQueueWithState(
     config: PipelineConfig,
     pipelineId: string,
-    opts?: SyncOpts & {
+    opts?: SourceReadOptions & {
       input?: unknown[]
       catalog?: ConfiguredCatalog
     }
