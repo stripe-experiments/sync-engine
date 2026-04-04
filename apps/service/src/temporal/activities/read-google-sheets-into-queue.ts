@@ -15,14 +15,17 @@ import type { ActivitiesContext } from './_shared.js'
 import { asIterable, collectError, type RunResult } from './_shared.js'
 
 function withRowKey(record: RecordMessage, catalog?: ConfiguredCatalog): RecordMessage {
-  const primaryKey = catalog?.streams.find((stream) => stream.stream.name === record.stream)?.stream
-    .primary_key
+  const primaryKey = catalog?.streams.find((stream) => stream.stream.name === record.record.stream)
+    ?.stream.primary_key
   if (!primaryKey) return record
   return {
     ...record,
-    data: {
-      ...record.data,
-      [ROW_KEY_FIELD]: serializeRowKey(primaryKey, record.data),
+    record: {
+      ...record.record,
+      data: {
+        ...record.record.data,
+        [ROW_KEY_FIELD]: serializeRowKey(primaryKey, record.record.data),
+      },
     },
   }
 }

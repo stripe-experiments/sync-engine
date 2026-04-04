@@ -28,12 +28,14 @@ function compactGoogleSheetsMessages(messages: Message[]): Message[] {
   for (const message of messages) {
     if (message.type === 'record') {
       const rowKey =
-        typeof message.data[ROW_KEY_FIELD] === 'string' ? message.data[ROW_KEY_FIELD] : undefined
+        typeof message.record.data[ROW_KEY_FIELD] === 'string'
+          ? message.record.data[ROW_KEY_FIELD]
+          : undefined
       if (!rowKey) {
         compacted.push(message)
         continue
       }
-      const dedupeKey = `${message.stream}:${rowKey}`
+      const dedupeKey = `${message.record.stream}:${rowKey}`
       if (!pending.has(dedupeKey)) pendingOrder.push(dedupeKey)
       pending.set(dedupeKey, message)
       continue
@@ -56,14 +58,19 @@ function addRowNumbers(
   return messages.map((message) => {
     if (message.type !== 'record') return message
     const rowKey =
-      typeof message.data[ROW_KEY_FIELD] === 'string' ? message.data[ROW_KEY_FIELD] : undefined
-    const rowNumber = rowKey ? rowIndex[message.stream]?.[rowKey] : undefined
+      typeof message.record.data[ROW_KEY_FIELD] === 'string'
+        ? message.record.data[ROW_KEY_FIELD]
+        : undefined
+    const rowNumber = rowKey ? rowIndex[message.record.stream]?.[rowKey] : undefined
     if (rowNumber === undefined) return message
     return {
       ...message,
-      data: {
-        ...message.data,
-        [ROW_NUMBER_FIELD]: rowNumber,
+      record: {
+        ...message.record,
+        data: {
+          ...message.record.data,
+          [ROW_NUMBER_FIELD]: rowNumber,
+        },
       },
     }
   })
