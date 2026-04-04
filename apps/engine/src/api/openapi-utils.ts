@@ -52,7 +52,7 @@ export function connectorSchemaName(name: string, role: 'Source' | 'Destination'
     .split(/[-_]/)
     .map((w) => capitalize(w))
     .join('')
-  return `${role}${pascal}`
+  return `${role}${pascal}Config`
 }
 
 export function connectorInputSchemaName(name: string): string {
@@ -76,26 +76,18 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
   if (!spec.components) spec.components = {}
   if (!spec.components.schemas) spec.components.schemas = {}
 
+  // Raw connector config schemas — payload only, no type/wrapper key.
+  // Polymorphism (type enum + nested key) lives in SourceConfig/DestinationConfig below.
   for (const [name, r] of resolver.sources()) {
-    spec.components.schemas[connectorSchemaName(name, 'Source')] = {
-      type: 'object',
-      required: ['type'],
-      properties: {
-        type: { type: 'string', enum: [name] },
-        [name]: JSON.parse(JSON.stringify(r.rawConfigJsonSchema)),
-      },
-    }
+    spec.components.schemas[connectorSchemaName(name, 'Source')] = JSON.parse(
+      JSON.stringify(r.rawConfigJsonSchema)
+    )
   }
 
   for (const [name, r] of resolver.destinations()) {
-    spec.components.schemas[connectorSchemaName(name, 'Destination')] = {
-      type: 'object',
-      required: ['type'],
-      properties: {
-        type: { type: 'string', enum: [name] },
-        [name]: JSON.parse(JSON.stringify(r.rawConfigJsonSchema)),
-      },
-    }
+    spec.components.schemas[connectorSchemaName(name, 'Destination')] = JSON.parse(
+      JSON.stringify(r.rawConfigJsonSchema)
+    )
   }
 
   const sourceNames = [...resolver.sources().keys()]
@@ -103,24 +95,23 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
     spec.components.schemas['SourceConfig'] = {
       discriminator: { propertyName: 'type' },
       oneOf: sourceNames.map((n) => ({
-        $ref: `#/components/schemas/${connectorSchemaName(n, 'Source')}`,
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: [n] },
+          [n]: { $ref: `#/components/schemas/${connectorSchemaName(n, 'Source')}` },
+        },
       })),
     }
   }
 
-  // Inject source input schemas and build SourceInput discriminated union.
-  // Each named wrapper (e.g. SourceStripeInput) mirrors the SourceStripe config pattern:
-  //   { type: "stripe", stripe: { ...raw event schema... } }
+  // Raw source input schemas — payload only, no type/wrapper key.
+  // Polymorphism lives in SourceInput below.
   for (const [name, r] of resolver.sources()) {
     if (r.rawInputJsonSchema) {
-      spec.components.schemas[connectorInputSchemaName(name)] = {
-        type: 'object',
-        required: ['type'],
-        properties: {
-          type: { type: 'string', enum: [name] },
-          [name]: JSON.parse(JSON.stringify(r.rawInputJsonSchema)),
-        },
-      }
+      spec.components.schemas[connectorInputSchemaName(name)] = JSON.parse(
+        JSON.stringify(r.rawInputJsonSchema)
+      )
     }
   }
   const sourceInputNames = [...resolver.sources().entries()]
@@ -130,7 +121,12 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
     spec.components.schemas['SourceInput'] = {
       discriminator: { propertyName: 'type' },
       oneOf: sourceInputNames.map((n) => ({
-        $ref: `#/components/schemas/${connectorInputSchemaName(n)}`,
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: [n] },
+          [n]: { $ref: `#/components/schemas/${connectorInputSchemaName(n)}` },
+        },
       })),
     }
     if (spec.paths?.['/pipeline_read']?.post) {
@@ -150,7 +146,12 @@ export function injectConnectorSchemas(spec: any, resolver: ConnectorResolver): 
     spec.components.schemas['DestinationConfig'] = {
       discriminator: { propertyName: 'type' },
       oneOf: destNames.map((n) => ({
-        $ref: `#/components/schemas/${connectorSchemaName(n, 'Destination')}`,
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: [n] },
+          [n]: { $ref: `#/components/schemas/${connectorSchemaName(n, 'Destination')}` },
+        },
       })),
     }
   }

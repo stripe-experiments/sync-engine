@@ -638,164 +638,152 @@ export interface components {
                 reason: "complete" | "state_limit" | "time_limit" | "error";
             };
         };
-        SourceStripe: {
+        SourceStripeConfig: {
+            /** @description Stripe API key (sk_test_... or sk_live_...) */
+            api_key: string;
+            /** @description Stripe account ID (resolved from API if omitted) */
+            account_id?: string;
+            /** @description Whether this is a live mode sync */
+            livemode?: boolean;
+            /** @description Stripe API version (e.g. 2025-04-30.basil) */
+            api_version?: string;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Format: uri
+             * @description Override the Stripe API base URL (e.g. http://localhost:12111 for stripe-mock)
              */
-            type: "SourceStripe";
-            stripe?: {
-                /** @description Stripe API key (sk_test_... or sk_live_...) */
-                api_key: string;
-                /** @description Stripe account ID (resolved from API if omitted) */
-                account_id?: string;
-                /** @description Whether this is a live mode sync */
-                livemode?: boolean;
-                /** @description Stripe API version (e.g. 2025-04-30.basil) */
-                api_version?: string;
-                /**
-                 * Format: uri
-                 * @description Override the Stripe API base URL (e.g. http://localhost:12111 for stripe-mock)
-                 */
-                base_url?: string;
-                /**
-                 * Format: uri
-                 * @description URL for managed webhook endpoint registration
-                 */
-                webhook_url?: string;
-                /** @description Webhook signing secret (whsec_...) for signature verification */
-                webhook_secret?: string;
-                /** @description Enable WebSocket streaming for live events */
-                websocket?: boolean;
-                /** @description Enable events API polling for incremental sync after backfill */
-                poll_events?: boolean;
-                /** @description Port for built-in webhook HTTP listener (e.g. 4242) */
-                webhook_port?: number;
-                /** @description Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"]) */
-                revalidate_objects?: string[];
-                /** @description Max objects to backfill per stream (useful for testing) */
-                backfill_limit?: number;
-                /** @description Max Stripe API requests per second (default: 25) */
-                rate_limit?: number;
-                /** @description Number of time-range segments for parallel backfill (default: 200) */
-                backfill_concurrency?: number;
-            };
-        };
-        DestinationPostgres: {
+            base_url?: string;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Format: uri
+             * @description URL for managed webhook endpoint registration
              */
-            type: "DestinationPostgres";
-            postgres?: {
-                /** @description Postgres connection string (alias for connection_string) */
-                url?: string;
-                /** @description Postgres connection string */
-                connection_string?: string;
-                /** @description Postgres host (required for AWS IAM) */
-                host?: string;
-                /**
-                 * @description Postgres port
-                 * @default 5432
-                 */
-                port: number;
-                /** @description Database name (required for AWS IAM) */
-                database?: string;
-                /** @description Database user (required for AWS IAM) */
-                user?: string;
-                /** @description Target schema name (e.g. "stripe_sync") */
-                schema: string;
-                /**
-                 * @description Records to buffer before flushing
-                 * @default 100
-                 */
-                batch_size: number;
-                /** @description AWS RDS IAM authentication config */
-                aws?: {
-                    /** @description AWS region for RDS instance */
-                    region: string;
-                    /** @description IAM role ARN to assume (cross-account) */
-                    role_arn?: string;
-                    /** @description External ID for STS AssumeRole */
-                    external_id?: string;
-                };
-                /** @description PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA) */
-                ssl_ca_pem?: string;
-            };
+            webhook_url?: string;
+            /** @description Webhook signing secret (whsec_...) for signature verification */
+            webhook_secret?: string;
+            /** @description Enable WebSocket streaming for live events */
+            websocket?: boolean;
+            /** @description Enable events API polling for incremental sync after backfill */
+            poll_events?: boolean;
+            /** @description Port for built-in webhook HTTP listener (e.g. 4242) */
+            webhook_port?: number;
+            /** @description Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"]) */
+            revalidate_objects?: string[];
+            /** @description Max objects to backfill per stream (useful for testing) */
+            backfill_limit?: number;
+            /** @description Max Stripe API requests per second (default: 25) */
+            rate_limit?: number;
+            /** @description Number of time-range segments for parallel backfill (default: 200) */
+            backfill_concurrency?: number;
         };
-        DestinationGoogleSheets: {
+        DestinationPostgresConfig: {
+            /** @description Postgres connection string (alias for connection_string) */
+            url?: string;
+            /** @description Postgres connection string */
+            connection_string?: string;
+            /** @description Postgres host (required for AWS IAM) */
+            host?: string;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * @description Postgres port
+             * @default 5432
              */
-            type: "DestinationGoogleSheets";
-            "google-sheets"?: {
-                /** @description Google OAuth2 client ID (env: GOOGLE_CLIENT_ID) */
-                client_id?: string;
-                /** @description Google OAuth2 client secret (env: GOOGLE_CLIENT_SECRET) */
-                client_secret?: string;
-                /** @description OAuth2 access token */
-                access_token: string;
-                /** @description OAuth2 refresh token */
-                refresh_token: string;
-                /** @description Target spreadsheet ID (created if omitted) */
-                spreadsheet_id?: string;
-                /**
-                 * @description Title when creating a new spreadsheet
-                 * @default Stripe Sync
-                 */
-                spreadsheet_title: string;
-                /**
-                 * @description Rows per Sheets API append call
-                 * @default 50
-                 */
-                batch_size: number;
+            port: number;
+            /** @description Database name (required for AWS IAM) */
+            database?: string;
+            /** @description Database user (required for AWS IAM) */
+            user?: string;
+            /** @description Target schema name (e.g. "stripe_sync") */
+            schema: string;
+            /**
+             * @description Records to buffer before flushing
+             * @default 100
+             */
+            batch_size: number;
+            /** @description AWS RDS IAM authentication config */
+            aws?: {
+                /** @description AWS region for RDS instance */
+                region: string;
+                /** @description IAM role ARN to assume (cross-account) */
+                role_arn?: string;
+                /** @description External ID for STS AssumeRole */
+                external_id?: string;
             };
+            /** @description PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA) */
+            ssl_ca_pem?: string;
         };
-        SourceConfig: components["schemas"]["SourceStripe"];
+        DestinationGoogleSheetsConfig: {
+            /** @description Google OAuth2 client ID (env: GOOGLE_CLIENT_ID) */
+            client_id?: string;
+            /** @description Google OAuth2 client secret (env: GOOGLE_CLIENT_SECRET) */
+            client_secret?: string;
+            /** @description OAuth2 access token */
+            access_token: string;
+            /** @description OAuth2 refresh token */
+            refresh_token: string;
+            /** @description Target spreadsheet ID (created if omitted) */
+            spreadsheet_id?: string;
+            /**
+             * @description Title when creating a new spreadsheet
+             * @default Stripe Sync
+             */
+            spreadsheet_title: string;
+            /**
+             * @description Rows per Sheets API append call
+             * @default 50
+             */
+            batch_size: number;
+        };
+        SourceConfig: {
+            /** @enum {string} */
+            type: "stripe";
+            stripe?: components["schemas"]["SourceStripeConfig"];
+        };
         SourceStripeInput: {
+            /** @description Unique identifier for the object. */
+            id: string;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * @description String representing the object's type. Objects of the same type share the same value.
+             * @constant
              */
-            type: "SourceStripeInput";
-            stripe?: {
-                /** @description Unique identifier for the object. */
-                id: string;
-                /**
-                 * @description String representing the object's type. Objects of the same type share the same value.
-                 * @constant
-                 */
-                object: "event";
-                /** @description The connected account that originates the event. */
-                account?: string;
-                /** @description The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014. */
-                api_version: string | null;
-                /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
-                created: number;
-                data: {
-                    object: {
-                        [key: string]: unknown;
-                    };
-                    previous_attributes?: {
-                        [key: string]: unknown;
-                    };
+            object: "event";
+            /** @description The connected account that originates the event. */
+            account?: string;
+            /** @description The Stripe API version used to render `data`. This property is populated only for events on or after October 31, 2014. */
+            api_version: string | null;
+            /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
+            created: number;
+            data: {
+                object: {
+                    [key: string]: unknown;
                 };
-                /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
-                livemode: boolean;
-                /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
-                pending_webhooks: number;
-                /** @description Information on the API request that triggers the event. */
-                request: {
-                    id: string | null;
-                    idempotency_key: string | null;
-                } | null;
-                /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
-                type: string;
+                previous_attributes?: {
+                    [key: string]: unknown;
+                };
             };
+            /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
+            livemode: boolean;
+            /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
+            pending_webhooks: number;
+            /** @description Information on the API request that triggers the event. */
+            request: {
+                id: string | null;
+                idempotency_key: string | null;
+            } | null;
+            /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
+            type: string;
         };
-        SourceInput: components["schemas"]["SourceStripeInput"];
-        DestinationConfig: components["schemas"]["DestinationPostgres"] | components["schemas"]["DestinationGoogleSheets"];
+        SourceInput: {
+            /** @enum {string} */
+            type: "stripe";
+            stripe?: components["schemas"]["SourceStripeInput"];
+        };
+        DestinationConfig: {
+            /** @enum {string} */
+            type: "postgres";
+            postgres?: components["schemas"]["DestinationPostgresConfig"];
+        } | {
+            /** @enum {string} */
+            type: "google-sheets";
+            "google-sheets"?: components["schemas"]["DestinationGoogleSheetsConfig"];
+        };
         PipelineConfig: {
             source: components["schemas"]["SourceConfig"];
             destination: components["schemas"]["DestinationConfig"];

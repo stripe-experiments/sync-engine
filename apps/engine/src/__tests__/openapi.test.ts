@@ -35,9 +35,9 @@ describe('Engine OpenAPI spec', () => {
     const schemas = spec.components.schemas
     expect(Object.keys(schemas)).toEqual(
       expect.arrayContaining([
-        'SourceStripe',
-        'DestinationPostgres',
-        'DestinationGoogleSheets',
+        'SourceStripeConfig',
+        'DestinationPostgresConfig',
+        'DestinationGoogleSheetsConfig',
         'SourceConfig',
         'DestinationConfig',
         'PipelineConfig',
