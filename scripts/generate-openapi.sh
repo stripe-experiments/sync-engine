@@ -26,7 +26,11 @@ tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
 echo "Generating OpenAPI specs..."
-bun scripts/generate-openapi-specs.ts "$tmpdir/engine.json" "$tmpdir/service.json"
+if command -v bun &>/dev/null; then
+  bun scripts/generate-openapi-specs.ts "$tmpdir/engine.json" "$tmpdir/service.json"
+else
+  npx tsx scripts/generate-openapi-specs.ts "$tmpdir/engine.json" "$tmpdir/service.json"
+fi
 
 # ── Early exit if nothing changed ───────────────────────────────
 
