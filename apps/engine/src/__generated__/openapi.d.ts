@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/setup": {
+    "/pipeline_setup": {
         parameters: {
             query?: never;
             header?: never;
@@ -41,7 +41,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/teardown": {
+    "/pipeline_teardown": {
         parameters: {
             query?: never;
             header?: never;
@@ -61,7 +61,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/check": {
+    "/pipeline_check": {
         parameters: {
             query?: never;
             header?: never;
@@ -81,7 +81,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/discover": {
+    "/source_discover": {
         parameters: {
             query?: never;
             header?: never;
@@ -101,7 +101,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/read": {
+    "/pipeline_read": {
         parameters: {
             query?: never;
             header?: never;
@@ -121,7 +121,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/write": {
+    "/pipeline_write": {
         parameters: {
             query?: never;
             header?: never;
@@ -141,7 +141,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/sync": {
+    "/pipeline_sync": {
         parameters: {
             query?: never;
             header?: never;
@@ -186,7 +186,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get source connector spec */
-        get: operations["meta_source"];
+        get: operations["meta_sources_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -220,7 +220,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get destination connector spec */
-        get: operations["meta_destination"];
+        get: operations["meta_destinations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -906,7 +906,7 @@ export interface operations {
             };
         };
     };
-    meta_source: {
+    meta_sources_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -966,7 +966,7 @@ export interface operations {
             };
         };
     };
-    meta_destination: {
+    meta_destinations_get: {
         parameters: {
             query?: never;
             header?: never;

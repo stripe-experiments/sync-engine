@@ -3,7 +3,7 @@
   "info": {
     "title": "Stripe Sync Engine",
     "version": "1.0.0",
-    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /setup | Set up destination schema |\n| POST | /teardown | Tear down destination schema |\n| GET | /check | Check connector connection |\n| POST | /discover | Discover available streams |\n| POST | /read | Read records from source |\n| POST | /write | Write records to destination |\n| POST | /sync | Run sync pipeline (read → write) |\n| GET | /meta/sources | List available source connectors |\n| GET | /meta/sources/{type} | Get source connector spec |\n| GET | /meta/destinations | List available destination connectors |\n| GET | /meta/destinations/{type} | Get destination connector spec |"
+    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /pipeline_setup | Set up destination schema |\n| POST | /pipeline_teardown | Tear down destination schema |\n| GET | /pipeline_check | Check connector connection |\n| POST | /source_discover | Discover available streams |\n| POST | /pipeline_read | Read records from source |\n| POST | /pipeline_write | Write records to destination |\n| POST | /pipeline_sync | Run sync pipeline (read → write) |\n| GET | /meta/sources | List available source connectors |\n| GET | /meta/sources/{type} | Get source connector spec |\n| GET | /meta/destinations | List available destination connectors |\n| GET | /meta/destinations/{type} | Get destination connector spec |"
   },
   "paths": {
     "/health": {
@@ -28,7 +28,7 @@
         }
       }
     },
-    "/setup": {
+    "/pipeline_setup": {
       "post": {
         "operationId": "pipeline_setup",
         "tags": ["Stateless Sync API"],
@@ -73,7 +73,7 @@
         }
       }
     },
-    "/teardown": {
+    "/pipeline_teardown": {
       "post": {
         "operationId": "pipeline_teardown",
         "tags": ["Stateless Sync API"],
@@ -107,7 +107,7 @@
         }
       }
     },
-    "/check": {
+    "/pipeline_check": {
       "get": {
         "operationId": "pipeline_check",
         "tags": ["Stateless Sync API"],
@@ -172,7 +172,7 @@
         }
       }
     },
-    "/discover": {
+    "/source_discover": {
       "post": {
         "operationId": "source_discover",
         "tags": ["Stateless Sync API"],
@@ -213,7 +213,7 @@
         }
       }
     },
-    "/read": {
+    "/pipeline_read": {
       "post": {
         "operationId": "pipeline_read",
         "tags": ["Stateless Sync API"],
@@ -289,7 +289,7 @@
         }
       }
     },
-    "/write": {
+    "/pipeline_write": {
       "post": {
         "operationId": "pipeline_write",
         "tags": ["Stateless Sync API"],
@@ -336,7 +336,7 @@
         }
       }
     },
-    "/sync": {
+    "/pipeline_sync": {
       "post": {
         "operationId": "pipeline_sync",
         "tags": ["Stateless Sync API"],
@@ -455,7 +455,7 @@
     },
     "/meta/sources/{type}": {
       "get": {
-        "operationId": "meta_source",
+        "operationId": "meta_sources_get",
         "tags": ["Meta"],
         "summary": "Get source connector spec",
         "parameters": [
@@ -526,7 +526,7 @@
     },
     "/meta/destinations/{type}": {
       "get": {
-        "operationId": "meta_destination",
+        "operationId": "meta_destinations_get",
         "tags": ["Meta"],
         "summary": "Get destination connector spec",
         "parameters": [
