@@ -428,7 +428,7 @@ describe('POST /sync', () => {
 // ---------------------------------------------------------------------------
 
 describe('state_limit and time_limit', () => {
-  it('POST /read?state_limit=1 stops after 1 state message and emits eof', async () => {
+  it('POST /pipeline_read?state_limit=1 stops after 1 state message and emits eof', async () => {
     const app = createApp(resolver)
 
     const body = toNdjson([
@@ -453,7 +453,7 @@ describe('state_limit and time_limit', () => {
         emitted_at: '2024-01-01T00:00:00.000Z',
       },
     ])
-    const res = await app.request('/read?state_limit=1', {
+    const res = await app.request('/pipeline_read?state_limit=1', {
       method: 'POST',
       headers: {
         'X-Pipeline': syncParams,
@@ -471,7 +471,7 @@ describe('state_limit and time_limit', () => {
     expect(events[2]).toMatchObject({ type: 'eof', reason: 'state_limit' })
   })
 
-  it('POST /sync?state_limit=1 stops after 1 state message and emits eof', async () => {
+  it('POST /pipeline_sync?state_limit=1 stops after 1 state message and emits eof', async () => {
     const app = createApp(resolver)
 
     const body = toNdjson([
@@ -490,7 +490,7 @@ describe('state_limit and time_limit', () => {
       },
       { type: 'state', stream: 'customers', data: { cursor: '2' } },
     ])
-    const res = await app.request('/sync?state_limit=1', {
+    const res = await app.request('/pipeline_sync?state_limit=1', {
       method: 'POST',
       headers: {
         'X-Pipeline': syncParams,

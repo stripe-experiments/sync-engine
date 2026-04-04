@@ -159,9 +159,10 @@ describe('createRemoteEngine', () => {
         { type: 'state', stream: 'customers', data: { cursor: 'cus_1' } },
       ]
       const output = await collect(engine.pipeline_write(pipeline, asIterable(messages)))
-      expect(output).toHaveLength(1)
+      expect(output).toHaveLength(2)
       expect(output[0]!.type).toBe('state')
       expect((output[0] as { stream: string }).stream).toBe('customers')
+      expect(output[1]).toMatchObject({ type: 'eof', reason: 'complete' })
     })
   })
 
