@@ -11,6 +11,7 @@ import {
   ConfiguredStream,
   ConfiguredCatalog,
   SyncOutput,
+  SyncState,
   RecordMessage,
   StateMessage,
   collectFirst,
@@ -27,8 +28,8 @@ import { logger } from '../logger.js'
 // MARK: - Engine interface
 
 export const SourceReadOptions = z.object({
-  /** Per-stream state cursors carried in from the previous sync run. */
-  state: z.record(z.string(), z.unknown()).optional(),
+  /** Aggregate state (per-stream + global) carried in from the previous sync run. */
+  state: SyncState.optional(),
   /** Stop after emitting this many state messages (useful for paging). */
   state_limit: z.number().int().positive().optional(),
   /** Wall-clock time limit in seconds; the stream stops after this duration. */
