@@ -282,7 +282,7 @@ export function createStripeSource(
         // Backfill: paginate through each configured stream
         yield* listApiBackfill({
           catalog,
-          state,
+          state: state?.streams as Parameters<typeof listApiBackfill>[0]['state'],
           registry,
           stripe,
           rateLimiter,
@@ -294,7 +294,15 @@ export function createStripeSource(
         })
 
         // Events polling: incremental sync via /v1/events after backfill
-        yield* pollEvents({ config, stripe, catalog, registry, streamNames, state, startTimestamp })
+        yield* pollEvents({
+          config,
+          stripe,
+          catalog,
+          registry,
+          streamNames,
+          state: state?.streams as Record<string, StripeStreamState> | undefined,
+          startTimestamp,
+        })
 
         // Start HTTP server for live mode if configured
         if (config.webhook_port) {

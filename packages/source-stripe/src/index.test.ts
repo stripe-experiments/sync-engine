@@ -321,8 +321,9 @@ describe('StripeSource', () => {
         }),
       }
 
-      const priorState: Record<string, unknown> = {
-        customers: { page_cursor: 'cus_2', status: 'pending' },
+      const priorState = {
+        streams: { customers: { page_cursor: 'cus_2', status: 'pending' } },
+        global: {},
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -811,7 +812,7 @@ describe('StripeSource', () => {
         source.read({
           config,
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { page_cursor: 'cus_2', status: 'pending' } },
+          state: { streams: { customers: { page_cursor: 'cus_2', status: 'pending' } }, global: {} },
           // no input → backfill mode, but with state from prior run
         })
       )
@@ -839,7 +840,7 @@ describe('StripeSource', () => {
         source.read({
           config,
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { page_cursor: 'cus_3', status: 'pending' } },
+          state: { streams: { customers: { page_cursor: 'cus_3', status: 'pending' } }, global: {} },
         })
       )
 
@@ -1483,7 +1484,7 @@ describe('StripeSource', () => {
       }
 
       const messages: Message[] = []
-      const iter = source.read({ config: cfg, catalog: cat, state: {} })
+      const iter = source.read({ config: cfg, catalog: cat, state: { streams: {}, global: {} } })
 
       // Drain backfill messages (started, state, complete for the empty stream)
       for (let i = 0; i < 3; i++) {
@@ -1522,7 +1523,7 @@ describe('StripeSource', () => {
         source.read({
           config: { ...config, poll_events: true },
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { page_cursor: null, status: 'complete' } },
+          state: { streams: { customers: { page_cursor: null, status: 'complete' } }, global: {} },
         })
       )
 
@@ -1555,7 +1556,7 @@ describe('StripeSource', () => {
         source.read({
           config: { ...config, poll_events: true },
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
-          state: { customers: { page_cursor: null, status: 'complete' } },
+          state: { streams: { customers: { page_cursor: null, status: 'complete' } }, global: {} },
         })
       )
 
@@ -1628,7 +1629,7 @@ describe('StripeSource', () => {
             { name: 'invoices', primary_key: [['id']] }
           ),
           // customers is complete, but invoices is pending
-          state: { customers: { page_cursor: null, status: 'complete' } },
+          state: { streams: { customers: { page_cursor: null, status: 'complete' } }, global: {} },
         })
       )
 
