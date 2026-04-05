@@ -141,7 +141,8 @@ describe('sync lifecycle — run, checkpoint, resume', () => {
     ]
 
     // Set up destination schema/tables, then run pipeline
-    await engine.pipeline_setup(pipeline)
+    for await (const _ of engine.pipeline_setup(pipeline)) {
+    }
     for await (const msg of engine.pipeline_sync(pipeline, undefined, toAsync(input))) {
       if (msg.type === 'state') {
         await pool.query(
