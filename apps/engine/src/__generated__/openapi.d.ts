@@ -424,7 +424,7 @@ export interface components {
                 config: {
                     [key: string]: unknown;
                 };
-                /** @description JSON Schema for per-stream state (cursor/checkpoint shape). See also SyncState.global for sync-wide cursors. */
+                /** @description JSON Schema for per-stream state (cursor/checkpoint shape). See also SourceState.global for sync-wide cursors. */
                 source_state_stream?: {
                     [key: string]: unknown;
                 };

@@ -1154,7 +1154,7 @@
                 "description": "JSON Schema for the connector's configuration object."
               },
               "source_state_stream": {
-                "description": "JSON Schema for per-stream state (cursor/checkpoint shape). See also SyncState.global for sync-wide cursors.",
+                "description": "JSON Schema for per-stream state (cursor/checkpoint shape). See also SourceState.global for sync-wide cursors.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
