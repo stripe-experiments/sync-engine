@@ -177,12 +177,30 @@ export async function createApp(resolver: ConnectorResolver) {
       summary: 'Health check',
       responses: {
         200: {
-          content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
+          content: {
+            'application/json': {
+              schema: z.object({
+                ok: z.literal(true),
+                commit: z.string().optional(),
+                commit_url: z.string().optional(),
+                build_date: z.string().optional(),
+              }),
+            },
+          },
           description: 'Server is healthy',
         },
       },
     }),
-    (c) => c.json({ ok: true as const }, 200)
+    (c) =>
+      c.json(
+        {
+          ok: true as const,
+          commit: process.env.GIT_COMMIT,
+          commit_url: process.env.COMMIT_URL,
+          build_date: process.env.BUILD_DATE,
+        },
+        200
+      )
   )
 
   const pipelineCheckRoute = createRoute({
