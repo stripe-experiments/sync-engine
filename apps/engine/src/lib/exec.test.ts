@@ -70,8 +70,6 @@ describe('error propagation', () => {
 
     const source = createSourceFromExec(bin)
     // check with invalid config should fail — collect the async iterable
-    await expect(
-      collectFirst(source.check({ config: {} }), 'connection_status')
-    ).rejects.toThrow()
+    await expect(collectFirst(source.check({ config: {} }), 'connection_status')).rejects.toThrow()
   })
 })

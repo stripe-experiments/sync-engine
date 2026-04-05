@@ -54,7 +54,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -108,7 +108,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -162,7 +162,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -216,7 +216,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -293,7 +293,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -374,7 +374,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -461,7 +461,7 @@
             "content": {
               "[object Object]": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/PipelineConfig"
                 }
               }
             }
@@ -1394,7 +1394,7 @@
         ],
         "additionalProperties": false
       },
-      "Source": {
+      "SourceConfig": {
         "oneOf": [
           {
             "type": "object",
@@ -1404,7 +1404,7 @@
                 "const": "stripe"
               },
               "stripe": {
-                "$ref": "#/components/schemas/SourceStripe"
+                "$ref": "#/components/schemas/SourceStripeConfig"
               }
             },
             "required": [
@@ -1418,7 +1418,7 @@
           "propertyName": "type"
         }
       },
-      "SourceStripe": {
+      "SourceStripeConfig": {
         "type": "object",
         "properties": {
           "api_key": {
@@ -1496,7 +1496,7 @@
         ],
         "additionalProperties": false
       },
-      "Destination": {
+      "DestinationConfig": {
         "oneOf": [
           {
             "type": "object",
@@ -1506,7 +1506,7 @@
                 "const": "postgres"
               },
               "postgres": {
-                "$ref": "#/components/schemas/DestinationPostgres"
+                "$ref": "#/components/schemas/DestinationPostgresConfig"
               }
             },
             "required": [
@@ -1522,7 +1522,7 @@
                 "const": "google-sheets"
               },
               "google-sheets": {
-                "$ref": "#/components/schemas/DestinationGoogleSheets"
+                "$ref": "#/components/schemas/DestinationGoogleSheetsConfig"
               }
             },
             "required": [
@@ -1536,7 +1536,7 @@
           "propertyName": "type"
         }
       },
-      "DestinationPostgres": {
+      "DestinationPostgresConfig": {
         "type": "object",
         "properties": {
           "url": {
@@ -1605,7 +1605,7 @@
         ],
         "additionalProperties": false
       },
-      "DestinationGoogleSheets": {
+      "DestinationGoogleSheetsConfig": {
         "type": "object",
         "properties": {
           "client_id": {
@@ -1856,14 +1856,14 @@
           "propertyName": "type"
         }
       },
-      "Pipeline": {
+      "PipelineConfig": {
         "type": "object",
         "properties": {
           "source": {
-            "$ref": "#/components/schemas/Source"
+            "$ref": "#/components/schemas/SourceConfig"
           },
           "destination": {
-            "$ref": "#/components/schemas/Destination"
+            "$ref": "#/components/schemas/DestinationConfig"
           },
           "streams": {
             "type": "array",

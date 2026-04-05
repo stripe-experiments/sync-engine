@@ -14,9 +14,9 @@ function toPascal(name: string): string {
     .join('')
 }
 
-/** OAS schema name, e.g. SourceStripe, DestinationPostgres */
+/** OAS schema name, e.g. SourceStripeConfig, DestinationPostgresConfig */
 export function connectorSchemaName(name: string, role: 'Source' | 'Destination'): string {
-  return `${role}${toPascal(name)}`
+  return `${role}${toPascal(name)}Config`
 }
 
 /** Input payload schema name, e.g. SourceStripeInput */
@@ -24,9 +24,9 @@ export function connectorInputSchemaName(name: string): string {
   return `Source${toPascal(name)}Input`
 }
 
-/** Union schema ID for a connector role, e.g. 'Source' → 'Source' */
-export function connectorUnionId(role: 'Source' | 'Destination'): typeof role {
-  return role
+/** Union schema ID for a connector role, e.g. 'Source' → 'SourceConfig' */
+export function connectorUnionId(role: 'Source' | 'Destination'): string {
+  return `${role}Config`
 }
 
 // ── Schema factory ───────────────────────────────────────────────
@@ -52,7 +52,7 @@ const StreamConfig = z.object({
  * Schemas are used for both runtime validation (via Zod transform+pipe in route headers)
  * and OAS 3.1 spec generation (zod-openapi auto-registers `.meta({ id })` as named components).
  *
- * Individual config schemas (e.g. `SourceStripe`) contain only the raw connector
+ * Individual config schemas (e.g. `SourceStripeConfig`) contain only the raw connector
  * payload — the `{ type, [connectorName]: payload }` envelope is defined at the union level.
  */
 export function createConnectorSchemas(resolver: ConnectorResolver) {
@@ -115,7 +115,7 @@ export function createConnectorSchemas(resolver: ConnectorResolver) {
       destination: DestinationConfig,
       streams: z.array(StreamConfig).optional(),
     })
-    .meta({ id: 'Pipeline' })
+    .meta({ id: 'PipelineConfig' })
 
   return { SourceConfig, DestinationConfig, SourceInput, PipelineConfig }
 }

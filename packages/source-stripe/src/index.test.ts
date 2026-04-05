@@ -130,9 +130,7 @@ describe('StripeSource', () => {
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
-      const cat = (
-        await collectFirst(source.discover({ config }), 'catalog')
-      ).catalog
+      const cat = (await collectFirst(source.discover({ config }), 'catalog')).catalog
 
       expect(cat.streams).toHaveLength(2)
       expect(cat.streams.map((s) => s.name)).toEqual(['customers', 'invoices'])
@@ -145,9 +143,7 @@ describe('StripeSource', () => {
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
-      const cat = (
-        await collectFirst(source.discover({ config }), 'catalog')
-      ).catalog
+      const cat = (await collectFirst(source.discover({ config }), 'catalog')).catalog
 
       expect(cat.streams).toHaveLength(1)
       expect(cat.streams[0].name).toBe('customers')
@@ -155,9 +151,7 @@ describe('StripeSource', () => {
 
     it('returns empty streams for empty registry', async () => {
       vi.mocked(buildResourceRegistry).mockReturnValue({} as any)
-      const cat = (
-        await collectFirst(source.discover({ config }), 'catalog')
-      ).catalog
+      const cat = (await collectFirst(source.discover({ config }), 'catalog')).catalog
 
       expect(cat.streams).toEqual([])
     })
@@ -1467,9 +1461,7 @@ describe('StripeSource', () => {
     it('teardown() is safe when no websocket was configured', async () => {
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
       // No setup() call — teardown should not throw
-      await drain(
-        source.teardown!({ config: { api_key: 'sk_test_fake' } })
-      )
+      await drain(source.teardown!({ config: { api_key: 'sk_test_fake' } }))
       expect(mockClose).not.toHaveBeenCalled()
     })
   })

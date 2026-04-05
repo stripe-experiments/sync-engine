@@ -3,7 +3,7 @@ import type {
   Destination,
   DiscoverOutput,
   Source,
-  SpecOutput
+  SpecOutput,
 } from '@stripe/sync-protocol'
 import {
   CatalogMessage,
