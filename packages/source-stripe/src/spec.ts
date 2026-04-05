@@ -7,7 +7,7 @@ export const configSchema = z.object({
   account_id: z.string().optional().describe('Stripe account ID (resolved from API if omitted)'),
   livemode: z.boolean().optional().describe('Whether this is a live mode sync'),
   api_version: z
-    .enum(SUPPORTED_API_VERSIONS)
+    .string()
     .optional()
     .describe(`Stripe API version (default: ${BUNDLED_API_VERSION})`),
   base_url: z
@@ -128,8 +128,21 @@ export const stripeEventSchema = z.object({
 
 export type StripeEvent = z.infer<typeof stripeEventSchema>
 
+const configJsonSchema = z.toJSONSchema(configSchema) as {
+  properties: Record<string, Record<string, unknown>>
+}
+// Advertise known versions via anyOf so clients can discover them, while still
+// accepting any valid version string (for CDN-fetched non-bundled specs).
+// z.fromJSONSchema turns { anyOf: [{ enum: [...] }, { type: "string" }] } into
+// z.union([z.literal(...), z.string()]) which accepts any string.
+configJsonSchema.properties.api_version.anyOf = [
+  { enum: [...SUPPORTED_API_VERSIONS] },
+  { type: 'string' },
+]
+delete configJsonSchema.properties.api_version.type
+
 export default {
-  config: z.toJSONSchema(configSchema),
+  config: configJsonSchema,
   source_state_stream: z.toJSONSchema(streamStateSpec),
   source_input: z.toJSONSchema(stripeEventSchema),
 } satisfies ConnectorSpecification
