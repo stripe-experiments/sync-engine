@@ -173,6 +173,26 @@ export function recordMsg(payload: RecordPayload): RecordMessage {
   return { type: 'record', record: payload }
 }
 
+/** Shorthand to create a source_config control message. */
+export function sourceControlMsg<T extends Record<string, unknown>>(
+  source_config: T
+): ControlMessage {
+  return {
+    type: 'control',
+    control: { control_type: 'source_config', source_config },
+  }
+}
+
+/** Shorthand to create a destination_config control message. */
+export function destinationControlMsg<T extends Record<string, unknown>>(
+  destination_config: T
+): ControlMessage {
+  return {
+    type: 'control',
+    control: { control_type: 'destination_config', destination_config },
+  }
+}
+
 /** Shorthand to create a stream source_state envelope message. */
 export function stateMsg(payload: { stream: string; data: unknown }): SourceStateMessage
 /** Shorthand to create a global source_state envelope message. */

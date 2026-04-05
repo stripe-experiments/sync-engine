@@ -9,6 +9,7 @@ import type {
   SetupOutput,
   TeardownOutput,
 } from '@stripe/sync-protocol'
+import { sourceControlMsg } from '@stripe/sync-protocol'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import defaultSpec, { configSchema } from './spec.js'
@@ -194,13 +195,7 @@ export function createStripeSource(
       }
 
       if (Object.keys(updates).length > 0) {
-        yield {
-          type: 'control' as const,
-          control: {
-            control_type: 'source_config' as const,
-            source_config: updates as Record<string, unknown>,
-          },
-        }
+        yield sourceControlMsg({ ...config, ...updates })
       }
     },
 

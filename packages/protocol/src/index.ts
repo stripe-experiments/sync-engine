@@ -8,6 +8,8 @@ export {
   stateData,
   recordMsg,
   stateMsg,
+  sourceControlMsg,
+  destinationControlMsg,
   // Type guards
   isRecordMessage,
   isStateMessage,

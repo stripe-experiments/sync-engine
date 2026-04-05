@@ -11,7 +11,7 @@ import {
   ConnectorInfo,
   ConnectorListItem,
 } from '../lib/index.js'
-import { endpointTable } from './openapi-utils.js'
+import { endpointTable, patchControlMessageSchema } from './openapi-utils.js'
 import {
   Message as MessageSchema,
   DiscoverOutput as DiscoverOutputSchema,
@@ -129,7 +129,12 @@ export async function createApp(resolver: ConnectorResolver) {
   // ── Typed header schemas (transform + pipe for runtime validation,
   //    .meta({ param: { content } }) for OAS content encoding) ────
 
-  const { PipelineConfig: TypedPipelineConfig, SourceInput } = createConnectorSchemas(resolver)
+  const {
+    PipelineConfig: TypedPipelineConfig,
+    SourceInput,
+    sourceConfigNames,
+    destConfigNames,
+  } = createConnectorSchemas(resolver)
 
   const jsonParse = (s: string, ctx: z.RefinementCtx) => {
     try {
@@ -583,6 +588,10 @@ export async function createApp(resolver: ConnectorResolver) {
         },
       },
     })
+
+    // Patch ControlMessage's source_config/destination_config to reference typed
+    // connector config schemas instead of the protocol's untyped Record<string, unknown>.
+    patchControlMessageSchema(spec, sourceConfigNames, destConfigNames)
 
     spec.info.description =
       (spec.info.description ?? '') + '\n\n## Endpoints\n\n' + endpointTable(spec)

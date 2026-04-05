@@ -56,37 +56,42 @@ const StreamConfig = z.object({
  * payload — the `{ type, [connectorName]: payload }` envelope is defined at the union level.
  */
 export function createConnectorSchemas(resolver: ConnectorResolver) {
-  // Source config discriminated union
-  const sourceVariants = [...resolver.sources()].map(([name, r]) => {
+  // Build inner config schemas and envelope variants in one pass per role
+  const sources = [...resolver.sources()].map(([name, r]) => {
     const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
+    const config = (base instanceof z.ZodObject ? base : z.object({})).meta({
       id: connectorSchemaName(name, 'Source'),
     })
-    return z.object({ type: z.literal(name), [name]: obj })
+    return { name, config, variant: z.object({ type: z.literal(name), [name]: config }) }
+  })
+
+  const destinations = [...resolver.destinations()].map(([name, r]) => {
+    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
+    const config = (base instanceof z.ZodObject ? base : z.object({})).meta({
+      id: connectorSchemaName(name, 'Destination'),
+    })
+    return { name, config, variant: z.object({ type: z.literal(name), [name]: config }) }
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const SourceConfig =
-    sourceVariants.length > 0
+    sources.length > 0
       ? z
-          .discriminatedUnion('type', sourceVariants as [any, any, ...any[]])
+          .discriminatedUnion(
+            'type',
+            sources.map((s) => s.variant) as [any, any, ...any[]]
+          )
           .meta({ id: connectorUnionId('Source') })
       : z.object({ type: z.string() }).catchall(z.unknown())
 
-  // Destination config discriminated union
-  const destVariants = [...resolver.destinations()].map(([name, r]) => {
-    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
-      id: connectorSchemaName(name, 'Destination'),
-    })
-    return z.object({ type: z.literal(name), [name]: obj })
-  })
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const DestinationConfig =
-    destVariants.length > 0
+    destinations.length > 0
       ? z
-          .discriminatedUnion('type', destVariants as [any, any, ...any[]])
+          .discriminatedUnion(
+            'type',
+            destinations.map((d) => d.variant) as [any, any, ...any[]]
+          )
           .meta({ id: connectorUnionId('Destination') })
       : z.object({ type: z.string() }).catchall(z.unknown())
 
@@ -117,5 +122,11 @@ export function createConnectorSchemas(resolver: ConnectorResolver) {
     })
     .meta({ id: 'PipelineConfig' })
 
-  return { SourceConfig, DestinationConfig, SourceInput, PipelineConfig }
+  // Schema names for control message post-processing — the OAS spec's ControlMessage
+  // source_config/destination_config fields get patched to $ref these typed schemas
+  // instead of the protocol's untyped Record<string, unknown>.
+  const sourceConfigNames = sources.map((s) => connectorSchemaName(s.name, 'Source'))
+  const destConfigNames = destinations.map((d) => connectorSchemaName(d.name, 'Destination'))
+
+  return { SourceConfig, DestinationConfig, SourceInput, PipelineConfig, sourceConfigNames, destConfigNames }
 }

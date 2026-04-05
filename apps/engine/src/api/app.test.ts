@@ -185,6 +185,27 @@ describe('GET /openapi.json', () => {
     expect(syncNdjson.schema.$ref).toBe('#/components/schemas/SyncOutput')
   })
 
+  it('ControlMessage source_config/destination_config reference typed connector schemas', async () => {
+    const app = await createApp(resolver)
+    const res = await app.request('/openapi.json')
+    const spec = (await res.json()) as any
+    const control = spec.components.schemas.ControlMessage.properties.control
+
+    const sourceVariant = control.oneOf.find(
+      (v: any) => v.properties?.control_type?.const === 'source_config'
+    )
+    expect(sourceVariant.properties.source_config.$ref).toBe(
+      '#/components/schemas/SourceTestConfig'
+    )
+
+    const destVariant = control.oneOf.find(
+      (v: any) => v.properties?.control_type?.const === 'destination_config'
+    )
+    expect(destVariant.properties.destination_config.$ref).toBe(
+      '#/components/schemas/DestinationTestConfig'
+    )
+  })
+
   it('/setup spec documents 200 response (not 204)', async () => {
     const app = await createApp(resolver)
     const res = await app.request('/openapi.json')

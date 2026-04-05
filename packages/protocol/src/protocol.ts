@@ -216,13 +216,17 @@ export const ControlPayload = z
       control_type: z.literal('source_config'),
       source_config: z
         .record(z.string(), z.unknown())
-        .describe('Config fields to merge into the active source configuration.'),
+        .describe(
+          'Full updated source configuration. The connector must emit the complete config, not a partial diff. The orchestrator replaces the stored config wholesale.'
+        ),
     }),
     z.object({
       control_type: z.literal('destination_config'),
       destination_config: z
         .record(z.string(), z.unknown())
-        .describe('Config fields to merge into the active destination configuration.'),
+        .describe(
+          'Full updated destination configuration. The connector must emit the complete config, not a partial diff. The orchestrator replaces the stored config wholesale.'
+        ),
     }),
   ])
   .describe('Control signal from a connector to the orchestrator.')
