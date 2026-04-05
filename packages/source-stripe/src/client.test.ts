@@ -78,10 +78,7 @@ describe('buildStripeClientOptions', () => {
   })
 
   it('sets httpClient even when base_url is provided', () => {
-    const options = buildStripeClientOptions(
-      { ...config, base_url: 'http://localhost:12111' },
-      {}
-    )
+    const options = buildStripeClientOptions({ ...config, base_url: 'http://localhost:12111' }, {})
     expect(options.httpClient).toBeDefined()
   })
 
