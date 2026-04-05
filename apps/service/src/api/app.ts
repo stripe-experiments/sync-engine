@@ -4,10 +4,9 @@ import { apiReference } from '@scalar/hono-api-reference'
 import type { WorkflowClient } from '@temporalio/client'
 import type { ConnectorResolver } from '@stripe/sync-engine'
 import { endpointTable } from '@stripe/sync-engine/api/openapi-utils'
-import { createSchemas } from '../lib/createSchemas.js'
+import { createSchemas, deriveStatus } from '../lib/createSchemas.js'
 import type { Pipeline } from '../lib/createSchemas.js'
 import type { PipelineStore } from '../lib/stores.js'
-import type { WorkflowStatus } from '../temporal/workflows/_shared.js'
 import { verifyWebhookSignature, WebhookSignatureError } from '@stripe/sync-source-stripe'
 
 const DEFAULT_PIPELINE_WORKFLOW = 'pipelineWorkflow'
@@ -26,23 +25,7 @@ function genId(prefix: string): string {
   return `${prefix}_${(_idCounter++).toString(36)}`
 }
 
-async function queryStatus(
-  temporal: WorkflowClient,
-  id: string
-): Promise<WorkflowStatus | undefined> {
-  try {
-    return await temporal.getHandle(id).query<WorkflowStatus>('status')
-  } catch {
-    return undefined
-  }
-}
-
 // MARK: - Response schemas (static — don't depend on connector set)
-
-const DeleteResponseSchema = z.object({
-  id: z.string(),
-  deleted: z.literal(true),
-})
 
 const ErrorSchema = z.object({ error: z.unknown() })
 
@@ -70,16 +53,15 @@ export function createApp(options: AppOptions) {
     UpdatePipeline: UpdatePipelineSchema,
   } = createSchemas(options.resolver)
 
-  const PipelineWithStatusSchema = PipelineSchema.extend({
+  const PipelineResponseSchema = PipelineSchema.extend({
     status: z
-      .object({
-        phase: z.string().describe('Current workflow phase (e.g. "backfill", "live", "idle").'),
-        paused: z.boolean().describe('Whether the pipeline is currently paused.'),
-        iteration: z.number().describe('Number of times this workflow has continued-as-new.'),
-      })
-      .optional()
-      .describe('Live workflow status. Absent if no workflow is running for this pipeline.'),
+      .string()
+      .describe('Derived user-facing status (e.g. "backfilling", "pausing", "ready").'),
   })
+
+  function withStatus(pipeline: Pipeline) {
+    return { ...pipeline, status: deriveStatus(pipeline.desired_status, pipeline.workflow_status) }
+  }
 
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -128,7 +110,7 @@ export function createApp(options: AppOptions) {
       responses: {
         200: {
           content: {
-            'application/json': { schema: ListResponse(PipelineWithStatusSchema) },
+            'application/json': { schema: ListResponse(PipelineResponseSchema) },
           },
           description: 'List of pipelines',
         },
@@ -136,13 +118,8 @@ export function createApp(options: AppOptions) {
     }),
     async (c) => {
       const stored = await pipelineStore.list()
-      const result = await Promise.all(
-        stored.map(async (pipeline) => {
-          const status = await queryStatus(temporal, pipeline.id)
-          return status ? { ...pipeline, status } : pipeline
-        })
-      )
-      return c.json({ data: result, has_more: false } as any, 200)
+      const result = stored.map(withStatus)
+      return c.json({ data: result, has_more: false }, 200)
     }
   )
 
@@ -158,7 +135,7 @@ export function createApp(options: AppOptions) {
       },
       responses: {
         201: {
-          content: { 'application/json': { schema: PipelineSchema } },
+          content: { 'application/json': { schema: PipelineResponseSchema } },
           description: 'Created pipeline',
         },
         400: {
@@ -170,14 +147,19 @@ export function createApp(options: AppOptions) {
     async (c) => {
       const body = c.req.valid('json')
       const id = genId('pipe')
-      const pipeline = { id, ...(body as Record<string, unknown>) } as Pipeline
+      const pipeline: Pipeline = {
+        id,
+        ...(body as Record<string, unknown>),
+        desired_status: 'active',
+        workflow_status: 'setup',
+      } as Pipeline
       await pipelineStore.set(id, pipeline)
       await temporal.start(workflowTypeForPipeline(pipeline), {
         workflowId: id,
         taskQueue,
         args: [id],
       })
-      return c.json(pipeline as any, 201)
+      return c.json(withStatus(pipeline), 201)
     }
   )
 
@@ -191,7 +173,7 @@ export function createApp(options: AppOptions) {
       requestParams: { path: PipelineIdParam },
       responses: {
         200: {
-          content: { 'application/json': { schema: PipelineWithStatusSchema } },
+          content: { 'application/json': { schema: PipelineResponseSchema } },
           description: 'Retrieved pipeline with status',
         },
         404: {
@@ -208,8 +190,7 @@ export function createApp(options: AppOptions) {
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
       }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
+      return c.json(withStatus(pipeline), 200)
     }
   )
 
@@ -226,7 +207,7 @@ export function createApp(options: AppOptions) {
       },
       responses: {
         200: {
-          content: { 'application/json': { schema: PipelineWithStatusSchema } },
+          content: { 'application/json': { schema: PipelineResponseSchema } },
           description: 'Updated pipeline',
         },
         400: {
@@ -236,6 +217,10 @@ export function createApp(options: AppOptions) {
         404: {
           content: { 'application/json': { schema: ErrorSchema } },
           description: 'Not found',
+        },
+        409: {
+          content: { 'application/json': { schema: ErrorSchema } },
+          description: 'Invalid status transition',
         },
       },
     }),
@@ -248,6 +233,13 @@ export function createApp(options: AppOptions) {
         current = await pipelineStore.get(id)
       } catch {
         return c.json({ error: `Pipeline ${id} not found` }, 404)
+      }
+
+      // Validate desired_status transition
+      if (patch.desired_status && patch.desired_status !== current.desired_status) {
+        if (current.desired_status === 'deleted') {
+          return c.json({ error: 'Pipeline is deleted — create a new pipeline instead' }, 409)
+        }
       }
 
       // Validate google-sheets constraints
@@ -282,147 +274,23 @@ export function createApp(options: AppOptions) {
         )
       }
 
-      // Write to store
-      const updated = await pipelineStore.update(id, {
-        ...(patch.source ? { source: patch.source } : {}),
-        ...(patch.destination ? { destination: patch.destination } : {}),
-        ...(patch.streams !== undefined ? { streams: patch.streams } : {}),
-      })
+      // Build store patch
+      const storePatch: Partial<Omit<Pipeline, 'id'>> = {}
+      if (patch.source) storePatch.source = patch.source
+      if (patch.destination) storePatch.destination = patch.destination
+      if (patch.streams !== undefined) storePatch.streams = patch.streams
+      if (patch.desired_status) storePatch.desired_status = patch.desired_status
 
-      // Best-effort: notify the workflow that config changed
+      const updated = await pipelineStore.update(id, storePatch)
+
+      // Best-effort: notify the workflow that pipeline was updated
       try {
-        await temporal.getHandle(id).signal('update', {})
+        await temporal.getHandle(id).signal('update')
       } catch {
-        // Workflow may not be running — config is persisted, that's fine
+        // Workflow may not be running — store is updated, that's fine
       }
 
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...updated, status } : (updated as any), 200)
-    }
-  )
-
-  app.openapi(
-    createRoute({
-      operationId: 'pipelines.pause',
-      method: 'post',
-      path: '/pipelines/{id}/pause',
-      tags: ['Pipelines'],
-      summary: 'Pause pipeline',
-      requestParams: { path: PipelineIdParam },
-      responses: {
-        200: {
-          content: { 'application/json': { schema: PipelineWithStatusSchema } },
-          description: 'Paused pipeline',
-        },
-        404: {
-          content: { 'application/json': { schema: ErrorSchema } },
-          description: 'Not found',
-        },
-      },
-    }),
-    async (c) => {
-      const { id } = c.req.valid('param')
-      let pipeline: Pipeline
-      try {
-        pipeline = await pipelineStore.get(id)
-      } catch {
-        return c.json({ error: `Pipeline ${id} not found` }, 404)
-      }
-      try {
-        await temporal.getHandle(id).signal('update', { paused: true })
-        await new Promise((r) => setTimeout(r, 200))
-      } catch {
-        return c.json({ error: `Pipeline ${id} workflow not found` }, 404)
-      }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
-    }
-  )
-
-  app.openapi(
-    createRoute({
-      operationId: 'pipelines.resume',
-      method: 'post',
-      path: '/pipelines/{id}/resume',
-      tags: ['Pipelines'],
-      summary: 'Resume pipeline',
-      requestParams: { path: PipelineIdParam },
-      responses: {
-        200: {
-          content: { 'application/json': { schema: PipelineWithStatusSchema } },
-          description: 'Resumed pipeline',
-        },
-        404: {
-          content: { 'application/json': { schema: ErrorSchema } },
-          description: 'Not found',
-        },
-      },
-    }),
-    async (c) => {
-      const { id } = c.req.valid('param')
-      let pipeline: Pipeline
-      try {
-        pipeline = await pipelineStore.get(id)
-      } catch {
-        return c.json({ error: `Pipeline ${id} not found` }, 404)
-      }
-      try {
-        await temporal.getHandle(id).signal('update', { paused: false })
-        await new Promise((r) => setTimeout(r, 200))
-      } catch {
-        return c.json({ error: `Pipeline ${id} workflow not found` }, 404)
-      }
-      const status = await queryStatus(temporal, id)
-      return c.json(status ? { ...pipeline, status } : (pipeline as any), 200)
-    }
-  )
-
-  app.openapi(
-    createRoute({
-      operationId: 'pipelines.delete',
-      method: 'delete',
-      path: '/pipelines/{id}',
-      tags: ['Pipelines'],
-      summary: 'Delete pipeline',
-      requestParams: { path: PipelineIdParam },
-      responses: {
-        200: {
-          content: { 'application/json': { schema: DeleteResponseSchema } },
-          description: 'Deleted pipeline',
-        },
-        404: {
-          content: { 'application/json': { schema: ErrorSchema } },
-          description: 'Not found',
-        },
-        500: {
-          content: { 'application/json': { schema: ErrorSchema } },
-          description: 'Teardown or deletion failed',
-        },
-      },
-    }),
-    async (c) => {
-      const { id } = c.req.valid('param')
-
-      try {
-        await pipelineStore.get(id)
-      } catch {
-        return c.json({ error: `Pipeline ${id} not found` }, 404)
-      }
-
-      // Signal the workflow to run teardown, if it's running
-      try {
-        const handle = temporal.getHandle(id)
-        const desc = await handle.describe()
-        if (desc.status.name === 'RUNNING') {
-          await handle.signal('delete')
-          await handle.result()
-        }
-      } catch {
-        // Workflow not found or already finished — proceed to delete from store
-      }
-
-      await pipelineStore.delete(id)
-      return c.json({ id, deleted: true as const }, 200)
+      return c.json(withStatus(updated), 200)
     }
   )
 

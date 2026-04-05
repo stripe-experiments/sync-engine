@@ -437,6 +437,12 @@ export const Message = z
   .meta({ id: 'Message' })
 export type Message = z.infer<typeof Message>
 
+/**
+ * A single source input item (e.g. a webhook event payload).
+ * Generic at the protocol level; connectors narrow this via `Source<TConfig, TStreamState, TInput>`.
+ */
+export type SourceInput = unknown
+
 // MARK: - Per-command output types
 
 /** Output of spec(): the connector's specification, plus optional logs/traces. */
