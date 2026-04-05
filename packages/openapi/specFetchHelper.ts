@@ -17,6 +17,11 @@ const STRIPE_SPEC_CDN_BASE_URL =
 // Update this constant and bundled-spec.json together when bumping.
 export const BUNDLED_API_VERSION = '2026-03-25.dahlia'
 
+// Stripe API versions that this connector has been tested against and supports.
+// The bundled version is always first. Add older versions as they are confirmed.
+// Clients discover this list via the config JSON Schema's `api_version.enum`.
+export const SUPPORTED_API_VERSIONS = [BUNDLED_API_VERSION] as const
+
 export async function resolveOpenApiSpec(
   config: ResolveSpecConfig,
   fetch: typeof globalThis.fetch

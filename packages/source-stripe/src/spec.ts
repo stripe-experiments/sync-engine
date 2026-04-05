@@ -1,11 +1,15 @@
 import { z } from 'zod'
 import type { ConnectorSpecification } from '@stripe/sync-protocol'
+import { BUNDLED_API_VERSION, SUPPORTED_API_VERSIONS } from '@stripe/sync-openapi'
 
 export const configSchema = z.object({
   api_key: z.string().describe('Stripe API key (sk_test_... or sk_live_...)'),
   account_id: z.string().optional().describe('Stripe account ID (resolved from API if omitted)'),
   livemode: z.boolean().optional().describe('Whether this is a live mode sync'),
-  api_version: z.string().optional().describe('Stripe API version (e.g. 2025-04-30.basil)'),
+  api_version: z
+    .enum(SUPPORTED_API_VERSIONS)
+    .optional()
+    .describe(`Stripe API version (default: ${BUNDLED_API_VERSION})`),
   base_url: z
     .string()
     .url()
@@ -126,6 +130,6 @@ export type WebhookEvent = z.infer<typeof webhookEventSchema>
 
 export default {
   config: z.toJSONSchema(configSchema),
-  stream_state: z.toJSONSchema(streamStateSpec),
-  input: z.toJSONSchema(webhookEventSchema),
+  source_state_stream: z.toJSONSchema(streamStateSpec),
+  source_input: z.toJSONSchema(webhookEventSchema),
 } satisfies ConnectorSpecification
