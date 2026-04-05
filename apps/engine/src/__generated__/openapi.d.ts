@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pipeline_check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check connector connection
+         * @description Validates the source/destination config and tests connectivity. Streams NDJSON messages (connection_status, log, trace) tagged with _emitted_by.
+         */
+        post: operations["pipeline_check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pipeline_setup": {
         parameters: {
             query?: never;
@@ -32,7 +52,7 @@ export interface paths {
         put?: never;
         /**
          * Set up destination schema
-         * @description Creates destination tables and applies migrations. Safe to call multiple times.
+         * @description Creates destination tables and applies migrations. Streams NDJSON messages (control, log, trace) tagged with _emitted_by.
          */
         post: operations["pipeline_setup"];
         delete?: never;
@@ -52,29 +72,9 @@ export interface paths {
         put?: never;
         /**
          * Tear down destination schema
-         * @description Drops destination tables. Irreversible.
+         * @description Drops destination tables. Streams NDJSON messages (log, trace) tagged with _emitted_by.
          */
         post: operations["pipeline_teardown"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/pipeline_check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check connector connection
-         * @description Validates the source/destination config and tests connectivity.
-         */
-        get: operations["pipeline_check"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -637,6 +637,9 @@ export interface components {
         DiscoverOutput: components["schemas"]["CatalogMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
         DestinationOutput: components["schemas"]["StateMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["EofMessage"];
         SyncOutput: components["schemas"]["StateMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["EofMessage"] | components["schemas"]["ControlMessage"];
+        CheckOutput: components["schemas"]["ConnectionStatusMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
+        SetupOutput: components["schemas"]["ControlMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
+        TeardownOutput: components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
         SourceInput: {
             /** @constant */
             type: "stripe";
@@ -691,6 +694,40 @@ export interface operations {
             };
         };
     };
+    pipeline_check: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description JSON-encoded PipelineConfig */
+                "x-pipeline": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description NDJSON stream of check messages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": components["schemas"]["CheckOutput"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: unknown;
+                    };
+                };
+            };
+        };
+    };
     pipeline_setup: {
         parameters: {
             query?: never;
@@ -703,15 +740,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Setup complete */
+            /** @description NDJSON stream of setup messages */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/x-ndjson": components["schemas"]["SetupOutput"];
                 };
             };
             /** @description Invalid params */
@@ -739,56 +774,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Teardown complete */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid params */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: unknown;
-                    };
-                };
-            };
-        };
-    };
-    pipeline_check: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description JSON-encoded PipelineConfig */
-                "x-pipeline": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Connection check result */
+            /** @description NDJSON stream of teardown messages */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        source: {
-                            /** @enum {string} */
-                            status: "succeeded" | "failed";
-                            message?: string;
-                        };
-                        destination: {
-                            /** @enum {string} */
-                            status: "succeeded" | "failed";
-                            message?: string;
-                        };
-                    };
+                    "application/x-ndjson": components["schemas"]["TeardownOutput"];
                 };
             };
             /** @description Invalid params */

@@ -1,7 +1,6 @@
-import { applySelection, buildCatalog } from '@stripe/sync-engine'
 import type { ConfiguredCatalog } from '@stripe/sync-engine'
+import { applySelection, buildCatalog } from '@stripe/sync-engine'
 import { collectFirst } from '@stripe/sync-protocol'
-import type { Message } from '@stripe/sync-protocol'
 
 import type { ActivitiesContext } from './_shared.js'
 

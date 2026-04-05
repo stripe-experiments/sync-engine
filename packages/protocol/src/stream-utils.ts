@@ -47,9 +47,11 @@ export function channel<T>(): AsyncIterable<T> & {
   })
 }
 
-/** Merge multiple async iterables, yielding whichever produces next. */
-export async function* merge<T>(...iterables: AsyncIterable<T>[]): AsyncIterable<T> {
-  const iterators = iterables.map((it) => it[Symbol.asyncIterator]())
+/** Merge multiple async iterables, yielding whichever produces next. Falsy entries are ignored. */
+export async function* merge<T>(
+  ...iterables: (AsyncIterable<T> | false | null | undefined)[]
+): AsyncIterable<T> {
+  const iterators = iterables.filter(Boolean).map((it) => it![Symbol.asyncIterator]())
   const pending = new Map<number, Promise<{ index: number; result: IteratorResult<T> }>>()
 
   for (const [i, iter] of iterators.entries()) {

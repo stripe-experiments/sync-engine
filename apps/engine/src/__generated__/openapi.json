@@ -3,7 +3,7 @@
   "info": {
     "title": "Stripe Sync Engine",
     "version": "1.0.0",
-    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /pipeline_setup | Set up destination schema |\n| POST | /pipeline_teardown | Tear down destination schema |\n| GET | /pipeline_check | Check connector connection |\n| POST | /source_discover | Discover available streams |\n| POST | /pipeline_read | Read records from source |\n| POST | /pipeline_write | Write records to destination |\n| POST | /pipeline_sync | Run sync pipeline (read → write) |\n| GET | /meta/sources | List available source connectors |\n| GET | /meta/sources/{type} | Get source connector spec |\n| GET | /meta/destinations | List available destination connectors |\n| GET | /meta/destinations/{type} | Get destination connector spec |"
+    "description": "Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| POST | /pipeline_check | Check connector connection |\n| POST | /pipeline_setup | Set up destination schema |\n| POST | /pipeline_teardown | Tear down destination schema |\n| POST | /source_discover | Discover available streams |\n| POST | /pipeline_read | Read records from source |\n| POST | /pipeline_write | Write records to destination |\n| POST | /pipeline_sync | Run sync pipeline (read → write) |\n| GET | /meta/sources | List available source connectors |\n| GET | /meta/sources/{type} | Get source connector spec |\n| GET | /meta/destinations | List available destination connectors |\n| GET | /meta/destinations/{type} | Get destination connector spec |"
   },
   "paths": {
     "/health": {
@@ -37,14 +37,14 @@
         }
       }
     },
-    "/pipeline_setup": {
+    "/pipeline_check": {
       "post": {
-        "operationId": "pipeline_setup",
+        "operationId": "pipeline_check",
         "tags": [
           "Stateless Sync API"
         ],
-        "summary": "Set up destination schema",
-        "description": "Creates destination tables and applies migrations. Safe to call multiple times.",
+        "summary": "Check connector connection",
+        "description": "Validates the source/destination config and tests connectivity. Streams NDJSON messages (connection_status, log, trace) tagged with _emitted_by.",
         "parameters": [
           {
             "in": "header",
@@ -52,7 +52,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -62,15 +62,65 @@
         ],
         "responses": {
           "200": {
-            "description": "Setup complete",
+            "description": "NDJSON stream of check messages",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckOutput"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid params",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "error": {}
                   },
-                  "additionalProperties": {}
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pipeline_setup": {
+      "post": {
+        "operationId": "pipeline_setup",
+        "tags": [
+          "Stateless Sync API"
+        ],
+        "summary": "Set up destination schema",
+        "description": "Creates destination tables and applies migrations. Streams NDJSON messages (control, log, trace) tagged with _emitted_by.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-pipeline",
+            "required": true,
+            "description": "JSON-encoded PipelineConfig",
+            "content": {
+              "[object Object]": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineConfig"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NDJSON stream of setup messages",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupOutput"
                 }
               }
             }
@@ -102,7 +152,7 @@
           "Stateless Sync API"
         ],
         "summary": "Tear down destination schema",
-        "description": "Drops destination tables. Irreversible.",
+        "description": "Drops destination tables. Streams NDJSON messages (log, trace) tagged with _emitted_by.",
         "parameters": [
           {
             "in": "header",
@@ -110,54 +160,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PipelineConfig"
-                }
-              }
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Teardown complete"
-          },
-          "400": {
-            "description": "Invalid params",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {}
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/pipeline_check": {
-      "get": {
-        "operationId": "pipeline_check",
-        "tags": [
-          "Stateless Sync API"
-        ],
-        "summary": "Check connector connection",
-        "description": "Validates the source/destination config and tests connectivity.",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-pipeline",
-            "required": true,
-            "description": "JSON-encoded PipelineConfig",
-            "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -167,56 +170,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Connection check result",
+            "description": "NDJSON stream of teardown messages",
             "content": {
-              "application/json": {
+              "application/x-ndjson": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "source": {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed"
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "status"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "destination": {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed"
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "status"
-                      ],
-                      "additionalProperties": false
-                    }
-                  },
-                  "required": [
-                    "source",
-                    "destination"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/TeardownOutput"
                 }
               }
             }
@@ -256,7 +214,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -333,7 +291,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -346,7 +304,7 @@
             "required": false,
             "description": "JSON-encoded per-stream cursor state",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "type": "object",
                   "propertyNames": {
@@ -414,7 +372,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -501,7 +459,7 @@
             "required": true,
             "description": "JSON-encoded PipelineConfig",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineConfig"
                 }
@@ -514,7 +472,7 @@
             "required": false,
             "description": "JSON-encoded per-stream cursor state",
             "content": {
-              "application/json": {
+              "[object Object]": {
                 "schema": {
                   "type": "object",
                   "propertyNames": {
@@ -1808,6 +1766,68 @@
             "log": "#/components/schemas/LogMessage",
             "eof": "#/components/schemas/EofMessage",
             "control": "#/components/schemas/ControlMessage"
+          }
+        }
+      },
+      "CheckOutput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ConnectionStatusMessage"
+          },
+          {
+            "$ref": "#/components/schemas/LogMessage"
+          },
+          {
+            "$ref": "#/components/schemas/TraceMessage"
+          }
+        ],
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "connection_status": "#/components/schemas/ConnectionStatusMessage",
+            "log": "#/components/schemas/LogMessage",
+            "trace": "#/components/schemas/TraceMessage"
+          }
+        }
+      },
+      "SetupOutput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ControlMessage"
+          },
+          {
+            "$ref": "#/components/schemas/LogMessage"
+          },
+          {
+            "$ref": "#/components/schemas/TraceMessage"
+          }
+        ],
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "control": "#/components/schemas/ControlMessage",
+            "log": "#/components/schemas/LogMessage",
+            "trace": "#/components/schemas/TraceMessage"
+          }
+        }
+      },
+      "TeardownOutput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/LogMessage"
+          },
+          {
+            "$ref": "#/components/schemas/TraceMessage"
+          }
+        ],
+        "type": "object",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "log": "#/components/schemas/LogMessage",
+            "trace": "#/components/schemas/TraceMessage"
           }
         }
       },

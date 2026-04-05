@@ -1,35 +1,32 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { z } from 'zod'
+import type {
+  CheckOutput,
+  Destination,
+  DiscoverOutput,
+  Source,
+  SpecOutput
+} from '@stripe/sync-protocol'
 import {
-  RecordMessage,
-  StateMessage,
   CatalogMessage,
-  LogMessage,
-  TraceMessage,
+  ConfiguredCatalog,
+  ConfiguredStream,
+  ConnectionStatusPayload,
+  ConnectorSpecification,
   DestinationInput,
   DestinationOutput,
+  LogMessage,
   Message,
-  Stream,
-  ConfiguredStream,
-  ConfiguredCatalog,
-  ConnectorSpecification,
-  ConnectionStatusPayload,
   PipelineConfig,
+  RecordMessage,
+  StateMessage,
+  Stream,
+  TraceMessage,
 } from '@stripe/sync-protocol'
-import type {
-  Source,
-  Destination,
-  DestinationInput as DestInput,
-  SpecOutput,
-  CheckOutput,
-  DiscoverOutput,
-  SetupOutput,
-  TeardownOutput,
-} from '@stripe/sync-protocol'
-import { createEngine, buildCatalog } from './engine.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
+import { destinationTest } from './destination-test.js'
+import { createEngine } from './engine.js'
 import type { ConnectorResolver } from './resolver.js'
 import { sourceTest } from './source-test.js'
-import { destinationTest } from './destination-test.js'
 const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
