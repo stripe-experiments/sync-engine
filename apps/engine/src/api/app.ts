@@ -333,7 +333,9 @@ export async function createApp(resolver: ConnectorResolver) {
   app.openapi(sourceDiscoverRoute, (c) => {
     const source = c.req.valid('header')['x-source']
     const context = { path: '/source_discover', sourceName: source.type }
-    return ndjsonResponse(logApiStream('Engine API /source_discover', engine.source_discover(source), context))
+    return ndjsonResponse(
+      logApiStream('Engine API /source_discover', engine.source_discover(source), context)
+    )
   })
 
   const pipelineReadRoute = createRoute({

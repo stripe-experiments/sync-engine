@@ -17,6 +17,7 @@
 
 - The pipeline state machine.... maintain status
 - more resilient engine, not crash and do something else to recover from source / destination issues?
+- making sure the google sheet thing works
 
 ---
 
