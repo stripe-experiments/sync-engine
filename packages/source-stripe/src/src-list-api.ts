@@ -181,9 +181,14 @@ async function* mergeAsync<T>(
 
 // MARK: - Account created timestamp
 
+// Fallback for accounts that don't expose `created` (e.g. platform accounts
+// in test mode).  Stripe launched in 2011, so this is the earliest a real
+// account could have been created.
+const STRIPE_LAUNCH_TIMESTAMP = Math.floor(new Date('2011-01-01T00:00:00Z').getTime() / 1000)
+
 async function getAccountCreatedTimestamp(client: StripeClient): Promise<number> {
   const account = await client.getAccount()
-  return account.created ?? 1293840000
+  return account.created ?? STRIPE_LAUNCH_TIMESTAMP
 }
 
 // MARK: - Segment creation
