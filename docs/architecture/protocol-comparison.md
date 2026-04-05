@@ -33,15 +33,16 @@ Message-by-message comparison of our protocol (`packages/protocol`) against the
 
 | Field        | Airbyte                           | Sync Engine                       | Notes                                                        |
 | ------------ | --------------------------------- | --------------------------------- | ------------------------------------------------------------ |
-| `state_type` | `enum(LEGACY, STREAM, GLOBAL)`    | —                                 | We only have per-stream state                                |
-| `stream`     | `AirbyteStreamState` object       | `string` (stream name)            | Airbyte wraps in `{stream_descriptor, stream_state}`         |
-| `global`     | `AirbyteGlobalState` object       | —                                 | We don't support global state                                |
+| `state_type` | `enum(LEGACY, STREAM, GLOBAL)`    | `enum('stream', 'global')`        | We skip LEGACY; old messages default to `stream` via Zod     |
+| `stream`     | `AirbyteStreamState` object       | `string` (stream name)            | Only present on `stream`-type messages                       |
+| `global`     | `AirbyteGlobalState` object       | `GlobalStatePayload`              | Sync-wide cursor (e.g. `events_cursor`)                      |
 | `data`       | `object` (deprecated legacy blob) | `unknown` (per-stream checkpoint) | Our `data` is the per-stream checkpoint, not the legacy blob |
 
 **Key difference:** Airbyte supports three state modes (legacy, per-stream, global).
-We only support per-stream state — the `stream` field is a plain string name and
-`data` is the opaque checkpoint. This is simpler but means we can't express
-"all streams share one cursor" (global) without workarounds.
+We skip LEGACY and support both STREAM and GLOBAL via a `state_type` discriminated
+union. Old messages without `state_type` are backward-compatibly parsed as `stream`
+type. The `SyncState` aggregate shape (`{ streams, global }`) replaces the flat
+`Record<string, unknown>` used previously.
 
 ### CATALOG
 
@@ -249,7 +250,7 @@ outside the connector protocol.
 ## Summary of Divergences
 
 1. **No namespace** — we encode it in the stream name.
-2. **Per-stream state only** — no global or legacy state modes.
+2. **No legacy state** — we support `stream` and `global` modes but skip `LEGACY`.
 3. **ISO timestamps** — records use ISO 8601 strings, not epoch millis.
 4. **Richer failure types** — `transient_error` and `auth_error` added.
 5. **EOF message** — explicit stream termination reason (no Airbyte equivalent).
