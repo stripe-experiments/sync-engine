@@ -3,7 +3,7 @@
   "info": {
     "title": "Stripe Sync Service",
     "version": "1.0.0",
-    "description": "Stripe Sync Service — manage pipelines and webhook ingress.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| GET | /pipelines | List pipelines |\n| POST | /pipelines | Create pipeline |\n| GET | /pipelines/{id} | Retrieve pipeline |\n| PATCH | /pipelines/{id} | Update pipeline |\n| POST | /webhooks/{pipeline_id} | Ingest a Stripe webhook event |"
+    "description": "Stripe Sync Service — manage pipelines and webhook ingress.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| GET | /pipelines | List pipelines |\n| POST | /pipelines | Create pipeline |\n| GET | /pipelines/{id} | Retrieve pipeline |\n| PATCH | /pipelines/{id} | Update pipeline |\n| DELETE | /pipelines/{id} | Delete pipeline |\n| POST | /webhooks/{pipeline_id} | Ingest a Stripe webhook event |"
   },
   "paths": {
     "/health": {
@@ -625,6 +625,67 @@
           },
           "409": {
             "description": "Invalid status transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "pipelines.delete",
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Delete pipeline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "example": "pipe_abc123"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted pipeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "deleted"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {

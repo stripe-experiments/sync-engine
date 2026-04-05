@@ -286,6 +286,50 @@ export function createApp(options: AppOptions) {
     }
   )
 
+  app.openapi(
+    createRoute({
+      operationId: 'pipelines.delete',
+      method: 'delete',
+      path: '/pipelines/{id}',
+      tags: ['Pipelines'],
+      summary: 'Delete pipeline',
+      requestParams: { path: PipelineIdParam },
+      responses: {
+        200: {
+          content: {
+            'application/json': {
+              schema: z.object({ id: z.string(), deleted: z.literal(true) }),
+            },
+          },
+          description: 'Deleted pipeline',
+        },
+        404: {
+          content: { 'application/json': { schema: ErrorSchema } },
+          description: 'Not found',
+        },
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid('param')
+
+      try {
+        await pipelineStore.get(id)
+      } catch {
+        return c.json({ error: `Pipeline ${id} not found` }, 404)
+      }
+
+      // Best-effort: tell the workflow to tear down
+      try {
+        await temporal.getHandle(id).signal('desired_status', 'deleted')
+      } catch {
+        // Workflow may not be running — proceed to delete from store
+      }
+
+      await pipelineStore.delete(id)
+      return c.json({ id, deleted: true as const }, 200)
+    }
+  )
+
   // MARK: - Webhook ingress
 
   const WebhookParam = z.object({

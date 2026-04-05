@@ -50,7 +50,8 @@ export interface paths {
         get: operations["pipelines.get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete pipeline */
+        delete: operations["pipelines.delete"];
         options?: never;
         head?: never;
         /** Update pipeline */
@@ -397,6 +398,43 @@ export interface operations {
                          * @enum {string}
                          */
                         status: "setup" | "backfill" | "ready" | "paused" | "teardown" | "error";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: unknown;
+                    };
+                };
+            };
+        };
+    };
+    "pipelines.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted pipeline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @constant */
+                        deleted: true;
                     };
                 };
             };
