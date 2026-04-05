@@ -1,5 +1,4 @@
 import { createActivitiesContext } from './_shared.js'
-import { createGetDesiredStatusActivity } from './get-desired-status.js'
 import { createUpdateWorkflowStatusActivity } from './update-workflow-status.js'
 import { createDiscoverCatalogActivity } from './discover-catalog.js'
 import { createReadGoogleSheetsIntoQueueActivity } from './read-google-sheets-into-queue.js'
@@ -25,7 +24,6 @@ export function createActivities(opts: {
     readGoogleSheetsIntoQueue: createReadGoogleSheetsIntoQueueActivity(context),
     writeGoogleSheetsFromQueue: createWriteGoogleSheetsFromQueueActivity(context),
     teardown: createTeardownActivity(context),
-    getDesiredStatus: createGetDesiredStatusActivity(context),
     updateWorkflowStatus: createUpdateWorkflowStatusActivity(context),
   }
 }

@@ -157,7 +157,7 @@ export function createApp(options: AppOptions) {
       await temporal.start(workflowTypeForPipeline(pipeline), {
         workflowId: id,
         taskQueue,
-        args: [id],
+        args: [id, { desiredStatus: pipeline.desired_status }],
       })
       return c.json(withStatus(pipeline), 201)
     }
@@ -283,11 +283,13 @@ export function createApp(options: AppOptions) {
 
       const updated = await pipelineStore.update(id, storePatch)
 
-      // Best-effort: notify the workflow that pipeline was updated
-      try {
-        await temporal.getHandle(id).signal('update')
-      } catch {
-        // Workflow may not be running — store is updated, that's fine
+      // Best-effort: notify the workflow of desired_status change
+      if (patch.desired_status) {
+        try {
+          await temporal.getHandle(id).signal('desired_status', patch.desired_status)
+        } catch {
+          // Workflow may not be running — store is updated, that's fine
+        }
       }
 
       return c.json(withStatus(updated), 200)

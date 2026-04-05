@@ -138,7 +138,6 @@ function stubActivities(): SyncActivities {
       rowAssignments: {},
     }),
     teardown: async () => {},
-    getDesiredStatus: async () => 'active',
     updateWorkflowStatus: async () => {},
   }
 }

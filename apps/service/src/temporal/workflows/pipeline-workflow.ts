@@ -1,12 +1,11 @@
 import { condition, continueAsNew, setHandler } from '@temporalio/workflow'
 
 import {
-  getDesiredStatus,
+  desiredStatusSignal,
   setup,
   stripeEventSignal,
   syncImmediate,
   teardown,
-  updateSignal,
   updateWorkflowStatus,
 } from './_shared.js'
 import { CONTINUE_AS_NEW_THRESHOLD, EVENT_BATCH_SIZE } from '../../lib/utils.js'
@@ -15,6 +14,7 @@ import type { SourceInput, SourceState as SyncState } from '@stripe/sync-protoco
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface PipelineWorkflowOpts {
+  desiredStatus?: string
   state?: SyncState
   inputQueue?: SourceInput[]
 }
@@ -23,8 +23,7 @@ export async function pipelineWorkflow(
   pipelineId: string,
   opts?: PipelineWorkflowOpts
 ): Promise<void> {
-  let desiredStatus = 'active'
-  let updated = false
+  let desiredStatus = opts?.desiredStatus ?? 'active'
   const inputQueue: unknown[] = [...(opts?.inputQueue ?? [])]
   let iteration = 0
   let syncState: SyncState = opts?.state ?? { streams: {}, global: {} }
@@ -33,19 +32,14 @@ export async function pipelineWorkflow(
   setHandler(stripeEventSignal, (event: unknown) => {
     inputQueue.push(event)
   })
-  setHandler(updateSignal, () => {
-    updated = true
+  setHandler(desiredStatusSignal, (status: string) => {
+    desiredStatus = status
   })
-
-  async function refreshDesiredStatus() {
-    if (!updated) return
-    updated = false
-    desiredStatus = await getDesiredStatus(pipelineId)
-  }
 
   async function maybeContinueAsNew() {
     if (++iteration >= CONTINUE_AS_NEW_THRESHOLD) {
       await continueAsNew<typeof pipelineWorkflow>(pipelineId, {
+        desiredStatus,
         state: syncState,
         inputQueue: inputQueue.length > 0 ? [...inputQueue] : undefined,
       })
@@ -55,7 +49,6 @@ export async function pipelineWorkflow(
   // Setup
   await setup(pipelineId)
   await updateWorkflowStatus(pipelineId, 'backfill')
-  await refreshDesiredStatus()
 
   if (desiredStatus === 'deleted') {
     await updateWorkflowStatus(pipelineId, 'teardown')
@@ -64,15 +57,9 @@ export async function pipelineWorkflow(
   }
 
   while (desiredStatus !== 'deleted') {
-    await refreshDesiredStatus()
-
-    if (desiredStatus === 'deleted') {
-      break
-    }
-
     if (desiredStatus === 'paused') {
       await updateWorkflowStatus(pipelineId, 'paused')
-      await condition(() => updated)
+      await condition(() => desiredStatus !== 'paused')
       continue
     }
 
@@ -85,7 +72,7 @@ export async function pipelineWorkflow(
 
     if (readComplete && inputQueue.length === 0) {
       // Idle — wait up to one week; timeout means recon is due.
-      const timedOut = !(await condition(() => updated || inputQueue.length > 0, ONE_WEEK_MS))
+      const timedOut = !(await condition(() => desiredStatus !== 'active' || inputQueue.length > 0, ONE_WEEK_MS))
       if (timedOut) readComplete = false
       continue
     }

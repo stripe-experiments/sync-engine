@@ -6,8 +6,8 @@ import { retryPolicy } from '../../lib/utils.js'
 export type RowIndex = Record<string, Record<string, number>>
 
 export const stripeEventSignal = defineSignal<[unknown]>('stripe_event')
-/** Generic "pipeline was updated" signal — workflow re-reads config from store. */
-export const updateSignal = defineSignal('update')
+/** Carries the new desired_status value — workflow updates its local state directly. */
+export const desiredStatusSignal = defineSignal<[string]>('desired_status')
 
 export const { setup, teardown } = proxyActivities<SyncActivities>({
   startToCloseTimeout: '2m',
@@ -27,7 +27,7 @@ export const { discoverCatalog, readGoogleSheetsIntoQueue, writeGoogleSheetsFrom
     retry: retryPolicy,
   })
 
-export const { getDesiredStatus, updateWorkflowStatus } = proxyActivities<SyncActivities>({
+export const { updateWorkflowStatus } = proxyActivities<SyncActivities>({
   startToCloseTimeout: '30s',
   retry: retryPolicy,
 })

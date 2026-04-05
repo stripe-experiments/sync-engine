@@ -1,12 +1,13 @@
 import { condition, continueAsNew, setHandler } from '@temporalio/workflow'
 
-import { getDesiredStatus, syncImmediate, updateSignal, updateWorkflowStatus } from './_shared.js'
+import { desiredStatusSignal, syncImmediate, updateWorkflowStatus } from './_shared.js'
 import type { SourceState as SyncState } from '@stripe/sync-protocol'
 import { CONTINUE_AS_NEW_THRESHOLD } from '../../lib/utils.js'
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface BackfillPipelineWorkflowOpts {
+  desiredStatus?: string
   state?: SyncState
 }
 
@@ -14,44 +15,33 @@ export async function backfillPipelineWorkflow(
   pipelineId: string,
   opts?: BackfillPipelineWorkflowOpts
 ): Promise<void> {
-  let desiredStatus = 'active'
-  let updated = false
+  let desiredStatus = opts?.desiredStatus ?? 'active'
   let iteration = 0
   let syncState: SyncState = opts?.state ?? { streams: {}, global: {} }
   let backfillComplete = false
 
-  setHandler(updateSignal, () => {
-    updated = true
+  setHandler(desiredStatusSignal, (status: string) => {
+    desiredStatus = status
   })
-
-  async function refreshDesiredStatus() {
-    if (!updated) return
-    updated = false
-    desiredStatus = await getDesiredStatus(pipelineId)
-  }
 
   async function maybeContinueAsNew() {
     if (++iteration >= CONTINUE_AS_NEW_THRESHOLD) {
-      await continueAsNew<typeof backfillPipelineWorkflow>(pipelineId, { state: syncState })
+      await continueAsNew<typeof backfillPipelineWorkflow>(pipelineId, { desiredStatus, state: syncState })
     }
   }
 
   await updateWorkflowStatus(pipelineId, 'backfill')
 
   while (desiredStatus !== 'deleted') {
-    await refreshDesiredStatus()
-
-    if (desiredStatus === 'deleted') break
-
     if (desiredStatus === 'paused') {
       await updateWorkflowStatus(pipelineId, 'paused')
-      await condition(() => updated)
+      await condition(() => desiredStatus !== 'paused')
       continue
     }
 
     if (backfillComplete) {
       await updateWorkflowStatus(pipelineId, 'ready')
-      const timedOut = !(await condition(() => updated, ONE_WEEK_MS))
+      const timedOut = !(await condition(() => desiredStatus !== 'active', ONE_WEEK_MS))
       if (timedOut) backfillComplete = false
       continue
     }

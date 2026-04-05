@@ -16,9 +16,6 @@ const noErrors: RunResult = { errors: [], state: emptyState }
 // Workflows now receive only the pipelineId string
 const testPipelineId = 'test_pipe'
 
-// Mutable desired status — tests change this and signal 'update' to trigger transitions
-let _desiredStatus = 'active'
-
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
   return {
     discoverCatalog: async () => ({ streams: [] }),
@@ -32,16 +29,14 @@ function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities
       rowAssignments: {},
     }),
     teardown: async () => {},
-    getDesiredStatus: async () => _desiredStatus,
     updateWorkflowStatus: async () => {},
     ...overrides,
   }
 }
 
-/** Set desired status and signal the workflow to pick it up. */
-async function signalDelete(handle: { signal: (name: string) => Promise<void> }) {
-  _desiredStatus = 'deleted'
-  await handle.signal('update')
+/** Signal the workflow to delete. */
+async function signalDelete(handle: { signal: (name: string, arg: string) => Promise<void> }) {
+  await handle.signal('desired_status', 'deleted')
 }
 
 let testEnv: TestWorkflowEnvironment
@@ -158,15 +153,13 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
     })
   })
 
-  it('pauses and resumes via update signal', async () => {
-    let currentDesired = 'active'
+  it('pauses and resumes via desired_status signal', async () => {
     const statusWrites: string[] = []
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
       taskQueue: 'test-queue-3',
       workflowsPath,
       activities: stubActivities({
-        getDesiredStatus: async () => currentDesired,
         updateWorkflowStatus: async (_id: string, status: string) => {
           statusWrites.push(status)
         },
@@ -181,17 +174,14 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       })
 
       await new Promise((r) => setTimeout(r, 1000))
-      currentDesired = 'paused'
-      await handle.signal('update')
+      await handle.signal('desired_status', 'paused')
       await new Promise((r) => setTimeout(r, 500))
 
       expect(statusWrites).toContain('paused')
 
-      currentDesired = 'active'
-      await handle.signal('update')
+      await handle.signal('desired_status', 'active')
       await new Promise((r) => setTimeout(r, 500))
-      currentDesired = 'deleted'
-      await handle.signal('update')
+      await handle.signal('desired_status', 'deleted')
       await handle.result()
     })
   })
