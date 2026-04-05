@@ -774,6 +774,71 @@ describe('error handling', () => {
 })
 
 // ---------------------------------------------------------------------------
+// POST /source_discover
+// ---------------------------------------------------------------------------
+
+describe('POST /source_discover', () => {
+  it('streams a catalog message from a working source', async () => {
+    const app = await createApp(resolver)
+    const source = JSON.stringify({
+      type: 'test',
+      test: { streams: { customers: {}, products: {} } },
+    })
+
+    const res = await app.request('/source_discover', {
+      method: 'POST',
+      headers: { 'X-Source': source },
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/x-ndjson')
+    const events = await readNdjson<Record<string, unknown>>(res)
+    const catalogs = events.filter((e) => e.type === 'catalog')
+    expect(catalogs).toHaveLength(1)
+    const catalog = (catalogs[0] as any).catalog
+    const streamNames = catalog.streams.map((s: any) => s.name)
+    expect(streamNames).toContain('customers')
+    expect(streamNames).toContain('products')
+  })
+
+  it('emits a trace error message when discover throws instead of silently closing', async () => {
+    const failingSource = {
+      ...sourceTest,
+      async *discover(): AsyncIterable<import('@stripe/sync-protocol').DiscoverOutput> {
+        throw new Error('Could not resolve Stripe OpenAPI spec: network unreachable')
+      },
+    }
+    const failingResolver: ConnectorResolver = {
+      resolveSource: async () => failingSource,
+      resolveDestination: resolver.resolveDestination,
+      sources: resolver.sources,
+      destinations: resolver.destinations,
+    }
+    const app = await createApp(failingResolver)
+
+    const res = await app.request('/source_discover', {
+      method: 'POST',
+      headers: { 'X-Source': JSON.stringify({ type: 'test', test: {} }) },
+    })
+
+    expect(res.status).toBe(200)
+    const events = await readNdjson<Record<string, unknown>>(res)
+    const traces = events.filter((e) => e.type === 'trace')
+    expect(traces).toHaveLength(1)
+    const trace = (traces[0] as any).trace
+    expect(trace.trace_type).toBe('error')
+    expect(trace.error.failure_type).toBe('system_error')
+    expect(trace.error.message).toContain('network unreachable')
+  })
+
+  it('returns 400 when X-Source header is missing', async () => {
+    const app = await createApp(resolver)
+    const res = await app.request('/source_discover', { method: 'POST' })
+    expect(res.status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // POST /internal/query
 // ---------------------------------------------------------------------------
 
