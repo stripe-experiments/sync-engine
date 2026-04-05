@@ -159,7 +159,7 @@ export function createWriteGoogleSheetsFromQueueActivity(context: ActivitiesCont
       },
       input
     )) {
-      const error = collectError(raw as unknown as Record<string, unknown>)
+      const error = collectError(raw)
       if (error) {
         errors.push(error)
       } else if (raw.type === 'state') {
