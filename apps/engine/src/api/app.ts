@@ -147,7 +147,17 @@ export async function createApp(resolver: ConnectorResolver) {
       param: { content: { 'application/json': {} } },
     })
 
+  const xSourceHeader = z
+    .string()
+    .transform(jsonParse)
+    .pipe(z.object({ type: z.string() }).catchall(z.unknown()))
+    .meta({
+      description: 'JSON-encoded source config ({ type, ...config })',
+      param: { content: { 'application/json': {} } },
+    })
+
   const pipelineHeaders = z.object({ 'x-pipeline': xPipelineHeader })
+  const sourceHeaders = z.object({ 'x-source': xSourceHeader })
   const allSyncHeaders = z.object({
     'x-pipeline': xPipelineHeader,
     'x-state': xStateHeader,
@@ -290,7 +300,7 @@ export async function createApp(resolver: ConnectorResolver) {
     tags: ['Stateless Sync API'],
     summary: 'Discover available streams',
     description: 'Streams NDJSON messages (catalog, logs, traces) for the configured source.',
-    requestParams: { header: pipelineHeaders },
+    requestParams: { header: sourceHeaders },
     responses: {
       200: {
         description: 'NDJSON stream of discover messages',
@@ -300,8 +310,8 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(sourceDiscoverRoute, (c) => {
-    const pipeline = c.req.valid('header')['x-pipeline']
-    return ndjsonResponse(engine.source_discover(pipeline.source))
+    const source = c.req.valid('header')['x-source']
+    return ndjsonResponse(engine.source_discover(source))
   })
 
   const pipelineReadRoute = createRoute({

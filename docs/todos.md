@@ -5,8 +5,16 @@
   - use the control message for persisting catalog updates in setiup
 - /pipeline_sync
   - is activity plain functions
+- call pipeline_sync from webhook
+
+---
+
+- /discover endpoint passing stripe api version
+- how to return a list of all stripe api versions
 
 - /check (implmeent or remove for now)
+
+- The pipeline state machine.... maintain status
 
 ---
 
