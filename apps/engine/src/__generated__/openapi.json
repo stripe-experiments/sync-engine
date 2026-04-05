@@ -24,6 +24,15 @@
                     "ok": {
                       "type": "boolean",
                       "const": true
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "commit_url": {
+                      "type": "string"
+                    },
+                    "build_date": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -792,21 +801,47 @@
             "const": "state"
           },
           "state": {
-            "type": "object",
-            "properties": {
-              "stream": {
-                "type": "string",
-                "description": "Stream being checkpointed."
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "state_type": {
+                    "default": "stream",
+                    "type": "string",
+                    "const": "stream"
+                  },
+                  "stream": {
+                    "type": "string",
+                    "description": "Stream being checkpointed."
+                  },
+                  "data": {
+                    "description": "Opaque checkpoint data — only the source understands its contents. The orchestrator persists it keyed by stream and passes it back on resume."
+                  }
+                },
+                "required": [
+                  "stream",
+                  "data"
+                ],
+                "description": "Per-stream checkpoint for resumable syncs."
               },
-              "data": {
-                "description": "Opaque checkpoint data — only the source understands its contents. The orchestrator persists it keyed by stream and passes it back on resume."
+              {
+                "type": "object",
+                "properties": {
+                  "state_type": {
+                    "type": "string",
+                    "const": "global"
+                  },
+                  "data": {
+                    "description": "Sync-wide state shared across all streams (e.g. a global events cursor)."
+                  }
+                },
+                "required": [
+                  "state_type",
+                  "data"
+                ],
+                "description": "Sync-wide checkpoint shared across all streams."
               }
-            },
-            "required": [
-              "stream",
-              "data"
-            ],
-            "description": "Per-stream checkpoint for resumable syncs."
+            ]
           }
         },
         "required": [
@@ -1118,7 +1153,7 @@
                 "description": "JSON Schema for the connector's configuration object."
               },
               "stream_state": {
-                "description": "JSON Schema for per-stream state (cursor/checkpoint shape).",
+                "description": "JSON Schema for per-stream state (cursor/checkpoint shape). See also SyncState.global for sync-wide cursors.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"

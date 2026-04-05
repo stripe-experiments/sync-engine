@@ -274,11 +274,20 @@ export interface components {
              * @enum {string}
              */
             type: "state";
-            /** @description Per-stream checkpoint for resumable syncs. */
             state: {
+                /**
+                 * @default stream
+                 * @constant
+                 */
+                state_type: "stream";
                 /** @description Stream being checkpointed. */
                 stream: string;
                 /** @description Opaque checkpoint data — only the source understands its contents. The orchestrator persists it keyed by stream and passes it back on resume. */
+                data: unknown;
+            } | {
+                /** @constant */
+                state_type: "global";
+                /** @description Sync-wide state shared across all streams (e.g. a global events cursor). */
                 data: unknown;
             };
         };
@@ -415,7 +424,7 @@ export interface components {
                 config: {
                     [key: string]: unknown;
                 };
-                /** @description JSON Schema for per-stream state (cursor/checkpoint shape). */
+                /** @description JSON Schema for per-stream state (cursor/checkpoint shape). See also SyncState.global for sync-wide cursors. */
                 stream_state?: {
                     [key: string]: unknown;
                 };
@@ -689,6 +698,9 @@ export interface operations {
                     "application/json": {
                         /** @constant */
                         ok: true;
+                        commit?: string;
+                        commit_url?: string;
+                        build_date?: string;
                     };
                 };
             };
