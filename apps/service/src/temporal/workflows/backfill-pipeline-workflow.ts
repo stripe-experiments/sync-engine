@@ -61,10 +61,7 @@ export async function backfillPipelineWorkflow(
       state_limit: 100,
       time_limit: 10,
     })
-    syncState = {
-      streams: { ...syncState.streams, ...result.state.streams },
-      global: { ...syncState.global, ...result.state.global },
-    }
+    syncState = result.state
     backfillComplete = result.eof?.reason === 'complete'
     await maybeContinueAsNew()
   }

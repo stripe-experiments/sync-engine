@@ -44,7 +44,10 @@ export function createReadGoogleSheetsIntoQueueActivity(context: ActivitiesConte
     const input = inputArr?.length ? asIterable(inputArr) : undefined
 
     const queued: Message[] = []
-    const state: import('@stripe/sync-engine').SyncState = { streams: {}, global: {} }
+    const state: import('@stripe/sync-engine').SyncState = {
+      streams: { ...readOpts.state?.streams },
+      global: { ...readOpts.state?.global },
+    }
     const errors: RunResult['errors'] = []
     let seen = 0
 

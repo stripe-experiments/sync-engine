@@ -128,10 +128,7 @@ export async function googleSheetPipelineWorkflow(
           catalog,
         })
         if (count > 0) pendingWrites = true
-        readState = {
-          streams: { ...readState.streams, ...nextReadState.streams },
-          global: { ...readState.global, ...nextReadState.global },
-        }
+        readState = nextReadState
         readComplete = deepEqual(readState, before)
         await tickIteration()
         continue
@@ -152,12 +149,10 @@ export async function googleSheetPipelineWorkflow(
           maxBatch: 50,
           rowIndex,
           catalog,
+          state: sourceState,
         })
         pendingWrites = result.written > 0
-        sourceState = {
-          streams: { ...sourceState.streams, ...result.state.streams },
-          global: { ...sourceState.global, ...result.state.global },
-        }
+        sourceState = result.state
         for (const [stream, assignments] of Object.entries(result.rowAssignments)) {
           rowIndex[stream] ??= {}
           Object.assign(rowIndex[stream], assignments)

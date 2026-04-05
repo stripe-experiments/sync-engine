@@ -127,7 +127,10 @@ export function collectError(message: Message): RunResult['errors'][number] | nu
   return null
 }
 
-export async function drainMessages(stream: AsyncIterable<Message>): Promise<{
+export async function drainMessages(
+  stream: AsyncIterable<Message>,
+  initialState?: SyncState
+): Promise<{
   errors: RunResult['errors']
   state: SyncState
   records: Message[]
@@ -136,7 +139,10 @@ export async function drainMessages(stream: AsyncIterable<Message>): Promise<{
   eof?: { reason: string }
 }> {
   const errors: RunResult['errors'] = []
-  const state: SyncState = { streams: {}, global: {} }
+  const state: SyncState = {
+    streams: { ...initialState?.streams },
+    global: { ...initialState?.global },
+  }
   const records: Message[] = []
   let sourceConfig: Record<string, unknown> | undefined
   let destConfig: Record<string, unknown> | undefined
