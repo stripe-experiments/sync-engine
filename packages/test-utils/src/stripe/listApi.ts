@@ -18,7 +18,9 @@ export async function assertStripeMockAvailable(
     headers: { Authorization: `Bearer ${DEFAULT_API_KEY}` },
   })
   if (!res.ok) {
-    throw new Error(`stripe-mock healthcheck failed (${res.status} ${res.statusText}) at ${url.toString()}`)
+    throw new Error(
+      `stripe-mock healthcheck failed (${res.status} ${res.statusText}) at ${url.toString()}`
+    )
   }
 }
 

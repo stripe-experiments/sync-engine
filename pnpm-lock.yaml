@@ -614,12 +614,18 @@ importers:
 
   packages/test-utils:
     dependencies:
+      '@hono/node-server':
+        specifier: ^1.19.11
+        version: 1.19.11(hono@4.12.8)
       '@stripe/sync-destination-postgres':
         specifier: workspace:*
         version: link:../destination-postgres
       '@stripe/sync-openapi':
         specifier: workspace:*
         version: link:../openapi
+      hono:
+        specifier: ^4.12.8
+        version: 4.12.8
       pg:
         specifier: ^8.16.3
         version: 8.16.3
@@ -7297,6 +7303,7 @@ snapshots:
       - '@aws-sdk/rds-signer'
       - '@swc/helpers'
       - bufferutil
+      - debug
       - encoding
       - esbuild
       - pg-native

@@ -1,5 +1,10 @@
 import pg from 'pg'
-import { DEFAULT_STORAGE_SCHEMA, ensureSchema, ensureObjectTable, upsertObjects } from '../db/storage.js'
+import {
+  DEFAULT_STORAGE_SCHEMA,
+  ensureSchema,
+  ensureObjectTable,
+  upsertObjects,
+} from '../db/storage.js'
 import { validateQueryAgainstOpenApi } from '../openapi/filters.js'
 import { resolveEndpointSet } from '../openapi/endpoints.js'
 import { startDockerPostgres18, type DockerPostgres18Handle } from '../postgres/dockerPostgres18.js'
@@ -48,7 +53,8 @@ export type SeedSummary = {
 
 export async function seedTestDb(options: SeedTestDbOptions = {}): Promise<SeedSummary> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
-  const stripeMockUrl = options.stripeMockUrl ?? process.env.STRIPE_MOCK_URL ?? DEFAULT_STRIPE_MOCK_URL
+  const stripeMockUrl =
+    options.stripeMockUrl ?? process.env.STRIPE_MOCK_URL ?? DEFAULT_STRIPE_MOCK_URL
   const schema = options.schema ?? DEFAULT_STORAGE_SCHEMA
   const count = options.count ?? options.limitPerEndpoint ?? 20
   const createdRange = resolveCreatedTimestampRange({
@@ -66,7 +72,9 @@ export async function seedTestDb(options: SeedTestDbOptions = {}): Promise<SeedS
     await assertStripeMockAvailable(stripeMockUrl, fetchImpl)
     stripeMockAvailable = true
   } catch {
-    process.stderr.write(`stripe-mock not available at ${stripeMockUrl} — using generated stubs for all endpoints\n`)
+    process.stderr.write(
+      `stripe-mock not available at ${stripeMockUrl} — using generated stubs for all endpoints\n`
+    )
   }
 
   let connectionString: string
@@ -86,10 +94,18 @@ export async function seedTestDb(options: SeedTestDbOptions = {}): Promise<SeedS
 
     const selected =
       options.tables && options.tables.length > 0
-        ? [...endpointSet.endpoints.values()].filter((endpoint) => options.tables?.includes(endpoint.tableName))
+        ? [...endpointSet.endpoints.values()].filter((endpoint) =>
+            options.tables?.includes(endpoint.tableName)
+          )
         : [...endpointSet.endpoints.values()]
 
-    const PAGINATION_PARAMS = new Set(['limit', 'starting_after', 'ending_before', 'created', 'expand'])
+    const PAGINATION_PARAMS = new Set([
+      'limit',
+      'starting_after',
+      'ending_before',
+      'created',
+      'expand',
+    ])
 
     const results: SeedEndpointResult[] = []
     const skipped: SeedEndpointResult[] = []
@@ -139,8 +155,9 @@ export async function seedTestDb(options: SeedTestDbOptions = {}): Promise<SeedS
         rawRows = replicateToCount(page.data, count)
       }
 
-      const payloadRows = applyCreatedTimestampRange(rawRows, createdRange)
-        .filter((obj) => typeof obj.id === 'string')
+      const payloadRows = applyCreatedTimestampRange(rawRows, createdRange).filter(
+        (obj) => typeof obj.id === 'string'
+      )
       await ensureObjectTable(pool, schema, endpoint.tableName, endpoint.jsonSchema)
       const inserted = await upsertObjects(pool, schema, endpoint.tableName, payloadRows)
 

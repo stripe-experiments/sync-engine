@@ -20,7 +20,10 @@ describe('created timestamp range', () => {
   })
 
   it('resolves string unix timestamp', () => {
-    const range = resolveCreatedTimestampRange({ createdStart: '1617408000', createdEnd: '1700000000' })
+    const range = resolveCreatedTimestampRange({
+      createdStart: '1617408000',
+      createdEnd: '1700000000',
+    })
     expect(range).toEqual({ startUnix: 1617408000, endUnix: 1700000000 })
   })
 
@@ -34,11 +37,16 @@ describe('created timestamp range', () => {
     ).toThrowError(/before/)
   })
 
-  it('spreads created timestamps over the whole range', () => {
+  it('spreads created timestamps over [start, end) exclusive upper bound', () => {
     const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
     const output = applyCreatedTimestampRange(rows, { startUnix: 1000, endUnix: 2000 })
     expect(output[0]?.created).toBe(1000)
-    expect(output[1]?.created).toBe(1500)
-    expect(output[2]?.created).toBe(2000)
+    expect(output[1]?.created).toBe(1499)
+    expect(output[2]?.created).toBe(1999)
+  })
+
+  it('single object gets endUnix - 1', () => {
+    const output = applyCreatedTimestampRange([{ id: 'x' }], { startUnix: 1000, endUnix: 2000 })
+    expect(output[0]?.created).toBe(1999)
   })
 })

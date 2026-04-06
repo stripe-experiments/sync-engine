@@ -54,7 +54,8 @@ export function generateStubObjects(
   endpoint: EndpointDefinition,
   count: number
 ): Record<string, unknown>[] {
-  const prefix = ID_PREFIXES[endpoint.tableName] ?? endpoint.tableName.replace(/^v2_/, '').slice(0, 6)
+  const prefix =
+    ID_PREFIXES[endpoint.tableName] ?? endpoint.tableName.replace(/^v2_/, '').slice(0, 6)
   const objects: Record<string, unknown>[] = []
 
   for (let i = 0; i < count; i++) {

@@ -63,7 +63,9 @@ export function validateQueryAgainstOpenApi(
 
     const baseSchema = paramByName.get(base)?.schema
     const propertySchema =
-      baseSchema && baseSchema.properties ? resolvePropertySchema(baseSchema.properties[subKey]) : undefined
+      baseSchema && baseSchema.properties
+        ? resolvePropertySchema(baseSchema.properties[subKey])
+        : undefined
     if (!isValidForSchema(value, propertySchema)) {
       errors.push(`Invalid value for query parameter "${key}"`)
       continue
@@ -103,7 +105,9 @@ function objectPropertyNames(schema: OpenApiSchemaObject | undefined): Set<strin
   return new Set(Object.keys(schema.properties))
 }
 
-function resolvePropertySchema(schema: OpenApiSchemaOrReference | undefined): OpenApiSchemaObject | undefined {
+function resolvePropertySchema(
+  schema: OpenApiSchemaOrReference | undefined
+): OpenApiSchemaObject | undefined {
   if (!schema || '$ref' in schema) return undefined
   return schema
 }
@@ -116,10 +120,14 @@ function isValidForSchema(value: string, schema: OpenApiSchemaObject | undefined
   }
 
   if (schema.oneOf?.length) {
-    return schema.oneOf.some((candidate) => isValidForSchema(value, resolvePropertySchema(candidate)))
+    return schema.oneOf.some((candidate) =>
+      isValidForSchema(value, resolvePropertySchema(candidate))
+    )
   }
   if (schema.anyOf?.length) {
-    return schema.anyOf.some((candidate) => isValidForSchema(value, resolvePropertySchema(candidate)))
+    return schema.anyOf.some((candidate) =>
+      isValidForSchema(value, resolvePropertySchema(candidate))
+    )
   }
 
   switch (schema.type) {

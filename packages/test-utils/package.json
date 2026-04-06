@@ -22,8 +22,10 @@
     "src"
   ],
   "dependencies": {
+    "@hono/node-server": "^1.19.11",
     "@stripe/sync-destination-postgres": "workspace:*",
     "@stripe/sync-openapi": "workspace:*",
+    "hono": "^4.12.8",
     "pg": "^8.16.3"
   },
   "devDependencies": {

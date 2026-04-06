@@ -20,7 +20,10 @@ describe('validateQueryAgainstOpenApi', () => {
     ]
 
     const validated = validateQueryAgainstOpenApi(
-      new URLSearchParams([['created[gt]', '1000'], ['limit', '10']]),
+      new URLSearchParams([
+        ['created[gt]', '1000'],
+        ['limit', '10'],
+      ]),
       params
     )
     expect(validated.ok).toBe(true)

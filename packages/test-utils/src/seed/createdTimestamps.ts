@@ -16,9 +16,8 @@ export function resolveCreatedTimestampRange(
 
   const nowUnix = Math.floor((options.nowMs ?? Date.now()) / 1000)
   const startUnix = parseTimestamp(options.createdStart, 'createdStart')
-  const endUnix = options.createdEnd != null
-    ? parseTimestamp(options.createdEnd, 'createdEnd')
-    : nowUnix
+  const endUnix =
+    options.createdEnd != null ? parseTimestamp(options.createdEnd, 'createdEnd') : nowUnix
 
   if (startUnix > endUnix) {
     throw new Error('createdStart must be before createdEnd')
@@ -50,14 +49,18 @@ export function applyCreatedTimestampRange(
   if (!range) return objects
   if (objects.length === 0) return objects
 
+  // Max created is endUnix - 1 so no object lands on the boundary.
+  // Matches Stripe's created[gte]/created[lt] semantics.
+  const maxCreated = range.endUnix - 1
+
   if (objects.length === 1) {
-    return [{ ...objects[0], created: range.endUnix }]
+    return [{ ...objects[0], created: maxCreated }]
   }
 
-  const totalSpan = Math.max(0, range.endUnix - range.startUnix)
+  const span = Math.max(0, maxCreated - range.startUnix)
   return objects.map((object, index) => {
     const ratio = index / (objects.length - 1)
-    const created = range.startUnix + Math.floor(totalSpan * ratio)
+    const created = range.startUnix + Math.floor(span * ratio)
     return { ...object, created }
   })
 }
