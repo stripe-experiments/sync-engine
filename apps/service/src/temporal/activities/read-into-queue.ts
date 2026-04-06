@@ -2,7 +2,7 @@ import { heartbeat } from '@temporalio/activity'
 import type { Message, SourceInputMessage, SourceReadOptions } from '@stripe/sync-engine'
 
 import type { ActivitiesContext } from './_shared.js'
-import { asIterable, collectError, type RunResult } from './_shared.js'
+import { mergeStateMessage, asIterable, collectError, type RunResult } from './_shared.js'
 
 export function createReadIntoQueueActivity(context: ActivitiesContext) {
   return async function readIntoQueue(
@@ -40,13 +40,7 @@ export function createReadIntoQueueActivity(context: ActivitiesContext) {
         } else if (raw.type === 'record') {
           queued.push(raw)
         } else if (raw.type === 'source_state') {
-          state =
-            raw.source_state.state_type === 'global'
-              ? { ...state, global: raw.source_state.data as Record<string, unknown> }
-              : {
-                  ...state,
-                  streams: { ...state.streams, [raw.source_state.stream]: raw.source_state.data },
-                }
+          state = mergeStateMessage(state, raw)
           queued.push(raw)
         }
       }

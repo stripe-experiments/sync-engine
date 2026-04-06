@@ -32,7 +32,7 @@ export interface GoogleSheetPipelineWorkflowOpts {
   desiredStatus?: DesiredStatus
   syncState?: SourceState
   readState?: SourceState
-  rowIndex?: RowIndexMap
+  rowIndexMap?: RowIndexMap
   catalog?: ConfiguredCatalog
   inputQueue?: SourceInputMessage[]
   state?: GoogleSheetWorkflowState
@@ -48,7 +48,7 @@ export async function googleSheetPipelineWorkflow(
   let desiredStatus: DesiredStatus = opts?.desiredStatus ?? 'active'
   let syncState: SourceState = opts?.syncState ?? { streams: {}, global: {} }
   let readState: SourceState = opts?.readState ?? syncState
-  let rowIndex: RowIndexMap = opts?.rowIndex ?? {}
+  let rowIndexMap: RowIndexMap = opts?.rowIndexMap ?? {}
   let catalog: ConfiguredCatalog | undefined = opts?.catalog
   let state: GoogleSheetWorkflowState = { ...opts?.state }
   const writeRps = opts?.writeRps
@@ -150,13 +150,13 @@ export async function googleSheetPipelineWorkflow(
       const result = await writeGoogleSheetsFromQueue(pipelineId, {
         maxBatch: 50,
         catalog,
-        rowIndex,
+        rowIndexMap,
         sourceState: syncState,
       })
 
-      for (const [stream, assignments] of Object.entries(result.rowAssignments)) {
-        rowIndex[stream] ??= {}
-        Object.assign(rowIndex[stream], assignments)
+      for (const [stream, assignments] of Object.entries(result.rowIndexMap)) {
+        rowIndexMap[stream] ??= {}
+        Object.assign(rowIndexMap[stream], assignments)
       }
 
       if (result.written > 0) {
@@ -194,7 +194,7 @@ export async function googleSheetPipelineWorkflow(
         desiredStatus,
         syncState,
         readState,
-        rowIndex,
+        rowIndexMap,
         catalog,
         inputQueue,
         state,

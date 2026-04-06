@@ -138,7 +138,7 @@ function stubActivities(): SyncActivities {
       errors: [],
       state: emptyState,
       written: 0,
-      rowAssignments: {},
+      rowIndexMap: {},
     }),
     pipelineTeardown: async () => {},
     updatePipelineStatus: async () => {},

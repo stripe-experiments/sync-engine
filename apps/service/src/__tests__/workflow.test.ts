@@ -27,7 +27,7 @@ function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities
       errors: [],
       state: emptyState,
       written: 0,
-      rowAssignments: {},
+      rowIndexMap: {},
     }),
     pipelineTeardown: async () => {},
     updatePipelineStatus: async () => {},
@@ -575,7 +575,7 @@ describe('googleSheetPipelineWorkflow (unit — stubbed activities)', () => {
             errors: [],
             state: { streams: { customers: { cursor: 'cus_1' } }, global: {} },
             written: 0,
-            rowAssignments: {},
+            rowIndexMap: {},
           }
         },
       }),
