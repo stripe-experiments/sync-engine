@@ -8,11 +8,11 @@ import type {
 import {
   desiredStatusSignal,
   discoverCatalog,
+  pipelineSetup,
+  pipelineTeardown,
   readGoogleSheetsIntoQueue,
   RowIndex,
-  setup,
   sourceInputSignal,
-  teardown,
   updatePipelineStatus,
   writeGoogleSheetsFromQueue,
 } from './_shared.js'
@@ -79,12 +79,12 @@ export async function googleSheetPipelineWorkflow(
 
   // Setup
   if (!setupDone) {
-    await setup(pipelineId)
+    await pipelineSetup(pipelineId)
     catalog = await discoverCatalog(pipelineId)
     setupDone = true
     if (desiredStatus === 'deleted') {
       await updatePipelineStatus(pipelineId, 'teardown')
-      await teardown(pipelineId)
+      await pipelineTeardown(pipelineId)
       return
     }
   }
@@ -170,5 +170,5 @@ export async function googleSheetPipelineWorkflow(
   }
 
   await updatePipelineStatus(pipelineId, 'teardown')
-  await teardown(pipelineId)
+  await pipelineTeardown(pipelineId)
 }

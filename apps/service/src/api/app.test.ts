@@ -131,7 +131,7 @@ const noErrors: RunResult = { errors: [], state: emptyState }
 function stubActivities(): SyncActivities {
   return {
     discoverCatalog: async () => ({ streams: [] }),
-    setup: async () => ({}),
+    pipelineSetup: async () => ({}),
     pipelineSync: async () => noErrors,
     readGoogleSheetsIntoQueue: async () => ({ count: 0, state: emptyState }),
     writeGoogleSheetsFromQueue: async () => ({
@@ -140,7 +140,7 @@ function stubActivities(): SyncActivities {
       written: 0,
       rowAssignments: {},
     }),
-    teardown: async () => {},
+    pipelineTeardown: async () => {},
     updatePipelineStatus: async () => {},
   }
 }

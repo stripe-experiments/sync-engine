@@ -11,7 +11,7 @@ export const sourceInputSignal = defineSignal<[SourceInputMessage]>('source_inpu
 /** Carries the new desired_status value — workflow updates its local state directly. */
 export const desiredStatusSignal = defineSignal<[DesiredStatus]>('desired_status')
 
-export const { setup, teardown } = proxyActivities<SyncActivities>({
+export const { pipelineSetup, pipelineTeardown } = proxyActivities<SyncActivities>({
   startToCloseTimeout: '2m',
   retry: retryPolicy,
 })

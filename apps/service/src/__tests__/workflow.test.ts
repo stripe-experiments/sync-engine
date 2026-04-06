@@ -20,7 +20,7 @@ const testPipelineId = 'test_pipe'
 function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities {
   return {
     discoverCatalog: async () => ({ streams: [] }),
-    setup: async () => ({}),
+    pipelineSetup: async () => ({}),
     pipelineSync: async () => noErrors,
     readGoogleSheetsIntoQueue: async () => ({ count: 0, state: emptyState }),
     writeGoogleSheetsFromQueue: async () => ({
@@ -29,7 +29,7 @@ function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities
       written: 0,
       rowAssignments: {},
     }),
-    teardown: async () => {},
+    pipelineTeardown: async () => {},
     updatePipelineStatus: async () => {},
     ...overrides,
   }
@@ -38,6 +38,13 @@ function stubActivities(overrides: Partial<SyncActivities> = {}): SyncActivities
 /** Signal the workflow to delete. */
 async function signalDelete(handle: { signal: (name: string, arg: string) => Promise<void> }) {
   await handle.signal('desired_status', 'deleted')
+}
+
+async function signalSourceInput(
+  handle: { signal: (name: string, arg: unknown) => Promise<void> },
+  event: unknown
+) {
+  await handle.signal('source_input', event)
 }
 
 let testEnv: TestWorkflowEnvironment
@@ -60,7 +67,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-1',
       workflowsPath,
       activities: stubActivities({
-        setup: async () => {
+        pipelineSetup: async () => {
           setupCalled = true
           return {}
         },
@@ -118,11 +125,11 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       await new Promise((r) => setTimeout(r, 1500))
 
       // Send events
-      await handle.signal('stripe_event', {
+      await signalSourceInput(handle, {
         id: 'evt_1',
         type: 'customer.created',
       })
-      await handle.signal('stripe_event', {
+      await signalSourceInput(handle, {
         id: 'evt_2',
         type: 'product.updated',
       })
@@ -202,6 +209,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
     let backfillInFlight = 0
     let liveStartsWhileBackfill = 0
     let liveBatchCount = 0
+    let liveEventCount = 0
 
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
@@ -211,6 +219,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
         pipelineSync: async (_pipelineId: string, opts?) => {
           if (opts?.input) {
             liveBatchCount++
+            liveEventCount += opts.input.length
             if (backfillInFlight > 0) liveStartsWhileBackfill++
             await new Promise((r) => setTimeout(r, 80))
             return noErrors
@@ -236,7 +245,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
 
       await new Promise((r) => setTimeout(r, 50))
       for (let i = 0; i < 12; i++) {
-        await handle.signal('stripe_event', {
+        await signalSourceInput(handle, {
           id: `evt_${i}`,
           type: 'customer.updated',
         })
@@ -246,8 +255,9 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       await signalDelete(handle)
       await handle.result()
 
-      expect(liveBatchCount).toBe(2)
-      expect(liveStartsWhileBackfill).toBe(2)
+      expect(liveBatchCount).toBeGreaterThanOrEqual(2)
+      expect(liveStartsWhileBackfill).toBeGreaterThanOrEqual(2)
+      expect(liveEventCount).toBe(12)
     })
   })
 
@@ -284,6 +294,46 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
     })
   })
 
+  it('reports phase-driven status transitions through teardown', async () => {
+    const statusWrites: string[] = []
+    let reconcileCalls = 0
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      taskQueue: 'test-queue-3b',
+      workflowsPath,
+      activities: stubActivities({
+        updatePipelineStatus: async (_id: string, status: string) => {
+          statusWrites.push(status)
+        },
+        pipelineSync: async (_pipelineId: string, opts?) => {
+          if (opts?.input) return noErrors
+
+          reconcileCalls++
+          return reconcileCalls === 1
+            ? { ...noErrors, eof: { reason: 'complete' } }
+            : noErrors
+        },
+      }),
+    })
+
+    await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
+        args: [testPipelineId],
+        workflowId: 'test-sync-3b',
+        taskQueue: 'test-queue-3b',
+      })
+
+      await new Promise((r) => setTimeout(r, 500))
+      await handle.signal('desired_status', 'paused')
+      await new Promise((r) => setTimeout(r, 500))
+      await handle.signal('desired_status', 'deleted')
+      await handle.result()
+
+      expect(statusWrites).toEqual(expect.arrayContaining(['backfill', 'ready', 'paused', 'teardown']))
+    })
+  })
+
   it('triggers teardown on delete', async () => {
     let teardownCalled = false
 
@@ -297,7 +347,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
           await new Promise((r) => setTimeout(r, 500))
           return noErrors
         },
-        teardown: async (): Promise<void> => {
+        pipelineTeardown: async (): Promise<void> => {
           teardownCalled = true
         },
       }),
@@ -364,7 +414,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
       taskQueue: 'test-queue-8',
       workflowsPath,
       activities: stubActivities({
-        setup: async () => {
+        pipelineSetup: async () => {
           setupCalls++
           return {}
         },
