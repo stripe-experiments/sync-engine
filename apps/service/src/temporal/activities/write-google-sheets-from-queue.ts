@@ -155,8 +155,8 @@ export function createWriteGoogleSheetsFromQueueActivity(context: ActivitiesCont
       return opts?.rowIndexMap ? withRowNumber(keyed, opts.rowIndexMap) : keyed
     })
     const writeBatch = compactGoogleSheetsMessages(augmented)
-    if (config.destination.type !== 'google-sheets') {
-      throw new Error('writeGoogleSheetsFromQueue requires a google-sheets destination')
+    if (config.destination.type !== 'google_sheets') {
+      throw new Error('writeGoogleSheetsFromQueue requires a google_sheets destination')
     }
     if (!opts?.catalog) {
       throw new Error('catalog is required for Google Sheets workflow writes')

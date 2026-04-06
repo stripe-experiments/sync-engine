@@ -137,7 +137,7 @@ function createTestInfra() {
 
       const connectors = createConnectorResolver({
         sources: { stripe: source },
-        destinations: { postgres: pgDestination, 'google-sheets': sheetsDestination },
+        destinations: { postgres: pgDestination, 'google_sheets': sheetsDestination },
       })
 
       // Start engine API (stateless sync execution)
@@ -289,7 +289,7 @@ describe.skip('temporal e2e: stripe → postgres', () => {
 // 2. Stripe → Google Sheets (backfill via googleSheetPipelineWorkflow)
 // ===========================================================================
 
-describe.skip('temporal e2e: stripe → google-sheets', () => {
+describe.skip('temporal e2e: stripe → google_sheets', () => {
   const STRIPE_API_KEY = process.env.STRIPE_API_KEY ?? ''
   const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? ''
   const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? ''
@@ -343,8 +343,8 @@ describe.skip('temporal e2e: stripe → google-sheets', () => {
       id: pipelineId,
       source: { type: 'stripe', stripe: { api_key: STRIPE_API_KEY, backfill_limit: 3 } },
       destination: {
-        type: 'google-sheets',
-        'google-sheets': {
+        type: 'google_sheets',
+        'google_sheets': {
           client_id: GOOGLE_CLIENT_ID,
           client_secret: GOOGLE_CLIENT_SECRET,
           refresh_token: GOOGLE_REFRESH_TOKEN,
