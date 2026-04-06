@@ -9,7 +9,10 @@ import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import { createApp } from './api/app.js'
 import { filePipelineStore } from './lib/stores-fs.js'
 import type { WorkflowClient } from '@temporalio/client'
+import { homedir } from 'node:os'
 import { logger } from './logger.js'
+
+const defaultDataDir = `${homedir()}/.stripe-sync`
 
 const resolverPromise = createConnectorResolver({
   sources: { stripe: sourceStripe },
@@ -47,8 +50,8 @@ const serveCmd = defineCommand({
     },
     'data-dir': {
       type: 'string',
-      required: true,
-      description: 'Directory to persist pipeline configs as JSON files.',
+      default: defaultDataDir,
+      description: `Directory to persist pipeline configs as JSON files (default: ${defaultDataDir}).`,
     },
   },
   async run({ args }) {
@@ -108,8 +111,8 @@ const workerCmd = defineCommand({
     },
     'data-dir': {
       type: 'string',
-      required: true,
-      description: 'Directory to persist pipeline configs as JSON files.',
+      default: defaultDataDir,
+      description: `Directory to persist pipeline configs as JSON files (default: ${defaultDataDir}).`,
     },
   },
   async run({ args }) {
@@ -170,8 +173,8 @@ const webhookCmd = defineCommand({
     },
     'data-dir': {
       type: 'string',
-      required: true,
-      description: 'Directory to persist pipeline configs as JSON files.',
+      default: defaultDataDir,
+      description: `Directory to persist pipeline configs as JSON files (default: ${defaultDataDir}).`,
     },
   },
   async run({ args }) {
