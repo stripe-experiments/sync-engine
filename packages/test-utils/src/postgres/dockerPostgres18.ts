@@ -1,11 +1,11 @@
-import { execSync } from 'node:child_process'
+import { execSync, exec } from 'node:child_process'
 import pg from 'pg'
 
 export type DockerPostgres18Handle = {
   containerId: string
   hostPort: number
   connectionString: string
-  stop: () => void
+  stop: () => Promise<void>
 }
 
 export async function startDockerPostgres18(): Promise<DockerPostgres18Handle> {
@@ -42,12 +42,12 @@ export async function startDockerPostgres18(): Promise<DockerPostgres18Handle> {
     .pop()
 
   if (!hostPortValue) {
-    stopContainer(containerId)
+    await stopContainer(containerId)
     throw new Error(`Failed to determine mapped host port for postgres container ${containerId}`)
   }
   const hostPort = Number(hostPortValue)
   if (!Number.isFinite(hostPort)) {
-    stopContainer(containerId)
+    await stopContainer(containerId)
     throw new Error(`Invalid mapped host port "${hostPortValue}" for postgres container ${containerId}`)
   }
 
@@ -79,12 +79,10 @@ async function waitForPostgres(connectionString: string): Promise<void> {
   }
 }
 
-function stopContainer(containerId: string): void {
-  try {
-    execSync(`docker rm -f ${containerId}`, { stdio: 'ignore' })
-  } catch {
-    // Ignore cleanup errors.
-  }
+function stopContainer(containerId: string): Promise<void> {
+  return new Promise((resolve) => {
+    exec(`docker rm -f ${containerId}`, () => resolve())
+  })
 }
 
 function sleep(ms: number): Promise<void> {

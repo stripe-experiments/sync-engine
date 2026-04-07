@@ -1,5 +1,9 @@
 export { createStripeListServer } from './server/createStripeListServer.js'
-export type { StripeListServer, StripeListServerOptions } from './server/types.js'
+export type {
+  StripeListServer,
+  StripeListServerOptions,
+  SeedCustomersForListServerOptions,
+} from './server/types.js'
 
 export { resolveEndpointSet } from './openapi/endpoints.js'
 export type { EndpointDefinition, ResolvedEndpointSet } from './openapi/endpoints.js'

@@ -13,6 +13,7 @@ import type {
   V1PageQuery,
   V2PageQuery,
 } from './types.js'
+import { seedCustomersForStripeListServer } from './seedCustomers.js'
 
 export type { StripeListServerOptions, StripeListServer } from './types.js'
 
@@ -62,6 +63,16 @@ export async function createStripeListServer(
 
   const pool = new pg.Pool({ connectionString })
   await ensureSchema(pool, schema)
+
+  let seededCustomerIds: string[] | undefined
+  if (options.seedCustomers) {
+    seededCustomerIds = await seedCustomersForStripeListServer(
+      pool,
+      schema,
+      options.seedCustomers,
+      fetchImpl
+    )
+  }
 
   const fakeAccount = makeFakeAccount(options.accountCreated ?? Math.floor(Date.now() / 1000))
 
@@ -140,6 +151,9 @@ export async function createStripeListServer(
     }
   })
 
+  const addr = nodeServer!.address()
+  const actualPort = typeof addr === 'object' && addr ? addr.port : serverPort
+
   let closed = false
   const close = async (): Promise<void> => {
     if (closed) return
@@ -150,7 +164,7 @@ export async function createStripeListServer(
       })
     }
     await pool.end().catch(() => undefined)
-    if (dockerHandle) dockerHandle.stop()
+    if (dockerHandle) await dockerHandle.stop()
   }
 
   const cleanup = () => {
@@ -161,11 +175,12 @@ export async function createStripeListServer(
 
   return {
     host: serverHost,
-    port: serverPort,
-    url: `http://${serverHost}:${serverPort}`,
+    port: actualPort,
+    url: `http://${serverHost}:${actualPort}`,
     postgresUrl: connectionString,
     postgresMode,
     close,
+    ...(seededCustomerIds != null ? { seededCustomerIds } : {}),
   }
 }
 

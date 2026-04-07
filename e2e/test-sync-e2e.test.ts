@@ -290,8 +290,8 @@ describe('e2e: engine HTTP API under fault conditions', () => {
     await testServer?.close().catch(() => {})
     await sourcePool?.end().catch(() => {})
     await destPool?.end().catch(() => {})
-    destDocker?.stop()
-    sourceDocker?.stop()
+    await destDocker?.stop()
+    await sourceDocker?.stop()
   }, 60_000)
 
   // -------------------------------------------------------------------------
