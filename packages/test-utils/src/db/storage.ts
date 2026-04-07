@@ -93,3 +93,13 @@ export function quoteIdentifier(identifier: string): string {
   }
   return `"${identifier}"`
 }
+
+export function redactConnectionString(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.password) parsed.password = '***'
+    return parsed.toString()
+  } catch {
+    return url.replace(/:[^:@]+@/, ':***@')
+  }
+}

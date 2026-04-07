@@ -3,7 +3,12 @@ import type { Context } from 'hono'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import pg from 'pg'
-import { DEFAULT_STORAGE_SCHEMA, ensureSchema, quoteIdentifier } from '../db/storage.js'
+import {
+  DEFAULT_STORAGE_SCHEMA,
+  ensureSchema,
+  quoteIdentifier,
+  redactConnectionString,
+} from '../db/storage.js'
 import { resolveEndpointSet, type EndpointDefinition } from '../openapi/endpoints.js'
 import { validateQueryAgainstOpenApi } from '../openapi/filters.js'
 import { startDockerPostgres18, type DockerPostgres18Handle } from '../postgres/dockerPostgres18.js'
@@ -603,16 +608,6 @@ function buildV2NextPageUrl(
 
 function logRequest(method: string, path: string, statusCode: number): void {
   process.stderr.write(`[sync-test-utils] ${method} ${path} → ${statusCode}\n`)
-}
-
-function redactConnectionString(connectionString: string): string {
-  try {
-    const parsed = new URL(connectionString)
-    if (parsed.password) parsed.password = '***'
-    return parsed.toString()
-  } catch {
-    return connectionString
-  }
 }
 
 function maybeInterceptStripeApiRequest(

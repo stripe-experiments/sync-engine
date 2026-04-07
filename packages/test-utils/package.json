@@ -10,8 +10,7 @@
     }
   },
   "bin": {
-    "sync-test-utils-server": "./dist/bin/start-test-server.js",
-    "sync-test-utils-seed-db": "./dist/bin/seed-test-db.js"
+    "sync-test-utils-server": "./dist/bin/start-test-server.js"
   },
   "scripts": {
     "build": "tsc",

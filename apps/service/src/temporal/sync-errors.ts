@@ -9,15 +9,17 @@ export type ClassifiedSyncErrors = {
   permanent: SyncRunError[]
 }
 
+const PERMANENT_FAILURE_TYPES = new Set(['system_error', 'config_error'])
+
 export function classifySyncErrors(errors: SyncRunError[]): ClassifiedSyncErrors {
   const transient: SyncRunError[] = []
   const permanent: SyncRunError[] = []
 
   for (const error of errors) {
-    if (error.failure_type === 'transient_error') {
-      transient.push(error)
-    } else {
+    if (PERMANENT_FAILURE_TYPES.has(error.failure_type ?? '')) {
       permanent.push(error)
+    } else {
+      transient.push(error)
     }
   }
 

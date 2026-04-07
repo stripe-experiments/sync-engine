@@ -4,6 +4,7 @@ import {
   ensureSchema,
   ensureObjectTable,
   upsertObjects,
+  redactConnectionString,
 } from '../db/storage.js'
 import { validateQueryAgainstOpenApi } from '../openapi/filters.js'
 import { resolveEndpointSet } from '../openapi/endpoints.js'
@@ -180,16 +181,6 @@ export async function seedTestDb(options: SeedTestDbOptions = {}): Promise<SeedS
     }
   } finally {
     await pool.end().catch(() => undefined)
-  }
-}
-
-function redactConnectionString(url: string): string {
-  try {
-    const parsed = new URL(url)
-    if (parsed.password) parsed.password = '***'
-    return parsed.toString()
-  } catch {
-    return url.replace(/:[^:@]+@/, ':***@')
   }
 }
 

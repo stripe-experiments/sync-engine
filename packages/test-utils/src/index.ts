@@ -24,6 +24,7 @@ export {
   ensureObjectTable,
   upsertObjects,
   quoteIdentifier,
+  redactConnectionString,
 } from './db/storage.js'
 
 export { startDockerPostgres18 } from './postgres/dockerPostgres18.js'
