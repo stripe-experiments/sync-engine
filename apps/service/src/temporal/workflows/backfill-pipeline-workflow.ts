@@ -1,4 +1,4 @@
-giimport { condition, continueAsNew, setHandler } from '@temporalio/workflow'
+import { condition, continueAsNew, setHandler } from '@temporalio/workflow'
 
 import { desiredStatusSignal, pipelineSync, updatePipelineStatus } from './_shared.js'
 import type { DesiredStatus } from '../../lib/createSchemas.js'
