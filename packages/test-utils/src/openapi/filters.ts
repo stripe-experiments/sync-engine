@@ -62,9 +62,10 @@ export function validateQueryAgainstOpenApi(
     }
 
     const baseSchema = paramByName.get(base)?.schema
+    const objectVariant = findObjectVariant(baseSchema)
     const propertySchema =
-      baseSchema && baseSchema.properties
-        ? resolvePropertySchema(baseSchema.properties[subKey])
+      objectVariant && objectVariant.properties
+        ? resolvePropertySchema(objectVariant.properties[subKey])
         : undefined
     if (!isValidForSchema(value, propertySchema)) {
       errors.push(`Invalid value for query parameter "${key}"`)
@@ -101,8 +102,29 @@ export function validateQueryAgainstOpenApi(
 }
 
 function objectPropertyNames(schema: OpenApiSchemaObject | undefined): Set<string> {
-  if (!schema || schema.type !== 'object' || !schema.properties) return new Set()
-  return new Set(Object.keys(schema.properties))
+  if (!schema) return new Set()
+  if (schema.type === 'object' && schema.properties) {
+    return new Set(Object.keys(schema.properties))
+  }
+  for (const variant of [...(schema.anyOf ?? []), ...(schema.oneOf ?? [])]) {
+    if ('$ref' in variant) continue
+    const names = objectPropertyNames(variant)
+    if (names.size > 0) return names
+  }
+  return new Set()
+}
+
+function findObjectVariant(
+  schema: OpenApiSchemaObject | undefined
+): OpenApiSchemaObject | undefined {
+  if (!schema) return undefined
+  if (schema.type === 'object' && schema.properties) return schema
+  for (const variant of [...(schema.anyOf ?? []), ...(schema.oneOf ?? [])]) {
+    if ('$ref' in variant) continue
+    const found = findObjectVariant(variant)
+    if (found) return found
+  }
+  return undefined
 }
 
 function resolvePropertySchema(

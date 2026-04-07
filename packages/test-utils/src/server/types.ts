@@ -24,6 +24,10 @@ export type SeedCustomersForListServerOptions = {
 export type StripeListServerOptions = {
   port?: number
   host?: string
+  /** Whether to emit per-request logs to stderr. @default true */
+  logRequests?: boolean
+  /** Whether to validate incoming list query params against OpenAPI metadata. @default false */
+  validateQueryParams?: boolean
   apiVersion?: string
   openApiSpecPath?: string
   postgresUrl?: string
@@ -107,4 +111,8 @@ export type V1PageQuery = {
 export type V2PageQuery = {
   limit: number
   afterId?: string
+  createdGt?: number
+  createdGte?: number
+  createdLt?: number
+  createdLte?: number
 }

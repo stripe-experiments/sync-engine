@@ -23,6 +23,8 @@ export type ListEndpoint = {
   apiPath: string
   supportsCreatedFilter: boolean
   supportsLimit: boolean
+  supportsStartingAfter: boolean
+  supportsEndingBefore: boolean
 }
 
 export type NestedEndpoint = {
@@ -118,12 +120,20 @@ export function discoverListEndpoints(
       const supportsLimit = params.some(
         (p: { name?: string; in?: string }) => p.name === 'limit' && p.in === 'query'
       )
+      const supportsStartingAfter = params.some(
+        (p: { name?: string; in?: string }) => p.name === 'starting_after' && p.in === 'query'
+      )
+      const supportsEndingBefore = params.some(
+        (p: { name?: string; in?: string }) => p.name === 'ending_before' && p.in === 'query'
+      )
       endpoints.set(tableName, {
         tableName,
         resourceId,
         apiPath,
         supportsCreatedFilter,
         supportsLimit,
+        supportsStartingAfter,
+        supportsEndingBefore,
       })
     }
   }
@@ -276,6 +286,11 @@ export function buildListFn(
         const qs = new URLSearchParams()
         qs.set('limit', String(Math.min(params.limit ?? 20, 20)))
         if (params.starting_after) qs.set('page', params.starting_after)
+        if (params.created) {
+          for (const [op, val] of Object.entries(params.created)) {
+            if (val != null) qs.set(`created[${op}]`, toV2CreatedParam(val))
+          }
+        }
 
         const headers = authHeaders(apiKey)
         if (apiVersion) headers['Stripe-Version'] = apiVersion
@@ -310,6 +325,10 @@ export function buildListFn(
       assertOk(response, body, 'GET', apiPath)
       return { data: body.data ?? [], has_more: body.has_more }
     })
+}
+
+function toV2CreatedParam(value: number): string {
+  return new Date(value * 1000).toISOString()
 }
 
 /**

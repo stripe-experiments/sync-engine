@@ -2014,6 +2014,46 @@ describe('StripeSource', () => {
       }
     })
 
+    it('does not assume cursor pagination when the endpoint does not support it', async () => {
+      const listFn = vi.fn().mockResolvedValue({
+        data: [{ id: 'report_type_1', name: 'One shot' }],
+        has_more: true,
+      })
+
+      const registry: Record<string, ResourceConfig> = {
+        reporting_report_types: makeConfig({
+          order: 1,
+          tableName: 'reporting_report_types',
+          supportsCreatedFilter: false,
+          supportsLimit: false,
+          supportsForwardPagination: false,
+          listFn: listFn as ResourceConfig['listFn'],
+        }),
+      }
+
+      const mockClient = {} as unknown as StripeClient
+      const rateLimiter: RateLimiter = async () => 0
+
+      const messages = await collect(
+        listApiBackfill({
+          catalog: catalog({ name: 'reporting_report_types' }),
+          state: undefined,
+          registry,
+          client: mockClient,
+          rateLimiter,
+        })
+      )
+
+      expect(listFn).toHaveBeenCalledTimes(1)
+      expect(listFn).toHaveBeenCalledWith({})
+
+      const states = messages.filter((m): m is SourceStateMessage => m.type === 'source_state')
+      expect(states.at(-1)?.source_state.data).toMatchObject({
+        status: 'complete',
+        page_cursor: null,
+      })
+    })
+
     it('parallel and sequential streams coexist in the same catalog', async () => {
       const parallelListFn = vi.fn().mockResolvedValue({
         data: [{ id: 'cus_1' }],

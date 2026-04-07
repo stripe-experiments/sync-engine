@@ -16,6 +16,8 @@ describe('discoverListEndpoints', () => {
       apiPath: '/v1/customers',
       supportsCreatedFilter: true,
       supportsLimit: true,
+      supportsStartingAfter: true,
+      supportsEndingBefore: true,
     })
     expect(endpoints.get('checkout_sessions')).toEqual({
       tableName: 'checkout_sessions',
@@ -23,6 +25,8 @@ describe('discoverListEndpoints', () => {
       apiPath: '/v1/checkout/sessions',
       supportsCreatedFilter: true,
       supportsLimit: true,
+      supportsStartingAfter: true,
+      supportsEndingBefore: true,
     })
     expect(endpoints.get('early_fraud_warnings')).toEqual({
       tableName: 'early_fraud_warnings',
@@ -30,6 +34,8 @@ describe('discoverListEndpoints', () => {
       apiPath: '/v1/radar/early_fraud_warnings',
       supportsCreatedFilter: true,
       supportsLimit: true,
+      supportsStartingAfter: true,
+      supportsEndingBefore: true,
     })
   })
 
@@ -42,6 +48,8 @@ describe('discoverListEndpoints', () => {
       apiPath: '/v2/core/accounts',
       supportsCreatedFilter: false,
       supportsLimit: false,
+      supportsStartingAfter: false,
+      supportsEndingBefore: false,
     })
     expect(endpoints.get('v2_core_event_destinations')).toEqual({
       tableName: 'v2_core_event_destinations',
@@ -49,6 +57,8 @@ describe('discoverListEndpoints', () => {
       apiPath: '/v2/core/event_destinations',
       supportsCreatedFilter: false,
       supportsLimit: false,
+      supportsStartingAfter: false,
+      supportsEndingBefore: false,
     })
   })
 
@@ -183,6 +193,47 @@ describe('discoverListEndpoints', () => {
     const pending = expect(list({ limit: 1 })).rejects.toThrow('Injected page failure')
     await vi.runAllTimersAsync()
     await pending
+  })
+
+  it('encodes created filters for v2 list requests', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 'evt_123' }],
+            next_page_url: '/v2/core/events?page=cur_next&limit=1',
+          }),
+          { status: 200 }
+        )
+    )
+    const list = buildListFn('sk_test_fake', '/v2/core/events', fetchMock)
+
+    await expect(
+      list({
+        limit: 1,
+        starting_after: 'cur_prev',
+        created: {
+          gte: 1735689600,
+          lt: 1735776000,
+        },
+      })
+    ).resolves.toEqual({
+      data: [{ id: 'evt_123' }],
+      has_more: true,
+      pageCursor: 'cur_next',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/v2/core/events?'),
+      expect.anything()
+    )
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const parsed = new URL(url)
+    expect(parsed.searchParams.get('limit')).toBe('1')
+    expect(parsed.searchParams.get('page')).toBe('cur_prev')
+    expect(parsed.searchParams.get('created[gte]')).toBe('2025-01-01T00:00:00.000Z')
+    expect(parsed.searchParams.get('created[lt]')).toBe('2025-01-02T00:00:00.000Z')
   })
 
   it('throws the Stripe error message for non-2xx retrieve responses', async () => {

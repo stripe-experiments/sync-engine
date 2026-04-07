@@ -1,11 +1,11 @@
 import type { ResourceConfig } from './types.js'
-import type { OpenApiSpec, NestedEndpoint } from '@stripe/sync-openapi'
+import type { ListFn, ListParams, OpenApiSpec, NestedEndpoint } from '@stripe/sync-openapi'
 import {
   discoverListEndpoints,
   discoverNestedEndpoints,
-  isV2Path,
   buildListFn,
   buildRetrieveFn,
+  isV2Path,
   resolveTableName,
   OPENAPI_RESOURCE_TABLE_ALIASES,
 } from '@stripe/sync-openapi'
@@ -13,6 +13,34 @@ import { fetchWithProxy } from './transport.js'
 
 const apiFetch: typeof globalThis.fetch = (input, init) =>
   fetchWithProxy(input as URL | string, init ?? {})
+
+function buildSpecAwareListFn(
+  baseListFn: ListFn,
+  options: {
+    isV2: boolean
+    supportsLimit: boolean
+    supportsStartingAfter: boolean
+    supportsEndingBefore: boolean
+    supportsCreatedFilter: boolean
+  }
+): ListFn {
+  return (params: ListParams) => {
+    const next: ListParams = {}
+    if (options.supportsLimit && params.limit != null) {
+      next.limit = params.limit
+    }
+    if ((options.isV2 || options.supportsStartingAfter) && params.starting_after) {
+      next.starting_after = params.starting_after
+    }
+    if (options.supportsEndingBefore && params.ending_before) {
+      next.ending_before = params.ending_before
+    }
+    if (options.supportsCreatedFilter && params.created) {
+      next.created = params.created
+    }
+    return baseListFn(next)
+  }
+}
 
 /**
  * The default set of table names synced when no explicit selection is made.
@@ -63,8 +91,7 @@ export function buildResourceRegistry(
   const seenNested = new Set<string>()
 
   for (const [tableName, endpoint] of endpoints) {
-    const v2 = isV2Path(endpoint.apiPath)
-
+    const isV2 = isV2Path(endpoint.apiPath)
     const children = nestedEndpoints
       .filter((n: NestedEndpoint) => n.parentTableName === tableName)
       .map((n: NestedEndpoint) => ({
@@ -78,11 +105,21 @@ export function buildResourceRegistry(
     const config: ResourceConfig = {
       order: 1,
       tableName,
-      supportsCreatedFilter: !v2 && endpoint.supportsCreatedFilter,
+      supportsCreatedFilter: endpoint.supportsCreatedFilter,
       supportsLimit: endpoint.supportsLimit,
+      supportsForwardPagination: isV2 || endpoint.supportsStartingAfter,
       sync: true,
       dependencies: [],
-      listFn: buildListFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl),
+      listFn: buildSpecAwareListFn(
+        buildListFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl),
+        {
+          isV2,
+          supportsLimit: endpoint.supportsLimit,
+          supportsStartingAfter: endpoint.supportsStartingAfter,
+          supportsEndingBefore: endpoint.supportsEndingBefore,
+          supportsCreatedFilter: endpoint.supportsCreatedFilter,
+        }
+      ),
       retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl),
       nestedResources: children.length > 0 ? children : undefined,
     }
@@ -103,6 +140,7 @@ export function buildResourceRegistry(
       tableName: nested.tableName,
       supportsCreatedFilter: false,
       supportsLimit: nested.supportsPagination,
+      supportsForwardPagination: nested.supportsPagination,
       sync: false,
       dependencies: [],
       listFn: undefined,

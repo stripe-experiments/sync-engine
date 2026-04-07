@@ -222,6 +222,7 @@ async function* paginateSegment(opts: {
   numSegments: number
   streamName: string
   supportsLimit: boolean
+  supportsForwardPagination: boolean
   backfillLimit?: number
   totalEmitted: { count: number }
   rateLimiter: RateLimiter
@@ -234,6 +235,7 @@ async function* paginateSegment(opts: {
     numSegments,
     streamName,
     supportsLimit,
+    supportsForwardPagination,
     backfillLimit,
     totalEmitted,
     rateLimiter,
@@ -246,10 +248,10 @@ async function* paginateSegment(opts: {
     const params: Record<string, unknown> = {
       created: { gte: segment.gte, lt: segment.lt },
     }
-    if (supportsLimit !== false) {
+    if (supportsForwardPagination && supportsLimit !== false) {
       params.limit = 100
     }
-    if (pageCursor) {
+    if (supportsForwardPagination && pageCursor) {
       params.starting_after = pageCursor
     }
 
@@ -262,7 +264,7 @@ async function* paginateSegment(opts: {
       totalEmitted.count++
     }
 
-    hasMore = response.has_more
+    hasMore = supportsForwardPagination && response.has_more
     if (response.pageCursor) {
       pageCursor = response.pageCursor
     } else if (response.data.length > 0) {
@@ -308,10 +310,13 @@ async function* sequentialBackfillStream(opts: {
     if (drainQueue) yield* drainQueue()
 
     const params: Record<string, unknown> = {}
-    if (resourceConfig.supportsLimit !== false) {
+    if (
+      resourceConfig.supportsForwardPagination !== false &&
+      resourceConfig.supportsLimit !== false
+    ) {
       params.limit = 100
     }
-    if (pageCursor) {
+    if (resourceConfig.supportsForwardPagination !== false && pageCursor) {
       params.starting_after = pageCursor
     }
 
@@ -326,7 +331,7 @@ async function* sequentialBackfillStream(opts: {
       totalEmitted++
     }
 
-    hasMore = response.has_more
+    hasMore = resourceConfig.supportsForwardPagination !== false && response.has_more
     if (response.pageCursor) {
       pageCursor = response.pageCursor
     } else if (response.data.length > 0) {
@@ -455,6 +460,7 @@ export async function* listApiBackfill(opts: {
               numSegments,
               streamName: stream.name,
               supportsLimit: resourceConfig.supportsLimit !== false,
+              supportsForwardPagination: resourceConfig.supportsForwardPagination !== false,
               backfillLimit: streamBackfillLimit,
               totalEmitted,
               rateLimiter,

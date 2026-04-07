@@ -20,16 +20,16 @@ import sourceStripe, { type StripeStreamState } from '@stripe/sync-source-stripe
 
 const STRIPE_MOCK_URL = process.env.STRIPE_MOCK_URL ?? 'http://localhost:12111'
 const SOURCE_SCHEMA = 'stripe'
-const SEED_BATCH = 1000
-const OBJECTS_PER_STREAM = 1
-const RATE_LIMIT = 1000
+const SEED_BATCH = 12000
+const OBJECTS_PER_STREAM = 1200
+const RATE_LIMIT = 10000
 
 function utc(date: string): number {
   return Math.floor(new Date(date + 'T00:00:00Z').getTime() / 1000)
 }
 
-const RANGE_START = utc('2021-04-03')
-const RANGE_END = utc('2026-04-02')
+const RANGE_START = utc('2025-01-01')
+const RANGE_END = utc('2026-01-01')
 
 let sourceDocker: DockerPostgres18Handle
 let destDocker: DockerPostgres18Handle
@@ -170,7 +170,9 @@ async function syncAllEndpointsForVersion(apiVersion: string): Promise<void> {
     postgresUrl: sourceDocker.connectionString,
     host: '127.0.0.1',
     port: 0,
-    accountCreated: RANGE_START,
+    accountCreated: 0,
+    logRequests: false,
+    validateQueryParams: true,
     apiVersion,
     openApiSpecPath,
     fetchImpl: specFetch,
@@ -190,7 +192,7 @@ async function syncAllEndpointsForVersion(apiVersion: string): Promise<void> {
       await replaceTableObjects(endpoint.tableName, objects)
       seededStreams.push({
         tableName: endpoint.tableName,
-        objectIds: objects.map((object) => object.id as string),
+        objectIds: objects.map((object: Record<string, unknown>) => object.id as string),
       })
     }
 
@@ -237,10 +239,15 @@ async function syncAllEndpointsForVersion(apiVersion: string): Promise<void> {
     }
 
     const failures: string[] = []
+    const syncedCounts: string[] = []
 
     for (const seed of seededStreams) {
       const { rows } = await destPool.query<{ id: string }>(
         `SELECT id FROM ${quoteIdentifier(destSchema)}.${quoteIdentifier(seed.tableName)} ORDER BY id`
+      )
+
+      syncedCounts.push(
+        `    ${seed.tableName}: ${rows.length} synced (${seed.objectIds.length} seeded)`
       )
 
       const destIds = new Set(rows.map((row) => row.id))
@@ -271,6 +278,10 @@ async function syncAllEndpointsForVersion(apiVersion: string): Promise<void> {
         )
       }
     }
+
+    console.log(
+      `\n  [${apiVersion}] ${seededStreams.length} streams:\n${syncedCounts.join('\n')}\n`
+    )
 
     expect(failures, failures.join('\n')).toHaveLength(0)
   } finally {
@@ -308,6 +319,8 @@ describe('test-server API', () => {
       host: '127.0.0.1',
       port: 0,
       accountCreated: RANGE_START,
+      logRequests: false,
+      validateQueryParams: true,
     })
   }, 10 * 60_000)
 
@@ -353,6 +366,32 @@ describe('test-server API', () => {
       headers: { Authorization: 'Bearer sk_test_fake' },
     })
     expect(methodRes.status).toBe(405)
+  }, 120_000)
+
+  it('list request with invalid query params fails', async () => {
+    const validatingServer = await createStripeListServer({
+      postgresUrl: sourceDocker.connectionString,
+      host: '127.0.0.1',
+      port: 0,
+      accountCreated: RANGE_START,
+      logRequests: false,
+      validateQueryParams: true,
+    })
+    try {
+      const res = await fetch(`${validatingServer.url}/v1/customers?foo=bar`, {
+        headers: { Authorization: 'Bearer sk_test_fake' },
+      })
+      expect(res.status).toBe(400)
+      const errBody = (await res.json()) as {
+        error: { type: string; message: string; details: string[]; allowed: string[] }
+      }
+      expect(errBody.error.type).toBe('invalid_request_error')
+      expect(errBody.error.message).toBe('Query parameters do not match OpenAPI definition')
+      expect(errBody.error.details).toContain('Unknown query parameter "foo"')
+      expect(errBody.error.allowed).toContain('limit')
+    } finally {
+      await validatingServer.close().catch(() => {})
+    }
   }, 120_000)
 
   for (const supportedApiVersion of SUPPORTED_API_VERSIONS) {

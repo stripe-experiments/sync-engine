@@ -5,6 +5,7 @@ import type { ServerType } from '@hono/node-server'
 import pg from 'pg'
 import { DEFAULT_STORAGE_SCHEMA, ensureSchema, quoteIdentifier } from '../db/storage.js'
 import { resolveEndpointSet, type EndpointDefinition } from '../openapi/endpoints.js'
+import { validateQueryAgainstOpenApi } from '../openapi/filters.js'
 import { startDockerPostgres18, type DockerPostgres18Handle } from '../postgres/dockerPostgres18.js'
 import type {
   StripeListServerOptions,
@@ -20,6 +21,8 @@ import { seedCustomersForStripeListServer } from './seedCustomers.js'
 export type { StripeListServerOptions, StripeListServer } from './types.js'
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+const V2_PAGE_CURSOR_QUERY_PARAM = 'page'
 
 function makeFakeAccount(created: number) {
   return {
@@ -78,15 +81,18 @@ export async function createStripeListServer(
 
   const fakeAccount = makeFakeAccount(options.accountCreated ?? Math.floor(Date.now() / 1000))
   const failureStates = (options.failures ?? []).map(() => ({ matches: 0, failures: 0 }))
+  const logRequests = options.logRequests ?? true
 
   // ── Build Hono app ────────────────────────────────────────────
 
   const app = new Hono()
 
-  app.use('*', async (c, next) => {
-    await next()
-    logRequest(c.req.method, c.req.path, c.res.status)
-  })
+  if (logRequests) {
+    app.use('*', async (c, next) => {
+      await next()
+      logRequest(c.req.method, c.req.path, c.res.status)
+    })
+  }
 
   for (const prefix of ['/v1/*', '/v2/*'] as const) {
     app.use(prefix, async (c, next) => {
@@ -122,7 +128,9 @@ export async function createStripeListServer(
   app.get('/v1/account', (c) => c.json(fakeAccount))
 
   for (const ep of endpointSet.endpoints.values()) {
-    app.get(ep.apiPath, (c) => handleList(c, pool, schema, ep))
+    app.get(ep.apiPath, (c) =>
+      handleList(c, pool, schema, ep, options.validateQueryParams ?? false)
+    )
     app.get(`${ep.apiPath}/:id`, (c) => handleRetrieve(c, pool, schema, ep, c.req.param('id')))
   }
 
@@ -208,16 +216,47 @@ async function handleList(
   c: Context,
   pool: pg.Pool,
   schema: string,
-  endpoint: EndpointDefinition
+  endpoint: EndpointDefinition,
+  validateQueryParams: boolean
 ): Promise<Response> {
+  const query = new URL(c.req.url).searchParams
+  if (validateQueryParams) {
+    const validated = validateQueryAgainstOpenApi(
+      stripInternalPaginationParams(query, endpoint),
+      endpoint.queryParams
+    )
+    if (!validated.ok) {
+      process.stderr.write(
+        `[sync-test-utils] query validation failed for ${endpoint.apiPath}: ` +
+          `query="${query.toString()}" details=${JSON.stringify(validated.details)} ` +
+          `allowed=${JSON.stringify(validated.allowed)}\n`
+      )
+      return c.json(
+        {
+          error: {
+            type: 'invalid_request_error',
+            message: validated.message,
+            details: validated.details,
+            allowed: validated.allowed,
+          },
+        },
+        validated.statusCode as 400
+      )
+    }
+  }
+
   if (endpoint.isV2) {
-    const limit = clampLimit(c.req.query('limit'), 20)
-    const pageToken = c.req.query('page')
+    const limit = clampLimit(query.get('limit') ?? undefined, 20)
+    const pageToken = query.get(V2_PAGE_CURSOR_QUERY_PARAM) ?? undefined
     const afterId = pageToken ? decodePageToken(pageToken) : undefined
 
     const { data, hasMore, lastId } = await queryPageV2(pool, schema, endpoint.tableName, {
       limit,
       afterId,
+      createdGt: parseTimestampParam(query.get('created[gt]') ?? undefined),
+      createdGte: parseTimestampParam(query.get('created[gte]') ?? undefined),
+      createdLt: parseTimestampParam(query.get('created[lt]') ?? undefined),
+      createdLte: parseTimestampParam(query.get('created[lte]') ?? undefined),
     })
 
     const nextPageUrl =
@@ -237,16 +276,22 @@ async function handleList(
     })
   }
 
-  const limit = clampLimit(c.req.query('limit'), 10)
-  const { data, hasMore } = await queryPageV1(pool, schema, endpoint.tableName, {
+  const limit = clampLimit(query.get('limit') ?? undefined, 10)
+  const v1Query = {
     limit,
-    afterId: c.req.query('starting_after'),
-    beforeId: c.req.query('ending_before'),
-    createdGt: parseIntParam(c.req.query('created[gt]')),
-    createdGte: parseIntParam(c.req.query('created[gte]')),
-    createdLt: parseIntParam(c.req.query('created[lt]')),
-    createdLte: parseIntParam(c.req.query('created[lte]')),
-  })
+    afterId: query.get('starting_after') ?? undefined,
+    beforeId: query.get('ending_before') ?? undefined,
+    createdGt: parseIntParam(query.get('created[gt]') ?? undefined),
+    createdGte: parseIntParam(query.get('created[gte]') ?? undefined),
+    createdLt: parseIntParam(query.get('created[lt]') ?? undefined),
+    createdLte: parseIntParam(query.get('created[lte]') ?? undefined),
+  }
+  const supportsForwardPagination = endpoint.queryParams.some(
+    (param) => param.name === 'starting_after'
+  )
+  const { data, hasMore } = supportsForwardPagination
+    ? await queryPageV1(pool, schema, endpoint.tableName, v1Query)
+    : await queryAllV1(pool, schema, endpoint.tableName, v1Query)
 
   return c.json({
     object: 'list',
@@ -383,8 +428,48 @@ async function queryPageV1(
   return { data, hasMore, lastId }
 }
 
+async function queryAllV1(
+  pool: pg.Pool,
+  schema: string,
+  tableName: string,
+  opts: Omit<V1PageQuery, 'limit' | 'afterId' | 'beforeId'>
+): Promise<{ data: Record<string, unknown>[]; hasMore: false }> {
+  const conditions: string[] = []
+  const values: unknown[] = []
+  let idx = 0
+
+  if (opts.createdGt != null) {
+    conditions.push(`created > $${++idx}`)
+    values.push(opts.createdGt)
+  }
+  if (opts.createdGte != null) {
+    conditions.push(`created >= $${++idx}`)
+    values.push(opts.createdGte)
+  }
+  if (opts.createdLt != null) {
+    conditions.push(`created < $${++idx}`)
+    values.push(opts.createdLt)
+  }
+  if (opts.createdLte != null) {
+    conditions.push(`created <= $${++idx}`)
+    values.push(opts.createdLte)
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const table = `${quoteIdentifier(schema)}.${quoteIdentifier(tableName)}`
+  const rows = await safeQuery(
+    pool,
+    `SELECT _raw_data FROM ${table} ${where} ORDER BY created DESC, id DESC`,
+    values,
+    tableName
+  )
+
+  return { data: rows.map((row) => row._raw_data), hasMore: false }
+}
+
 /**
- * V2: opaque page tokens map to id ASC + `id > cursor` (no created ordering).
+ * V2: opaque page tokens map to id ASC + `id > cursor`.
+ * When the endpoint supports `created`, we apply the created window too.
  */
 async function queryPageV2(
   pool: pg.Pool,
@@ -399,6 +484,22 @@ async function queryPageV2(
   if (opts.afterId) {
     conditions.push(`id > $${++idx}`)
     values.push(opts.afterId)
+  }
+  if (opts.createdGt != null) {
+    conditions.push(`created > $${++idx}`)
+    values.push(opts.createdGt)
+  }
+  if (opts.createdGte != null) {
+    conditions.push(`created >= $${++idx}`)
+    values.push(opts.createdGte)
+  }
+  if (opts.createdLt != null) {
+    conditions.push(`created < $${++idx}`)
+    values.push(opts.createdLt)
+  }
+  if (opts.createdLte != null) {
+    conditions.push(`created <= $${++idx}`)
+    values.push(opts.createdLte)
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -457,6 +558,13 @@ function parseIntParam(raw: string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
+function parseTimestampParam(raw: string | undefined): number | undefined {
+  if (raw == null) return undefined
+  if (/^-?\d+$/.test(raw)) return parseInt(raw, 10)
+  const parsed = Date.parse(raw)
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : undefined
+}
+
 function encodePageToken(id: string): string {
   return Buffer.from(id).toString('base64url')
 }
@@ -465,7 +573,18 @@ function decodePageToken(token: string): string {
   return Buffer.from(token, 'base64url').toString()
 }
 
-/** Carry forward expand / expand[] (and similar) on v2 next_page_url. */
+function stripInternalPaginationParams(
+  query: URLSearchParams,
+  endpoint: EndpointDefinition
+): URLSearchParams {
+  const normalized = new URLSearchParams(query)
+  if (endpoint.isV2) {
+    normalized.delete(V2_PAGE_CURSOR_QUERY_PARAM)
+  }
+  return normalized
+}
+
+/** Carry forward incoming filters on v2 next_page_url. */
 function buildV2NextPageUrl(
   apiPath: string,
   limit: number,
@@ -474,10 +593,10 @@ function buildV2NextPageUrl(
 ): string {
   const qs = new URLSearchParams()
   qs.set('limit', String(limit))
-  qs.set('page', pageToken)
+  qs.set(V2_PAGE_CURSOR_QUERY_PARAM, pageToken)
   for (const [key, value] of incoming.entries()) {
-    if (key === 'limit' || key === 'page') continue
-    if (key.startsWith('expand')) qs.append(key, value)
+    if (key === 'limit' || key === V2_PAGE_CURSOR_QUERY_PARAM) continue
+    qs.append(key, value)
   }
   return `${apiPath}?${qs.toString()}`
 }
