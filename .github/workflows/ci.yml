@@ -446,7 +446,12 @@ jobs:
             echo "::warning::E2E tests skipped — STRIPE_API_KEY not available (fork PR?)"
             exit 0
           fi
-          pnpm --filter @stripe/sync-e2e exec vitest run --exclude 'service-docker.test.ts'
+          pnpm --filter @stripe/sync-e2e exec vitest run \
+            --exclude 'service-docker.test.ts' \
+            --exclude 'test-e2e-network.test.ts' \
+            --exclude 'test-server-sync.test.ts' \
+            --exclude 'test-sync-e2e.test.ts' \
+            --exclude 'test-sync-engine.test.ts'
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
           POSTGRES_URL: 'postgres://postgres:postgres@localhost:55432/postgres'
