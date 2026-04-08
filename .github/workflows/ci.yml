@@ -484,16 +484,27 @@ jobs:
       - name: Install dependencies & build
         run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: Test server suites
+      - name: Start Docker Compose stack
+        run: |
+          docker compose -f compose.yml -f compose.dev.yml -f e2e/compose.e2e.yml \
+            up --build -d --wait temporal engine service worker
+
+      - name: Test server suites (parallel)
         run: |
           pnpm --filter @stripe/sync-e2e exec vitest run \
             test-server-all-api.test.ts \
             test-server-sync.test.ts \
             test-sync-e2e.test.ts \
-            test-sync-engine.test.ts \
+            test-sync-engine.test.ts
+        env:
+          SKIP_SETUP: '1'
+
+      - name: Network interruption tests (pauses containers)
+        run: |
+          pnpm --filter @stripe/sync-e2e exec vitest run \
             test-e2e-network.test.ts
         env:
-          SKIP_BUILD: '1'
+          SKIP_SETUP: '1'
 
       - name: Skipped test warnings
         if: always()
