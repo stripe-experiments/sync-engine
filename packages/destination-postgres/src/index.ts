@@ -174,7 +174,9 @@ const destination = {
             )
           `)
         }
-        yield logMsg(`[${i + 1}/${catalog.streams.length}] Table "${cs.stream.name}" ready (${Date.now() - start}ms)`)
+        yield logMsg(
+          `[${i + 1}/${catalog.streams.length}] Table "${cs.stream.name}" ready (${Date.now() - start}ms)`
+        )
       }
     } finally {
       await pool.end()

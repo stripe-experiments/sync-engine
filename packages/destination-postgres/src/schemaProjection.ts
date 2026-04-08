@@ -337,7 +337,9 @@ export async function applySchemaFromCatalog(
     for (const stmt of stmts) {
       await runSqlAdditive(client, stmt)
     }
-    config.onLog?.(`[${i + 1}/${schemasToMigrate.length}] Migrated "${stream.name}" (${Date.now() - start}ms)`)
+    config.onLog?.(
+      `[${i + 1}/${schemasToMigrate.length}] Migrated "${stream.name}" (${Date.now() - start}ms)`
+    )
   }
 
   await insertMigrationMarker(client, syncSchema, markerColumn, marker, fingerprint)
