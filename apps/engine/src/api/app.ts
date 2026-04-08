@@ -42,6 +42,7 @@ import {
   sslConfigFromConnectionString,
   stripSslParams,
   withPgConnectProxy,
+  withQueryLogging,
 } from '@stripe/sync-util-postgres'
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -314,7 +315,7 @@ export async function createApp(resolver: ConnectorResolver) {
     const pipeline = c.req.valid('header')['x-pipeline']
     const context = { path: '/pipeline_check', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
-      logApiStream('Engine API /check', engine.pipeline_check(pipeline), context)
+      logApiStream('Engine API /pipeline_check', engine.pipeline_check(pipeline), context)
     )
   })
 
@@ -339,7 +340,7 @@ export async function createApp(resolver: ConnectorResolver) {
     const pipeline = c.req.valid('header')['x-pipeline']
     const context = { path: '/pipeline_setup', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
-      logApiStream('Engine API /setup', engine.pipeline_setup(pipeline), context)
+      logApiStream('Engine API /pipeline_setup', engine.pipeline_setup(pipeline), context)
     )
   })
 
@@ -364,7 +365,7 @@ export async function createApp(resolver: ConnectorResolver) {
     const pipeline = c.req.valid('header')['x-pipeline']
     const context = { path: '/pipeline_teardown', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
-      logApiStream('Engine API /teardown', engine.pipeline_teardown(pipeline), context)
+      logApiStream('Engine API /pipeline_teardown', engine.pipeline_teardown(pipeline), context)
     )
   })
 
@@ -424,7 +425,7 @@ export async function createApp(resolver: ConnectorResolver) {
     const inputPresent = hasBody(c)
     const context = { path: '/pipeline_read', inputPresent, ...syncRequestContext(pipeline) }
     const startedAt = Date.now()
-    logger.info(context, 'Engine API /read started')
+    logger.info(context, 'Engine API /pipeline_read started')
 
     let input: AsyncIterable<unknown> | undefined
     if (inputPresent) {
@@ -442,7 +443,7 @@ export async function createApp(resolver: ConnectorResolver) {
       }
     }
     const output = engine.pipeline_read(pipeline, { state, state_limit, time_limit }, input)
-    return ndjsonResponse(logApiStream('Engine API /read', output, context, startedAt))
+    return ndjsonResponse(logApiStream('Engine API /pipeline_read', output, context, startedAt))
   })
 
   const pipelineWriteRoute = createRoute({
@@ -694,12 +695,12 @@ export async function createApp(resolver: ConnectorResolver) {
   app.openapi(internalQueryRoute, async (c) => {
     const { connection_string, sql } = c.req.valid('json')
     const ssl = sslConfigFromConnectionString(connection_string)
-    const pool = new pg.Pool(
+    const pool = withQueryLogging(new pg.Pool(
       withPgConnectProxy({
         connectionString: stripSslParams(connection_string),
         ssl,
       })
-    )
+    ))
     try {
       const result = await pool.query(sql.trim())
       return c.json({ rows: result.rows, rowCount: result.rowCount })
