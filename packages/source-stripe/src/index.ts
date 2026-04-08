@@ -218,10 +218,7 @@ export function createStripeSource(
       const rateLimiter =
         externalRateLimiter ?? createInMemoryRateLimiter(config.rate_limit ?? DEFAULT_MAX_RPS)
       const client = makeClient(config)
-      const resolved = await resolveOpenApiSpec(
-        { apiVersion: config.api_version },
-        apiFetch
-      )
+      const resolved = await resolveOpenApiSpec({ apiVersion: config.api_version }, apiFetch)
       const registry = buildResourceRegistry(
         resolved.spec,
         config.api_key,

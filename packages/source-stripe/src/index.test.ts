@@ -1231,7 +1231,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1253,7 +1257,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1271,7 +1279,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1344,7 +1356,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1433,7 +1449,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1479,7 +1499,11 @@ describe('StripeSource', () => {
 
       const iter = source
         .read({
-          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const, websocket: true },
+          config: {
+            api_key: 'sk_test_fake',
+            api_version: '2025-04-30.basil' as const,
+            websocket: true,
+          },
           catalog: catalog({ name: 'customers' }),
         })
         [Symbol.asyncIterator]()
@@ -1493,7 +1517,11 @@ describe('StripeSource', () => {
     it('teardown() is safe when no websocket was configured', async () => {
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
       // No setup() call — teardown should not throw
-      await drain(source.teardown!({ config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const } }))
+      await drain(
+        source.teardown!({
+          config: { api_key: 'sk_test_fake', api_version: '2025-04-30.basil' as const },
+        })
+      )
       expect(mockClose).not.toHaveBeenCalled()
     })
   })

@@ -137,7 +137,7 @@ function createTestInfra() {
 
       const connectors = createConnectorResolver({
         sources: { stripe: source },
-        destinations: { postgres: pgDestination, 'google_sheets': sheetsDestination },
+        destinations: { postgres: pgDestination, google_sheets: sheetsDestination },
       })
 
       // Start engine API (stateless sync execution)
@@ -344,7 +344,7 @@ describe.skip('temporal e2e: stripe → google_sheets', () => {
       source: { type: 'stripe', stripe: { api_key: STRIPE_API_KEY, backfill_limit: 3 } },
       destination: {
         type: 'google_sheets',
-        'google_sheets': {
+        google_sheets: {
           client_id: GOOGLE_CLIENT_ID,
           client_secret: GOOGLE_CLIENT_SECRET,
           refresh_token: GOOGLE_REFRESH_TOKEN,
