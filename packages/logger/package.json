@@ -1,0 +1,30 @@
+{
+  "name": "@stripe/sync-logger",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "test": "vitest --passWithNoTests"
+  },
+  "dependencies": {
+    "pino": "^10"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.0",
+    "pino-pretty": "^13",
+    "vitest": "^3.2.1"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
