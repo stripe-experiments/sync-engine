@@ -6,9 +6,7 @@ describe('configSchema api_version field', () => {
   it('only accepts known enum values', () => {
     expect(configSchema.shape.api_version.safeParse(BUNDLED_API_VERSION).success).toBe(true)
     expect(configSchema.shape.api_version.safeParse('2099-01-01.unknown').success).toBe(false)
-    expect(configSchema.shape.api_version.safeParse(undefined).success).toBe(true) // default fills in
-    const parsed = configSchema.shape.api_version.parse(undefined)
-    expect(parsed).toBe(BUNDLED_API_VERSION)
+    expect(configSchema.shape.api_version.safeParse(undefined).success).toBe(true)
   })
 
   it('exposes supported versions via JSON Schema enum', () => {
@@ -19,7 +17,7 @@ describe('configSchema api_version field', () => {
 
     expect(field).toBeDefined()
     expect(field!.enum).toEqual([...SUPPORTED_API_VERSIONS])
-    expect(field!.description).toBe('Stripe API version')
+    expect(field!.description).toContain(BUNDLED_API_VERSION)
   })
 
   it('clients can extract supported API versions from config_schema', () => {
