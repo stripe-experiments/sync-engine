@@ -32,6 +32,11 @@ export function createPipelineSyncActivity(context: ActivitiesContext) {
     }
     const { transient, permanent } = classifySyncErrors(errors)
     if (permanent.length > 0) {
+      if (transient.length > 0) {
+        console.warn(
+          `Transient errors suppressed by permanent failures: ${summarizeSyncErrors(transient)}`
+        )
+      }
       return { errors, state, eof }
     }
     if (transient.length > 0) {
