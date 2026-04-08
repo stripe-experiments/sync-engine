@@ -18,7 +18,6 @@ import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromRegistry, catalogFromOpenApi } from './catalog.js'
 import {
   resolveOpenApiSpec,
-  BUNDLED_API_VERSION,
   SpecParser,
   OPENAPI_RESOURCE_TABLE_ALIASES,
 } from '@stripe/sync-openapi'
@@ -119,7 +118,7 @@ export function createStripeSource(
     // TODO: Custom objects (not yet supported) would require a more specific cache
     // since they aren't discoverable from the OpenAPI spec alone.
     async *discover({ config }): AsyncGenerator<DiscoverOutput> {
-      const apiVersion = config.api_version ?? BUNDLED_API_VERSION
+      const apiVersion = config.api_version
       const cached = discoverCache.get(apiVersion)
       if (cached) {
         yield { type: 'catalog' as const, catalog: cached }
@@ -220,7 +219,7 @@ export function createStripeSource(
         externalRateLimiter ?? createInMemoryRateLimiter(config.rate_limit ?? DEFAULT_MAX_RPS)
       const client = makeClient(config)
       const resolved = await resolveOpenApiSpec(
-        { apiVersion: config.api_version ?? BUNDLED_API_VERSION },
+        { apiVersion: config.api_version },
         apiFetch
       )
       const registry = buildResourceRegistry(
