@@ -10,6 +10,7 @@ import {
   OPENAPI_RESOURCE_TABLE_ALIASES,
 } from '@stripe/sync-openapi'
 import { fetchWithProxy } from './transport.js'
+import { withHttpRetry } from './retry.js'
 
 const apiFetch: typeof globalThis.fetch = (input, init) =>
   fetchWithProxy(input as URL | string, init ?? {})
@@ -107,6 +108,9 @@ export function buildResourceRegistry(
         supportsPagination: n.supportsPagination,
       }))
 
+    const rawListFn = buildListFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl)
+    const rawRetrieveFn = buildRetrieveFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl)
+
     const config: ResourceConfig = {
       order: 1,
       tableName,
@@ -116,7 +120,7 @@ export function buildResourceRegistry(
       sync: true,
       dependencies: [],
       listFn: buildSpecAwareListFn(
-        buildListFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl),
+        (params) => withHttpRetry(() => rawListFn(params)),
         {
           isV2,
           supportsLimit: endpoint.supportsLimit,
@@ -125,7 +129,7 @@ export function buildResourceRegistry(
           supportsCreatedFilter: endpoint.supportsCreatedFilter,
         }
       ),
-      retrieveFn: buildRetrieveFn(apiKey, endpoint.apiPath, apiFetch, apiVersion, baseUrl),
+      retrieveFn: (id) => withHttpRetry(() => rawRetrieveFn(id)),
       nestedResources: children.length > 0 ? children : undefined,
     }
     registry[tableName] = config

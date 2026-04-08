@@ -1,10 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildListFn, buildRetrieveFn, discoverListEndpoints } from '../listFnResolver'
 import { minimalStripeOpenApiSpec } from './fixtures/minimalSpec'
-
-afterEach(() => {
-  vi.useRealTimers()
-})
 
 describe('discoverListEndpoints', () => {
   it('maps table names to their API paths', () => {
@@ -132,32 +128,6 @@ describe('discoverListEndpoints', () => {
     )
   })
 
-  it('retries transient list failures and eventually succeeds', async () => {
-    vi.useFakeTimers()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            error: { type: 'api_error', message: 'Temporary outage' },
-          }),
-          { status: 500 }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: [{ id: 'cus_123' }], has_more: false }), {
-          status: 200,
-        })
-      )
-    const list = buildListFn('sk_test_fake', '/v1/customers', fetchMock)
-
-    const pending = list({ limit: 1 })
-    await vi.runAllTimersAsync()
-
-    await expect(pending).resolves.toEqual({ data: [{ id: 'cus_123' }], has_more: false })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
   it('throws the Stripe error message for non-2xx list responses', async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -178,7 +148,6 @@ describe('discoverListEndpoints', () => {
   })
 
   it('throws for v2 non-2xx list responses', async () => {
-    vi.useFakeTimers()
     const fetchMock = vi.fn(
       async () =>
         new Response(
@@ -190,9 +159,8 @@ describe('discoverListEndpoints', () => {
     )
     const list = buildListFn('sk_test_fake', '/v2/core/accounts', fetchMock)
 
-    const pending = expect(list({ limit: 1 })).rejects.toThrow('Injected page failure')
-    await vi.runAllTimersAsync()
-    await pending
+    await expect(list({ limit: 1 })).rejects.toThrow('Injected page failure')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('encodes created filters for v2 list requests', async () => {

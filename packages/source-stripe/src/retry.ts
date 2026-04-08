@@ -103,7 +103,7 @@ export async function withHttpRetry<T>(
       const status = getHttpErrorStatus(err)
       const errName = err instanceof Error ? err.name : 'UnknownError'
       console.error(
-        `[sync-openapi] retry attempt=${attempt + 1}/${maxRetries} delay=${delayMs}ms status=${status ?? 'n/a'} error=${errName}`
+        `[source-stripe] retry attempt=${attempt + 1}/${maxRetries} delay=${delayMs}ms status=${status ?? 'n/a'} error=${errName}`
       )
 
       await sleep(delayMs)

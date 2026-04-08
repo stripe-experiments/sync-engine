@@ -7,7 +7,7 @@ import {
   type StripeApiList,
   type StripeWebhookEndpoint,
 } from '@stripe/sync-openapi'
-import { withHttpRetry } from '@stripe/sync-openapi/retry'
+import { withHttpRetry } from './retry.js'
 import { stripeEventSchema, type StripeEvent } from './spec.js'
 import { fetchWithProxy, parsePositiveInteger, type TransportEnv } from './transport.js'
 
