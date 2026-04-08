@@ -110,6 +110,11 @@ export function makeClient(config: StripeClientConfig, env: TransportEnv = proce
     return json
   }
 
+  /**
+   * Wraps `request` with retry logic for GET requests only.
+   * Non-GET methods (POST, DELETE) pass through without retry to avoid
+   * duplicating side effects.
+   */
   async function requestWithRetry(
     method: string,
     path: string,

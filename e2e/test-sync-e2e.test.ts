@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { BUNDLED_API_VERSION } from '../packages/openapi/src/versions.js'
 import {
   SERVICE_URL,
   pollUntil,
@@ -31,6 +32,7 @@ describe('test-server sync via Docker service: 10k customers', () => {
             type: 'stripe',
             stripe: {
               api_key: 'sk_test_fake',
+              api_version: BUNDLED_API_VERSION,
               base_url: harness.testServerContainerUrl(),
               rate_limit: 1000,
             },
