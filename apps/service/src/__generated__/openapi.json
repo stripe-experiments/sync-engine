@@ -891,7 +891,8 @@
           }
         },
         "required": [
-          "api_key"
+          "api_key",
+          "api_version"
         ],
         "additionalProperties": false
       },
