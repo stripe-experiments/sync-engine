@@ -27,7 +27,7 @@ import { pollEvents } from './src-events-api.js'
 import type { StripeWebSocketClient, StripeWebhookEvent } from './src-websocket.js'
 import { createStripeWebSocketClient } from './src-websocket.js'
 import type { ResourceConfig } from './types.js'
-import { makeClient } from './client.js'
+import { makeClient, type StripeClient } from './client.js'
 import type { RateLimiter } from './rate-limiter.js'
 import { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
 import { fetchWithProxy } from './transport.js'
@@ -78,15 +78,11 @@ export type StripeStreamState = {
 
 // MARK: - Account ID resolution
 
-export async function resolveAccountId(config: Config): Promise<string> {
+export async function resolveAccountId(config: Config, client: StripeClient): Promise<string> {
   if (config.account_id) {
     return config.account_id
   }
 
-  const client = makeClient({
-    ...config,
-    api_version: config.api_version ?? BUNDLED_API_VERSION,
-  })
   const account = await client.getAccount()
   return account.id
 }
@@ -250,7 +246,7 @@ export function createStripeSource(
         config.base_url
       )
       const streamNames = new Set(catalog.streams.map((s) => s.stream.name))
-      const accountId = await resolveAccountId(config)
+      const accountId = await resolveAccountId(config, client)
 
       // Event-driven mode: iterate over incoming webhook inputs
       if ($stdin) {
