@@ -66,6 +66,7 @@ export function ndjsonResponse<T>(
       }
     },
     cancel() {
+      console.error('[ndjson] client disconnected — aborting pipeline')
       ac.abort()
     },
   })
