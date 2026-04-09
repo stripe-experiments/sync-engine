@@ -315,9 +315,10 @@ export function buildListFn(
       }
     }
 
-    const response = await fetch(`${base}${apiPath}?${qs}`, {
-      headers: authHeaders(apiKey),
-    })
+    const headers = authHeaders(apiKey)
+    headers['Stripe-Version'] = apiVersion
+
+    const response = await fetch(`${base}${apiPath}?${qs}`, { headers })
     const body = (await readJson(response)) as { data: unknown[]; has_more: boolean }
     assertOk(response, body, 'GET', apiPath)
     return { data: body.data ?? [], has_more: body.has_more }
@@ -353,9 +354,10 @@ export function buildRetrieveFn(
   }
 
   return async (id) => {
-    const response = await fetch(`${base}${apiPath}/${id}`, {
-      headers: authHeaders(apiKey),
-    })
+    const headers = authHeaders(apiKey)
+    headers['Stripe-Version'] = apiVersion
+
+    const response = await fetch(`${base}${apiPath}/${id}`, { headers })
     const body = await readJson(response)
     assertOk(response, body, 'GET', `${apiPath}/${id}`)
     return body
