@@ -101,90 +101,9 @@ export type BuildTableOptions = {
 }
 
 /**
- * Build a single SQL string (a DO block) that idempotently creates a table with
- * generated columns from JSON Schema, adds missing columns, indexes, and the
- * updated_at trigger.  Sends exactly **one round trip** to the database.
- */
-export function buildCreateTableDDL(
-  schema: string,
-  tableName: string,
-  jsonSchema: Record<string, unknown>,
-  options: BuildTableOptions = {}
-): string {
-  const quotedSchema = quoteIdent(schema)
-  const quotedTable = quoteIdent(tableName)
-
-  const columns = jsonSchemaToColumns(jsonSchema)
-
-  const generatedColumnDefs = columns.map(
-    (col) => `${quoteIdent(col.name)} ${col.pgType} GENERATED ALWAYS AS (${col.expression}) STORED`
-  )
-
-  const systemColumnDefs = (options.system_columns ?? []).map(
-    (col) => `${quoteIdent(col.name)} ${col.type}`
-  )
-
-  const columnDefs = [
-    '"_raw_data" jsonb NOT NULL',
-    '"_last_synced_at" timestamptz',
-    '"_updated_at" timestamptz NOT NULL DEFAULT now()',
-    ...systemColumnDefs,
-    `"id" text GENERATED ALWAYS AS ((_raw_data->>'id')::text) STORED`,
-    ...generatedColumnDefs,
-    'PRIMARY KEY ("id")',
-  ]
-
-  // Every DDL is wrapped in BEGIN…EXCEPTION to match runSqlAdditive error handling
-  const blocks: string[] = []
-
-  // 1. CREATE TABLE
-  blocks.push(wrapAdditive(
-    `CREATE TABLE ${quotedSchema}.${quotedTable} (\n    ${columnDefs.join(',\n    ')}\n  );`
-  ))
-
-  // 2. Idempotent column additions for pre-existing tables
-  if (generatedColumnDefs.length > 0) {
-    const addClauses = generatedColumnDefs.map(
-      (colDef) => `ADD COLUMN IF NOT EXISTS ${colDef}`
-    )
-    blocks.push(wrapAdditive(
-      `ALTER TABLE ${quotedSchema}.${quotedTable}\n    ${addClauses.join(',\n    ')};`
-    ))
-  }
-
-  // 3. Indexes on system columns
-  for (const col of options.system_columns ?? []) {
-    if (col.index) {
-      const idxName = safeIdentifier(`idx_${tableName}_${col.name}`)
-      blocks.push(wrapAdditive(
-        `CREATE INDEX ${quoteIdent(idxName)} ON ${quotedSchema}.${quotedTable} (${quoteIdent(col.name)});`
-      ))
-    }
-  }
-
-  // 4. Trigger (DROP is already idempotent; CREATE is wrapped for concurrent callers)
-  blocks.push(
-    `DROP TRIGGER IF EXISTS handle_updated_at ON ${quotedSchema}.${quotedTable};`
-  )
-  blocks.push(wrapAdditive(
-    `CREATE TRIGGER handle_updated_at BEFORE UPDATE ON ${quotedSchema}.${quotedTable} FOR EACH ROW EXECUTE FUNCTION ${quotedSchema}.set_updated_at();`
-  ))
-
-  return `DO $ddl$\nBEGIN\n  ${blocks.join('\n  ')}\nEND;\n$ddl$;`
-}
-
-/**
- * Wrap a DDL statement in BEGIN…EXCEPTION so it's skipped when the object already
- * exists.  Mirrors the error codes handled by {@link runSqlAdditive}.
- */
-function wrapAdditive(stmt: string): string {
-  return `BEGIN\n    ${stmt}\n  EXCEPTION WHEN duplicate_table OR duplicate_object OR duplicate_column OR invalid_table_definition THEN NULL;\n  END;`
-}
-
-/**
  * Build DDL statements to create a table with generated columns from JSON Schema.
- * Returns an array of individual SQL statements for callers that need per-statement
- * control; prefer {@link buildCreateTableDDL} for fewer round trips.
+ * Returns an array of individual SQL statements (CREATE TABLE, ALTER TABLE,
+ * indexes, triggers). Prefer {@link buildCreateTableDDL} for fewer round trips.
  */
 export function buildCreateTableWithSchema(
   schema: string,
@@ -220,12 +139,8 @@ export function buildCreateTableWithSchema(
   ]
 
   if (generatedColumnDefs.length > 0) {
-    const addClauses = generatedColumnDefs.map(
-      (colDef) => `ADD COLUMN IF NOT EXISTS ${colDef}`
-    )
-    stmts.push(
-      `ALTER TABLE ${quotedSchema}.${quotedTable}\n  ${addClauses.join(',\n  ')};`
-    )
+    const addClauses = generatedColumnDefs.map((colDef) => `ADD COLUMN IF NOT EXISTS ${colDef}`)
+    stmts.push(`ALTER TABLE ${quotedSchema}.${quotedTable}\n  ${addClauses.join(',\n  ')};`)
   }
 
   for (const col of options.system_columns ?? []) {
@@ -246,9 +161,39 @@ export function buildCreateTableWithSchema(
 }
 
 /**
+ * Wrap a DDL statement in BEGIN…EXCEPTION so it's skipped when the object already
+ * exists.  Mirrors the error codes handled by {@link runSqlAdditive}.
+ */
+function wrapAdditive(stmt: string): string {
+  return `BEGIN\n    ${stmt}\n  EXCEPTION WHEN duplicate_table OR duplicate_object OR duplicate_column OR invalid_table_definition THEN NULL;\n  END;`
+}
+
+/**
+ * Build a single SQL string (a DO block) that idempotently creates a table with
+ * generated columns from JSON Schema, adds missing columns, indexes, and the
+ * updated_at trigger.  Sends exactly **one round trip** to the database.
+ *
+ * Delegates to {@link buildCreateTableWithSchema} for the statement list, then
+ * wraps each mutating statement in BEGIN…EXCEPTION for idempotency.
+ */
+export function buildCreateTableDDL(
+  schema: string,
+  tableName: string,
+  jsonSchema: Record<string, unknown>,
+  options: BuildTableOptions = {}
+): string {
+  const stmts = buildCreateTableWithSchema(schema, tableName, jsonSchema, options)
+  const blocks = stmts.map((stmt) => (/^DROP\s/i.test(stmt) ? stmt : wrapAdditive(stmt)))
+  return `DO $ddl$\nBEGIN\n  ${blocks.join('\n  ')}\nEND;\n$ddl$;`
+}
+
+/**
  * Execute a DDL statement, skipping if the object already exists.
  * Handles: 42P07 (table exists), 42710 (constraint exists),
  * 42P16 (invalid constraint definition), 42701 (column exists).
+ *
+ * @deprecated No longer used internally — {@link buildCreateTableDDL} handles
+ * idempotency inside a PL/pgSQL DO block instead. Kept for external callers.
  */
 export async function runSqlAdditive(client: PgClient, sql: string): Promise<void> {
   try {
@@ -368,6 +313,10 @@ export type ApplySchemaFromCatalogConfig = {
 /**
  * Apply schema from a catalog's json_schema fields to the database.
  * Uses migration markers to avoid redundant DDL.
+ *
+ * Tables are migrated concurrently via `Promise.all`. For true parallelism,
+ * pass a `pg.Pool` (which multiplexes across connections); a single `pg.Client`
+ * will serialize queries on its connection.
  */
 export async function applySchemaFromCatalog(
   client: PgClient,
@@ -415,14 +364,17 @@ export async function applySchemaFromCatalog(
   const schemasToMigrate = streams.filter((s) => s.json_schema)
   config.onLog?.(`Migrating ${schemasToMigrate.length} tables (marker: ${marker.slice(0, 24)}…)`)
   const total = schemasToMigrate.length
+  let completed = 0
   await Promise.all(
-    schemasToMigrate.map(async (stream, i) => {
+    schemasToMigrate.map(async (stream) => {
       const start = Date.now()
-      await client.query(buildCreateTableDDL(dataSchema, stream.name, stream.json_schema!, {
-        system_columns: config.system_columns,
-      }))
+      await client.query(
+        buildCreateTableDDL(dataSchema, stream.name, stream.json_schema!, {
+          system_columns: config.system_columns,
+        })
+      )
       config.onLog?.(
-        `[${i + 1}/${total}] Migrated "${stream.name}" (${Date.now() - start}ms)`
+        `[${++completed}/${total}] Migrated "${stream.name}" (${Date.now() - start}ms)`
       )
     })
   )
