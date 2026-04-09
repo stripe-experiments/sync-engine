@@ -689,9 +689,6 @@ importers:
 
   packages/util-postgres:
     dependencies:
-      '@stripe/sync-logger':
-        specifier: workspace:*
-        version: link:../logger
       pg:
         specifier: ^8.16.3
         version: 8.16.3
@@ -7388,7 +7385,6 @@ snapshots:
 
   '@stripe/sync-util-postgres@file:packages/util-postgres':
     dependencies:
-      '@stripe/sync-logger': file:packages/logger
       pg: 8.16.3
     transitivePeerDependencies:
       - pg-native

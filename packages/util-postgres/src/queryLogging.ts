@@ -1,9 +1,11 @@
 import type pg from 'pg'
-import { createLogger } from '@stripe/sync-logger'
 
 const verbose = process.env.DANGEROUSLY_VERBOSE_LOGGING === 'true'
-const STDERR_FD = 2
-const logger = createLogger({ name: 'util-postgres', destination: STDERR_FD })
+
+function writeStderr(level: string, obj: Record<string, unknown>, msg: string) {
+  const entry = JSON.stringify({ level, name: 'util-postgres', msg, ...obj, time: Date.now() })
+  process.stderr.write(entry + '\n')
+}
 
 /**
  * Wrap a pg.Pool so every query is logged to stderr when
@@ -30,7 +32,8 @@ export function withQueryLogging<T extends pg.Pool>(pool: T): T {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (origQuery as any)(...args)
-      logger.info(
+      writeStderr(
+        'info',
         {
           duration_ms: Date.now() - start,
           row_count: result?.rowCount ?? 0,
@@ -40,11 +43,12 @@ export function withQueryLogging<T extends pg.Pool>(pool: T): T {
       )
       return result
     } catch (err) {
-      logger.error(
+      writeStderr(
+        'error',
         {
           duration_ms: Date.now() - start,
           sql_preview,
-          err,
+          err: err instanceof Error ? { type: err.constructor.name, message: err.message } : err,
         },
         'Postgres query failed'
       )
