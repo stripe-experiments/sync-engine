@@ -10,6 +10,7 @@
  */
 import { createConnectorResolver, createEngine } from '../apps/engine/src/lib/index.js'
 import { defaultConnectors } from '../apps/engine/src/lib/default-connectors.js'
+import { fileStateStore } from '../apps/engine/src/lib/state-store.js'
 import type { PipelineConfig } from '../packages/protocol/src/index.js'
 
 const stripeApiKey = process.env.STRIPE_API_KEY
@@ -38,7 +39,15 @@ const engine = await createEngine(resolver)
 // Setup (creates spreadsheet/sheets if needed)
 for await (const _msg of engine.pipeline_setup(pipeline)) {}
 
+// State: file-backed, resumable across runs
+const store = fileStateStore('.sync-state-sheets.json')
+const state = await store.get()
+
 // Sync
-for await (const msg of engine.pipeline_sync(pipeline)) {
+for await (const msg of engine.pipeline_sync(pipeline, { state })) {
+  if (msg.type === 'source_state') {
+    if (msg.source_state.state_type === 'global') await store.setGlobal(msg.source_state.data)
+    else await store.set(msg.source_state.stream, msg.source_state.data)
+  }
   console.log(JSON.stringify(msg))
 }

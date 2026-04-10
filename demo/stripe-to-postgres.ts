@@ -9,6 +9,7 @@
  */
 import { createConnectorResolver, createEngine } from '../apps/engine/src/lib/index.js'
 import { defaultConnectors } from '../apps/engine/src/lib/default-connectors.js'
+import { fileStateStore } from '../apps/engine/src/lib/state-store.js'
 import type { PipelineConfig } from '../packages/protocol/src/index.js'
 
 const stripeApiKey = process.env.STRIPE_API_KEY
@@ -31,11 +32,8 @@ const engine = await createEngine(resolver)
 // Create tables
 for await (const _msg of engine.pipeline_setup(pipeline)) {}
 
-// State store
-const statePkg = await import('../packages/state-postgres/src/index.js')
-const stateConfig = { connection_string: postgresUrl, schema: 'public' }
-await statePkg.setupStateStore(stateConfig)
-const store = statePkg.createStateStore(stateConfig)
+// State: file-backed, resumable across runs
+const store = fileStateStore('.sync-state.json')
 const state = await store.get()
 
 // Sync
@@ -46,5 +44,3 @@ for await (const msg of engine.pipeline_sync(pipeline, { state })) {
   }
   console.log(JSON.stringify(msg))
 }
-
-await store.close()
