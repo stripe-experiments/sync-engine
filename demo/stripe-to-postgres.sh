@@ -2,8 +2,8 @@
 # Sync Stripe → Postgres via the sync-engine CLI.
 #
 # Usage:
-#   ./demo/stripe-to-postgres.sh
-#   STRIPE_API_KEY=sk_live_... DATABASE_URL=postgresql://... ./demo/stripe-to-postgres.sh
+#   ./demo/stripe-to-postgres.sh           # normal
+#   ./demo/stripe-to-postgres.sh verbose   # debug logging with full request/response bodies
 #
 # Env: STRIPE_API_KEY, DATABASE_URL (or POSTGRES_URL)
 # Override TypeScript runner: TS_RUNNER="bun" or TS_RUNNER="npx tsx"
@@ -11,6 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 RUN="${TS_RUNNER:-bun}"
 POSTGRES_URL="${DATABASE_URL:-${POSTGRES_URL:?Set DATABASE_URL or POSTGRES_URL}}"
+
+if [[ "${1:-}" == "verbose" ]]; then
+  export DANGEROUSLY_VERBOSE_LOGGING=true
+  export LOG_LEVEL=debug
+fi
 
 echo "=== Stripe → Postgres ===" >&2
 echo "Postgres: $POSTGRES_URL" >&2
