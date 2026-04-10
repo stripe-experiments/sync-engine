@@ -133,14 +133,14 @@ outbound WebSocket connection.
 
 ## All demos
 
-| Script | What it does | Required env vars |
-|--------|-------------|-------------------|
-| `read-from-stripe.sh` | Read from Stripe, output NDJSON to stdout | `STRIPE_API_KEY` |
-| `write-to-postgres.sh` | Write NDJSON (stdin or sample data) to Postgres | `DATABASE_URL` |
-| `write-to-sheets.sh` | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_*` |
-| `stripe-to-postgres.sh` | Stripe → Postgres via the engine | `STRIPE_API_KEY`, `DATABASE_URL` |
-| `stripe-to-google-sheets.sh` | Stripe → Google Sheets via the engine | `STRIPE_API_KEY`, `GOOGLE_*` |
-| `stripe-to-postgres-live.sh` | Stripe → Postgres with live WebSocket streaming | `STRIPE_API_KEY`, `DATABASE_URL` |
+| Script                       | What it does                                         | Required env vars                |
+| ---------------------------- | ---------------------------------------------------- | -------------------------------- |
+| `read-from-stripe.sh`        | Read from Stripe, output NDJSON to stdout            | `STRIPE_API_KEY`                 |
+| `write-to-postgres.sh`       | Write NDJSON (stdin or sample data) to Postgres      | `DATABASE_URL`                   |
+| `write-to-sheets.sh`         | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_*`                       |
+| `stripe-to-postgres.sh`      | Stripe → Postgres via the engine                     | `STRIPE_API_KEY`, `DATABASE_URL` |
+| `stripe-to-google-sheets.sh` | Stripe → Google Sheets via the engine                | `STRIPE_API_KEY`, `GOOGLE_*`     |
+| `stripe-to-postgres-live.sh` | Stripe → Postgres with live WebSocket streaming      | `STRIPE_API_KEY`, `DATABASE_URL` |
 
 ### TypeScript API
 
@@ -154,7 +154,7 @@ node --import tsx demo/stripe-to-postgres-live.ts   # live WebSocket mode
 
 ## Utilities
 
-| Script | What it does |
-|--------|-------------|
-| `reset-postgres.sh` | Drop all tables and non-system schemas |
-| `webhooksite.sh` | Set up webhook forwarding for live Stripe events |
+| Script              | What it does                                     |
+| ------------------- | ------------------------------------------------ |
+| `reset-postgres.sh` | Drop all tables and non-system schemas           |
+| `webhooksite.sh`    | Set up webhook forwarding for live Stripe events |

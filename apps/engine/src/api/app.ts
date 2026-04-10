@@ -353,14 +353,11 @@ export async function createApp(resolver: ConnectorResolver) {
   })
 
   const onlyQueryParam = z.object({
-    only: z
-      .enum(['source', 'destination'])
-      .optional()
-      .meta({
-        description:
-          'Run only the source or destination side. Useful for optimistic destination setup (e.g. creating tables early in a UI) or isolating a connector when debugging.',
-        example: 'destination',
-      }),
+    only: z.enum(['source', 'destination']).optional().meta({
+      description:
+        'Run only the source or destination side. Useful for optimistic destination setup (e.g. creating tables early in a UI) or isolating a connector when debugging.',
+      example: 'destination',
+    }),
   })
 
   const pipelineSetupRoute = createRoute({
