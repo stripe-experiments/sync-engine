@@ -10,8 +10,11 @@
 #
 # Prerequisites:
 #   - Registry running and STRIPE_NPM_REGISTRY set
-#   - All packages built (pnpm build)
+#   - Unless SKIP_PUBLISH=1: packages built (pnpm build) and pnpm available for Step 2
 #   - For GitHub Packages: GITHUB_TOKEN set (CI provides this automatically)
+#
+# Environment:
+#   - SKIP_PUBLISH=1 — skip Step 2 (use when packages were just published by CI, e.g. publish_npm job)
 #
 # Usage:
 #   bash e2e/publish.test.sh
@@ -36,6 +39,11 @@ echo "Registry: $REGISTRY"
 echo "Temp dir: $TMPDIR_BASE"
 echo ""
 
+ENGINE_VERSION="$(node -p "require(\"${REPO_ROOT}/apps/engine/package.json\").version")"
+ENGINE_SPEC="@stripe/sync-engine@${ENGINE_VERSION}"
+echo "Engine package spec: $ENGINE_SPEC"
+echo ""
+
 # ---------------------------------------------------------------------------
 # Step 1: Auth for GitHub Packages (Verdaccio is anonymous)
 # ---------------------------------------------------------------------------
@@ -57,21 +65,25 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 2: Publish all workspace packages
 # ---------------------------------------------------------------------------
-echo "--- Step 2: Publishing packages ---"
+if [ "${SKIP_PUBLISH:-}" = "1" ]; then
+  echo "--- Step 2: Skipped (SKIP_PUBLISH=1 — registry already has this commit's packages) ---"
+else
+  echo "--- Step 2: Publishing packages ---"
 
-pnpm -r --filter '!./e2e' publish \
-  --registry "$REGISTRY" \
-  --access public \
-  --no-git-checks \
-  2>&1 || true
-# publish returns non-zero if some packages already exist — that's fine
+  pnpm -r --filter '!./e2e' publish \
+    --registry "$REGISTRY" \
+    --access public \
+    --no-git-checks \
+    2>&1 || true
+  # publish returns non-zero if some packages already exist — that's fine
+fi
 
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 3: Smoke test — npx from clean directory
 # ---------------------------------------------------------------------------
-echo "--- Step 3: npx @stripe/sync-engine --version ---"
+echo "--- Step 3: npx $ENGINE_SPEC --version ---"
 
 cd "$TMPDIR_BASE"
 mkdir test-npx && cd test-npx
@@ -84,11 +96,11 @@ if [[ "$REGISTRY" == *"npm.pkg.github.com"* ]]; then
 fi
 echo "  .npmrc: $(cat .npmrc | grep -v authToken)"
 
-if VERSION_OUTPUT=$(npx --yes @stripe/sync-engine --version 2>&1); then
+if VERSION_OUTPUT=$(npx --yes "$ENGINE_SPEC" --version 2>&1); then
   echo "  Version: $VERSION_OUTPUT"
   echo "  PASS: --version returned output"
 else
-  echo "  FAIL: npx @stripe/sync-engine --version exited with $?"
+  echo "  FAIL: npx $ENGINE_SPEC --version exited with $?"
   echo "  Output: $VERSION_OUTPUT"
   exit 1
 fi
@@ -97,13 +109,13 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 4: npx @stripe/sync-engine --help
 # ---------------------------------------------------------------------------
-echo "--- Step 4: npx @stripe/sync-engine --help ---"
+echo "--- Step 4: npx $ENGINE_SPEC --help ---"
 
-if npx --yes @stripe/sync-engine --help > /dev/null 2>&1; then
+if npx --yes "$ENGINE_SPEC" --help > /dev/null 2>&1; then
   echo "  PASS: --help exits 0"
 else
   echo "  FAIL: --help exited with $?"
-  npx --yes @stripe/sync-engine --help 2>&1 || true
+  npx --yes "$ENGINE_SPEC" --help 2>&1 || true
   exit 1
 fi
 echo ""
@@ -111,11 +123,11 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 5: npx @stripe/sync-engine check (connector loading)
 # ---------------------------------------------------------------------------
-echo "--- Step 5: npx @stripe/sync-engine check (connector loading) ---"
+echo "--- Step 5: npx $ENGINE_SPEC check (connector loading) ---"
 
 PARAMS='{"source":{"type":"stripe","stripe":{"api_key":"sk_test_fake"}},"destination":{"type":"postgres","postgres":{"connection_string":"postgresql://fake:fake@localhost:5432/fake"}}}'
 
-CHECK_OUTPUT=$(npx --yes @stripe/sync-engine check --params "$PARAMS" 2>&1 || true)
+CHECK_OUTPUT=$(npx --yes "$ENGINE_SPEC" check --params "$PARAMS" 2>&1 || true)
 
 # check will fail (bad credentials) but should NOT fail on "not found" (connector loading)
 if echo "$CHECK_OUTPUT" | grep -qi "not found"; then

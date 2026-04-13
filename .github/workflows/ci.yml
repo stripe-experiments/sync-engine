@@ -326,7 +326,7 @@ jobs:
   # ---------------------------------------------------------------------------
   e2e_docker:
     name: E2E Docker
-    needs: build
+    needs: [build, publish_npm]
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -381,17 +381,10 @@ jobs:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
           ENGINE_IMAGE: 'ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64'
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v5
-
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
           node-version-file: ./.nvmrc
-          cache: pnpm
-
-      - name: Install dependencies & build (for publish e2e)
-        run: pnpm install --frozen-lockfile && pnpm build
 
       - name: Publish test
         run: |
@@ -402,6 +395,7 @@ jobs:
           bash e2e/publish.test.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIP_PUBLISH: '1'
 
   # ---------------------------------------------------------------------------
   # E2E Stripe — Stripe API + Temporal integration tests (runs on every push/PR)
