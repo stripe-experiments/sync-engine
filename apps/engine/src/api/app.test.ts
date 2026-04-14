@@ -705,10 +705,11 @@ describe('state_limit and time_limit', () => {
 
     expect(res.status).toBe(200)
     const events = await readNdjson<Message>(res)
-    // destinationTest only yields state messages, so we get 1 state + 1 eof
-    expect(events).toHaveLength(2)
-    expect(events[0]!.type).toBe('source_state')
-    expect(events[1]).toMatchObject({ type: 'eof', eof: { reason: 'state_limit' } })
+    const stateEvents = events.filter((e) => e.type === 'source_state')
+    const eofEvents = events.filter((e) => e.type === 'eof')
+    expect(stateEvents).toHaveLength(1)
+    expect(eofEvents).toHaveLength(1)
+    expect(eofEvents[0]).toMatchObject({ type: 'eof', eof: { reason: 'state_limit' } })
   })
 
   it('POST /read without limits returns all messages plus eof:complete', async () => {

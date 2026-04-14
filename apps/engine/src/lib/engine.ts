@@ -11,7 +11,7 @@ import {
   ConfiguredStream,
   ConfiguredCatalog,
   SyncOutput,
-  SourceState,
+  SyncState,
   RecordMessage,
   SourceStateMessage,
   collectFirst,
@@ -21,6 +21,7 @@ import {
 } from '@stripe/sync-protocol'
 
 import { enforceCatalog, filterType, log, pipe, takeLimits } from './pipeline.js'
+import { trackProgress, createRecordCounter } from './progress.js'
 import { applySelection } from './destination-filter.js'
 import type { ConnectorResolver } from './resolver.js'
 import { logger } from '../logger.js'
@@ -28,8 +29,8 @@ import { logger } from '../logger.js'
 // MARK: - Engine interface
 
 export const SourceReadOptions = z.object({
-  /** Aggregate state (per-stream + global) carried in from the previous sync run. */
-  state: SourceState.optional(),
+  /** Full sync state with source/destination/engine sections. */
+  state: SyncState.optional(),
   /** Stop after emitting this many state messages (useful for paging). */
   state_limit: z.number().int().positive().optional(),
   /** Wall-clock time limit in seconds; the stream stops after this duration. */
@@ -408,7 +409,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       const rawSrc = configPayload(pipeline.source)
       const sourceConfig = await getSpecConfig(connector, rawSrc)
       const { catalog } = await discoverCatalog(engine, pipeline)
-      const state = opts?.state
+      const state = opts?.state?.source
 
       const raw = connector.read({ config: sourceConfig, catalog, state }, input)
       const logged = withLoggedStream(
@@ -478,10 +479,12 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       const destConfig = await getSpecConfig(destConnector, rawDest)
       const { filteredCatalog } = await discoverCatalog(engine, pipeline)
 
+      const recordCounter = createRecordCounter()
       const destInput = pipe(
         dataStream,
         enforceCatalog(filteredCatalog),
         log,
+        recordCounter.tap.bind(recordCounter),
         filterType('record', 'source_state')
       )
       const destOutput = destConnector.write(
@@ -500,11 +503,27 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         SyncOutput.parse({ ...msg, _emitted_by: sourceTag, _ts: now() })
       )
 
-      // Merge both streams and apply limits
-      yield* takeLimits<SyncOutput>({
+      // Merge both streams, apply limits, and track progress
+      const limited = takeLimits<SyncOutput>({
         state_limit: opts?.state_limit,
         time_limit: opts?.time_limit,
       })(merge(taggedDest, taggedSource))
+
+      const initialCounts = opts?.state?.engine?.streams
+        ? Object.fromEntries(
+            Object.entries(opts.state.engine.streams)
+              .map(([k, v]) => [
+                k,
+                (v as { cumulative_record_count?: number })?.cumulative_record_count ?? 0,
+              ])
+              .filter(([, v]) => typeof v === 'number' && v > 0)
+          )
+        : undefined
+
+      yield* trackProgress({
+        initial_cumulative_counts: initialCounts as Record<string, number> | undefined,
+        recordCounter,
+      })(limited)
     },
   }
   return engine

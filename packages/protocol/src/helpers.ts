@@ -9,9 +9,11 @@ import type {
   Message,
   RecordMessage,
   RecordPayload,
+  SectionState,
   SourceStateMessage,
   SpecMessage,
   StreamStatePayload,
+  SyncState,
   TraceMessage,
 } from './protocol.js'
 
@@ -104,6 +106,25 @@ export function isTraceStreamStatus(
   msg: Message
 ): msg is TraceMessage & { trace: { trace_type: 'stream_status' } } {
   return msg.type === 'trace' && msg.trace.trace_type === 'stream_status'
+}
+
+/** Type guard for trace progress messages. */
+export function isTraceProgress(
+  msg: Message
+): msg is TraceMessage & { trace: { trace_type: 'progress' } } {
+  return msg.type === 'trace' && msg.trace.trace_type === 'progress'
+}
+
+export function emptySectionState(): SectionState {
+  return { streams: {}, global: {} }
+}
+
+export function emptySyncState(): SyncState {
+  return {
+    source: emptySectionState(),
+    destination: emptySectionState(),
+    engine: emptySectionState(),
+  }
 }
 
 // MARK: - Stream collector

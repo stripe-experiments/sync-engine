@@ -1,6 +1,7 @@
 import { condition, continueAsNew, setHandler } from '@temporalio/workflow'
 
-import type { SourceInputMessage, SourceState } from '@stripe/sync-protocol'
+import type { SourceInputMessage, SyncState } from '@stripe/sync-protocol'
+import { emptySyncState } from '@stripe/sync-protocol'
 import type { DesiredStatus, PipelineStatus } from '../../lib/createSchemas.js'
 import { CONTINUE_AS_NEW_THRESHOLD } from '../../lib/utils.js'
 import { classifySyncErrors } from '../sync-errors.js'
@@ -30,7 +31,7 @@ export interface PipelineWorkflowState {
 
 export interface PipelineWorkflowOpts {
   desiredStatus?: DesiredStatus
-  sourceState?: SourceState
+  syncState?: SyncState
   inputQueue?: SourceInputMessage[]
   state?: PipelineWorkflowState
   errorRecoveryRequested?: boolean
@@ -43,7 +44,7 @@ export async function pipelineWorkflow(
   // Persisted through continue-as-new.
   const inputQueue: SourceInputMessage[] = opts?.inputQueue ? [...opts.inputQueue] : []
   let desiredStatus: DesiredStatus = opts?.desiredStatus ?? 'active'
-  let sourceState: SourceState = opts?.sourceState ?? { streams: {}, global: {} }
+  let syncState: SyncState = opts?.syncState ?? emptySyncState()
   let state: PipelineWorkflowState = { ...opts?.state }
   let errorRecoveryRequested = opts?.errorRecoveryRequested ?? false
 
@@ -149,12 +150,12 @@ export async function pipelineWorkflow(
       }
 
       const result = await pipelineSync(pipelineId, {
-        state: sourceState,
+        state: syncState,
         state_limit: 100,
         time_limit: 10,
       })
       operationCount++
-      sourceState = result.state
+      syncState = result.state
       if (classifySyncErrors(result.errors).permanent.length > 0) {
         await markPermanentError()
         return
@@ -193,7 +194,7 @@ export async function pipelineWorkflow(
     if (operationCount >= CONTINUE_AS_NEW_THRESHOLD) {
       return await continueAsNew<typeof pipelineWorkflow>(pipelineId, {
         desiredStatus,
-        sourceState,
+        syncState,
         inputQueue,
         state,
         errorRecoveryRequested,
