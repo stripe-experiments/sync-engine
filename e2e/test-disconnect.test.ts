@@ -315,7 +315,8 @@ const runtimes: RuntimeConfig[] = [
   {
     name: 'docker',
     start: (port, mockUrl) => startEngineDocker(port, mockUrl),
-    skip: !hasDocker(),
+    // Docker test builds an image from scratch (~2min) — only run when explicitly opted in
+    skip: !process.env.DISCONNECT_TEST_DOCKER,
   },
 ]
 
