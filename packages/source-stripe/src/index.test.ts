@@ -2122,6 +2122,11 @@ describe('StripeSource', () => {
         })
       )
 
+      // First call is the density probe — verify it includes created filter
+      expect(parallelListFn.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ limit: 100, created: expect.any(Object) })
+      )
+
       for (const call of parallelListFn.mock.calls.slice(1)) {
         expect(call[0]).toHaveProperty('created')
       }
