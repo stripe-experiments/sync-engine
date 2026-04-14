@@ -133,6 +133,7 @@ jobs:
         run: |
           pnpm --filter @stripe/sync-e2e exec vitest run test-disconnect.test.ts
         env:
+          DISCONNECT_TEST_NODE: '1'
           SKIP_SETUP: '1'
 
       - name: Install Bun
@@ -144,6 +145,7 @@ jobs:
         run: |
           pnpm --filter @stripe/sync-e2e exec vitest run test-disconnect.test.ts
         env:
+          DISCONNECT_TEST_BUN: '1'
           SKIP_SETUP: '1'
 
       - name: Connector loading test
@@ -472,6 +474,13 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           GOOGLE_SPREADSHEET_ID: ${{ vars.GOOGLE_SPREADSHEET_ID }}
+
+      - name: Disconnect & time-limit tests (Docker)
+        run: |
+          pnpm --filter @stripe/sync-e2e exec vitest run test-disconnect.test.ts
+        env:
+          DISCONNECT_TEST_DOCKER: '1'
+          ENGINE_IMAGE: 'ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64'
 
       - name: Smokescreen proxy e2e
         run: |

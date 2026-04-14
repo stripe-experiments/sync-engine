@@ -12,9 +12,8 @@
  *   3. NDJSON eof payload (elapsed_ms, cutoff)
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { Hono } from 'hono'
-import { serve } from '@hono/node-server'
+import { spawn, execSync } from 'node:child_process'
+import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { BUNDLED_API_VERSION } from '@stripe/sync-openapi'
@@ -52,62 +51,82 @@ interface MockStripeServer {
   close: () => Promise<void>
 }
 
-async function startMockStripeApi(opts: { delayMs?: number } = {}): Promise<MockStripeServer> {
+async function startMockStripeApi(opts: { delayMs?: number; port?: number } = {}): Promise<MockStripeServer> {
   const delayMs = opts.delayMs ?? 0
+  const port = opts.port ?? 0
   let count = 0
+  let serverRef: Server | null = null
 
-  const app = new Hono()
-
-  app.get('/request_count', (c) => c.json({ count }))
-
-  // GET /v1/account
-  app.get('/v1/account', (c) =>
-    c.json({
-      id: 'acct_test_mock',
-      object: 'account',
-      type: 'standard',
-      charges_enabled: true,
-      payouts_enabled: true,
-      details_submitted: true,
-      country: 'US',
-      default_currency: 'usd',
-      created: 1000000000,
-      settings: { dashboard: { display_name: 'Mock' } },
-    })
-  )
-
-  // GET /v1/customers — paginated list with configurable delay
-  app.get('/v1/customers', async (c) => {
-    count++
-    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
-    const startingAfter = c.req.query('starting_after')
-    const pageIndex = startingAfter ? parseInt(startingAfter.replace('cus_', '')) : 0
-    const pageSize = 10
-    const data = Array.from({ length: pageSize }, (_, i) => ({
-      id: `cus_${pageIndex + i + 1}`,
-      object: 'customer',
-      name: `Customer ${pageIndex + i + 1}`,
-      email: `c${pageIndex + i + 1}@test.com`,
-      created: 1000000000 + pageIndex + i + 1,
-    }))
-    return c.json({
-      object: 'list',
-      url: '/v1/customers',
-      has_more: true,
-      data,
-    })
-  })
-
-  // Catch-all for discover/spec calls
-  app.all('/v1/:resource', (c) => {
-    count++
-    return c.json({ object: 'list', url: `/v1/${c.req.param('resource')}`, has_more: false, data: [] })
-  })
-
-  const serverRef = { value: null as ReturnType<typeof serve> | null }
   const url = await new Promise<string>((resolve) => {
-    serverRef.value = serve({ fetch: app.fetch, port: 0 }, (info) => {
-      resolve(`http://localhost:${(info as AddressInfo).port}`)
+    serverRef = createServer(async (req, res) => {
+      const requestUrl = new URL(req.url ?? '/', 'http://localhost')
+
+      function sendJson(status: number, payload: unknown) {
+        const body = JSON.stringify(payload)
+        res.statusCode = status
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Content-Length', Buffer.byteLength(body))
+        res.end(body)
+      }
+
+      if (requestUrl.pathname === '/request_count') {
+        sendJson(200, { count })
+        return
+      }
+
+      if (requestUrl.pathname === '/v1/account') {
+        sendJson(200, {
+          id: 'acct_test_mock',
+          object: 'account',
+          type: 'standard',
+          charges_enabled: true,
+          payouts_enabled: true,
+          details_submitted: true,
+          country: 'US',
+          default_currency: 'usd',
+          created: 1000000000,
+          settings: { dashboard: { display_name: 'Mock' } },
+        })
+        return
+      }
+
+      if (requestUrl.pathname === '/v1/customers') {
+        count++
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
+        const startingAfter = requestUrl.searchParams.get('starting_after')
+        const pageIndex = startingAfter ? parseInt(startingAfter.replace('cus_', '')) : 0
+        const pageSize = 10
+        const data = Array.from({ length: pageSize }, (_, i) => ({
+          id: `cus_${pageIndex + i + 1}`,
+          object: 'customer',
+          name: `Customer ${pageIndex + i + 1}`,
+          email: `c${pageIndex + i + 1}@test.com`,
+          created: 1000000000 + pageIndex + i + 1,
+        }))
+        sendJson(200, {
+          object: 'list',
+          url: '/v1/customers',
+          has_more: true,
+          data,
+        })
+        return
+      }
+
+      if (requestUrl.pathname.startsWith('/v1/')) {
+        count++
+        sendJson(200, {
+          object: 'list',
+          url: requestUrl.pathname,
+          has_more: false,
+          data: [],
+        })
+        return
+      }
+
+      sendJson(404, { error: 'not_found' })
+    })
+    serverRef.listen(port, '0.0.0.0', () => {
+      resolve(`http://localhost:${(serverRef!.address() as AddressInfo).port}`)
     })
   })
 
@@ -119,7 +138,7 @@ async function startMockStripeApi(opts: { delayMs?: number } = {}): Promise<Mock
     },
     close: () =>
       new Promise((resolve, reject) => {
-        serverRef.value?.close((err: Error | null) => (err ? reject(err) : resolve()))
+        serverRef?.close((err) => (err ? reject(err) : resolve()))
       }),
   }
 }
@@ -251,6 +270,19 @@ async function waitForServer(
   throw new Error(`Server at ${url} did not become healthy in ${timeout}ms`)
 }
 
+async function waitForLog(
+  engine: EngineProcess,
+  needle: string,
+  timeout = 5_000
+): Promise<void> {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (engine.stderr.includes(needle)) return
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw new Error(`Timed out waiting for log ${needle}\n\nCurrent output:\n${engine.stderr}`)
+}
+
 // ── NDJSON helpers ─────────────────────────────────────────────
 
 function makePipelineHeader(mockStripeUrl: string): string {
@@ -273,6 +305,15 @@ function makePipelineHeader(mockStripeUrl: string): string {
     },
     streams: [{ name: 'customers' }],
   })
+}
+
+function normalizeMockUrlForRuntime(runtimeName: string, url: string): string {
+  if (runtimeName !== 'docker') return url
+  const u = new URL(url)
+  if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    u.hostname = 'host.docker.internal'
+  }
+  return u.toString()
 }
 
 async function readNdjsonLines(
@@ -310,14 +351,26 @@ type RuntimeConfig = {
   skip: boolean
 }
 
+const explicitRuntimeSelection =
+  process.env.DISCONNECT_TEST_NODE ||
+  process.env.DISCONNECT_TEST_BUN ||
+  process.env.DISCONNECT_TEST_DOCKER
+
 const runtimes: RuntimeConfig[] = [
-  { name: 'node', start: (port) => startEngineNode(port), skip: false },
-  { name: 'bun', start: (port) => startEngineBun(port), skip: !hasBun() },
+  {
+    name: 'node',
+    start: (port) => startEngineNode(port),
+    skip: explicitRuntimeSelection ? process.env.DISCONNECT_TEST_NODE !== '1' : false,
+  },
+  {
+    name: 'bun',
+    start: (port) => startEngineBun(port),
+    skip: explicitRuntimeSelection ? process.env.DISCONNECT_TEST_BUN !== '1' : !hasBun(),
+  },
   {
     name: 'docker',
     start: (port, mockUrl) => startEngineDocker(port, mockUrl),
-    // Docker test builds an image from scratch (~2min) — only run when explicitly opted in
-    skip: !process.env.DISCONNECT_TEST_DOCKER,
+    skip: explicitRuntimeSelection ? process.env.DISCONNECT_TEST_DOCKER !== '1' : true,
   },
 ]
 
@@ -327,7 +380,7 @@ for (const runtime of runtimes) {
     let engine: EngineProcess
 
     beforeAll(async () => {
-      mockApi = await startMockStripeApi({ delayMs: 200 })
+      mockApi = await startMockStripeApi({ delayMs: 200, port: runtime.name === 'docker' ? 18888 : 0 })
       const port = getPort()
       engine = await runtime.start(port, mockApi.url)
     }, 120_000)
@@ -342,7 +395,7 @@ for (const runtime of runtimes) {
     })
 
     it('client disconnect stops the engine from making further API calls', async () => {
-      const pipelineHeader = makePipelineHeader(mockApi.url)
+      const pipelineHeader = makePipelineHeader(normalizeMockUrlForRuntime(runtime.name, mockApi.url))
       const ac = new AbortController()
 
       // Start a streaming sync request
@@ -367,19 +420,20 @@ for (const runtime of runtimes) {
       ac.abort()
       await fetchPromise
 
-      // Wait and check that request count stopped growing
+      // Allow a short settling window for requests that were already in flight
+      await new Promise((r) => setTimeout(r, 300))
+      const countShortlyAfterAbort = mockApi.requestCount()
+
+      // Then verify the engine stops making further progress
       await new Promise((r) => setTimeout(r, 2000))
       const countAfterWait = mockApi.requestCount()
+      expect(countAfterWait - countShortlyAfterAbort).toBeLessThanOrEqual(2)
 
-      // Allow at most 2 extra requests (in-flight when abort fired)
-      expect(countAfterWait - countBeforeDisconnect).toBeLessThanOrEqual(2)
-
-      // Check for disconnect log
-      expect(engine.stderr).toContain('SYNC_CLIENT_DISCONNECT')
+      await waitForLog(engine, 'SYNC_CLIENT_DISCONNECT')
     }, 30_000)
 
     it('soft time limit returns eof with cutoff=soft and elapsed_ms', async () => {
-      const pipelineHeader = makePipelineHeader(mockApi.url)
+      const pipelineHeader = makePipelineHeader(normalizeMockUrlForRuntime(runtime.name, mockApi.url))
 
       const start = Date.now()
       const res = await fetch(`${engine.url}/pipeline_read?time_limit=3`, {
@@ -410,14 +464,19 @@ for (const runtime of runtimes) {
       expect(elapsed).toBeGreaterThan(1500)
       expect(elapsed).toBeLessThan(5000)
 
-      expect(engine.stderr).toContain('SYNC_TIME_LIMIT_SOFT')
+      await waitForLog(engine, 'SYNC_TIME_LIMIT_SOFT')
     }, 30_000)
 
     it('hard time limit forces return when source blocks', async () => {
       // Use a mock with very long delay (5s per page) so the source blocks past the hard deadline
-      const slowMock = await startMockStripeApi({ delayMs: 5000 })
+      const slowMock = await startMockStripeApi({
+        delayMs: 5000,
+        port: runtime.name === 'docker' ? 18889 : 0,
+      })
       try {
-        const pipelineHeader = makePipelineHeader(slowMock.url)
+        const pipelineHeader = makePipelineHeader(
+          normalizeMockUrlForRuntime(runtime.name, slowMock.url)
+        )
 
         const start = Date.now()
         const res = await fetch(`${engine.url}/pipeline_read?time_limit=2`, {
@@ -456,7 +515,7 @@ for (const runtime of runtimes) {
         const countAfterWait = slowMock.requestCount()
         expect(countAfterWait - countAtEof).toBeLessThanOrEqual(1)
 
-        expect(engine.stderr).toContain('SYNC_TIME_LIMIT_HARD')
+        await waitForLog(engine, 'SYNC_TIME_LIMIT_HARD')
       } finally {
         await slowMock.close()
       }
