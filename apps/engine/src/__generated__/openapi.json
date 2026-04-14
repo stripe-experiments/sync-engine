@@ -1432,7 +1432,8 @@
                   "complete",
                   "state_limit",
                   "time_limit",
-                  "error"
+                  "error",
+                  "aborted"
                 ],
                 "description": "Why the sync run ended."
               },
@@ -1548,6 +1549,18 @@
                   ],
                   "description": "End-of-sync summary for a single stream."
                 }
+              },
+              "cutoff": {
+                "description": "Present when reason is time_limit. soft = stopped gracefully between messages; hard = forcibly interrupted a blocked operation.",
+                "type": "string",
+                "enum": [
+                  "soft",
+                  "hard"
+                ]
+              },
+              "elapsed_ms": {
+                "description": "Wall-clock milliseconds elapsed since the stream started. Always present when reason is time_limit or aborted.",
+                "type": "number"
               },
               "record_count": {
                 "description": "Legacy per-stream record counts. Backward compat.",

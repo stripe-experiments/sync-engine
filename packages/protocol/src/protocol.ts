@@ -405,8 +405,20 @@ export type EofStreamProgress = z.infer<typeof EofStreamProgress>
 export const EofPayload = z
   .object({
     reason: z
-      .enum(['complete', 'state_limit', 'time_limit', 'error'])
+      .enum(['complete', 'state_limit', 'time_limit', 'error', 'aborted'])
       .describe('Why the sync run ended.'),
+    cutoff: z
+      .enum(['soft', 'hard'])
+      .optional()
+      .describe(
+        'Present when reason is time_limit. soft = stopped gracefully between messages; hard = forcibly interrupted a blocked operation.'
+      ),
+    elapsed_ms: z
+      .number()
+      .optional()
+      .describe(
+        'Wall-clock milliseconds elapsed since the stream started. Always present when reason is time_limit or aborted.'
+      ),
     global_progress: TraceProgress.optional().describe(
       'Final global aggregates. Same shape as trace/progress.'
     ),
@@ -658,7 +670,8 @@ export interface Source<
       catalog: ConfiguredCatalog
       state?: SourceState
     },
-    $stdin?: AsyncIterable<TInput>
+    $stdin?: AsyncIterable<TInput>,
+    signal?: AbortSignal
   ): AsyncIterable<Message>
 
   /** Provision external resources (webhook endpoints, replication slots, etc.). */
@@ -701,7 +714,8 @@ export interface Destination<TConfig extends Record<string, unknown> = Record<st
    */
   write(
     params: { config: TConfig; catalog: ConfiguredCatalog },
-    $stdin: AsyncIterable<DestinationInput>
+    $stdin: AsyncIterable<DestinationInput>,
+    signal?: AbortSignal
   ): AsyncIterable<DestinationOutput>
 
   /** Provision downstream resources (schemas, tables, etc.). */
