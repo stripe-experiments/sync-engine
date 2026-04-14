@@ -564,7 +564,8 @@ jobs:
             --exclude 'test-server-sync.test.ts' \
             --exclude 'test-sync-e2e.test.ts' \
             --exclude 'test-sync-engine.test.ts' \
-            --exclude 'test-e2e-network.test.ts'  # ↑ run in e2e_test_server job
+            --exclude 'test-e2e-network.test.ts' \
+            --exclude 'test-disconnect.test.ts'  # ↑ run in main test job
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
           POSTGRES_URL: 'postgres://postgres:postgres@localhost:55432/postgres'
