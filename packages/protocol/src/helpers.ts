@@ -127,6 +127,51 @@ export function emptySyncState(): SyncState {
   }
 }
 
+function coerceSectionState(input: unknown): SectionState {
+  if (!input || typeof input !== 'object') return emptySectionState()
+  const obj = input as Record<string, unknown>
+  return {
+    streams:
+      obj.streams && typeof obj.streams === 'object'
+        ? (obj.streams as Record<string, unknown>)
+        : {},
+    global:
+      obj.global && typeof obj.global === 'object' ? (obj.global as Record<string, unknown>) : {},
+  }
+}
+
+/**
+ * Backward-compatible coercion for sync state.
+ *
+ * Accepts:
+ * - SyncState { source, destination, engine }
+ * - SourceState / SectionState { streams, global }
+ * - legacy flat per-stream map { customers: { ... } }
+ */
+export function coerceSyncState(input: unknown): SyncState | undefined {
+  if (input == null) return undefined
+  if (typeof input !== 'object') return undefined
+
+  const obj = input as Record<string, unknown>
+  if ('source' in obj || 'destination' in obj || 'engine' in obj) {
+    return {
+      source: coerceSectionState(obj.source),
+      destination: coerceSectionState(obj.destination),
+      engine: coerceSectionState(obj.engine),
+    }
+  }
+  if ('streams' in obj || 'global' in obj) {
+    return {
+      ...emptySyncState(),
+      source: coerceSectionState(obj),
+    }
+  }
+  return {
+    ...emptySyncState(),
+    source: { streams: obj, global: {} },
+  }
+}
+
 // MARK: - Stream collector
 
 /**

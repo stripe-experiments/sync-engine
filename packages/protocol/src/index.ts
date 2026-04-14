@@ -25,6 +25,7 @@ export {
   isTraceStreamStatus,
   isTraceProgress,
   // State constructors
+  coerceSyncState,
   emptySectionState,
   emptySyncState,
   // Stream collectors

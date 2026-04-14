@@ -37,14 +37,24 @@ export function PipelineDetail({ id, onBack }: PipelineDetailProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
-  const [streamProgress] = useState<Record<string, StreamProgress>>({})
-  const [globalProgress] = useState<GlobalProgress | null>(null)
+  const [streamProgress, setStreamProgress] = useState<Record<string, StreamProgress>>({})
+  const [globalProgress, setGlobalProgress] = useState<GlobalProgress | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
     try {
       const p = await getPipeline(id)
       setPipeline(p)
+      const progress = (
+        p as Pipeline & {
+          progress?: {
+            global_progress?: GlobalProgress
+            stream_progress?: Record<string, StreamProgress>
+          }
+        }
+      ).progress
+      setGlobalProgress(progress?.global_progress ?? null)
+      setStreamProgress(progress?.stream_progress ?? {})
       setError(null)
       return p
     } catch (err) {

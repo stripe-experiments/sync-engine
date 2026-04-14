@@ -14,6 +14,7 @@ import {
   SyncState,
   RecordMessage,
   SourceStateMessage,
+  coerceSyncState,
   collectFirst,
   split,
   merge,
@@ -29,14 +30,21 @@ import { logger } from '../logger.js'
 // MARK: - Engine interface
 
 export const SourceReadOptions = z.object({
-  /** Full sync state with source/destination/engine sections. */
-  state: SyncState.optional(),
+  /** Sync state. Normalized at runtime to SyncState for backward compatibility. */
+  state: z.unknown().optional(),
   /** Stop after emitting this many state messages (useful for paging). */
   state_limit: z.number().int().positive().optional(),
   /** Wall-clock time limit in seconds; the stream stops after this duration. */
   time_limit: z.number().positive().optional(),
 })
-export type SourceReadOptions = z.infer<typeof SourceReadOptions>
+export interface SourceReadOptions {
+  state?:
+    | SyncState
+    | { streams: Record<string, unknown>; global: Record<string, unknown> }
+    | Record<string, unknown>
+  state_limit?: number
+  time_limit?: number
+}
 
 /** Metadata for a single connector type, including its configuration JSON Schema. */
 export const ConnectorInfo = z.object({
@@ -409,7 +417,8 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       const rawSrc = configPayload(pipeline.source)
       const sourceConfig = await getSpecConfig(connector, rawSrc)
       const { catalog } = await discoverCatalog(engine, pipeline)
-      const state = opts?.state?.source
+      const normalizedState = coerceSyncState(opts?.state)
+      const state = normalizedState?.source
 
       const raw = connector.read({ config: sourceConfig, catalog, state }, input)
       const logged = withLoggedStream(
@@ -509,9 +518,10 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
         time_limit: opts?.time_limit,
       })(merge(taggedDest, taggedSource))
 
-      const initialCounts = opts?.state?.engine?.streams
+      const normalizedState = coerceSyncState(opts?.state)
+      const initialCounts = normalizedState?.engine?.streams
         ? Object.fromEntries(
-            Object.entries(opts.state.engine.streams)
+            Object.entries(normalizedState.engine.streams)
               .map(([k, v]) => [
                 k,
                 (v as { cumulative_record_count?: number })?.cumulative_record_count ?? 0,

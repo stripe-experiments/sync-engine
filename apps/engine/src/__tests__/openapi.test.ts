@@ -82,7 +82,7 @@ describe('Engine OpenAPI spec', () => {
     }
   })
 
-  it('x-source-state header uses application/json content with $ref to SourceState', async () => {
+  it('x-state header uses application/json content with $ref to SyncState', async () => {
     const spec = await getSpec()
     const allParams: Array<Record<string, unknown>> = []
     for (const pathItem of Object.values(spec.paths ?? {})) {
