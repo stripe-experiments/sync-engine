@@ -1,5 +1,6 @@
 import type {
   Message,
+  SyncState,
   SyncOutput,
   TraceStreamStatus,
   TraceProgress,
@@ -50,6 +51,8 @@ export function trackProgress(opts: {
     let stateCheckpointCount = 0
     const streamStatus = new Map<string, Status>()
     const streamErrors = new Map<string, StreamError[]>()
+    const accumulatedStreams = new Map<string, unknown>()
+    let accumulatedGlobal: Record<string, unknown> = {}
 
     const startedAt = Date.now()
     let lastWindowAt = startedAt
@@ -152,6 +155,31 @@ export function trackProgress(opts: {
       }
     }
 
+    function buildAccumulatedState(): SyncState | undefined {
+      const hasSource =
+        accumulatedStreams.size > 0 || Object.keys(accumulatedGlobal).length > 0
+      const hasEngine = opts.recordCounter && opts.recordCounter.counts.size > 0
+      if (!hasSource && !hasEngine) return undefined
+
+      const engineStreams: Record<string, unknown> = {}
+      for (const stream of allStreams()) {
+        const run = runRecordCount(stream)
+        const cumulative = (cumulativeRecordCount.get(stream) ?? 0) + run
+        if (cumulative > 0) {
+          engineStreams[stream] = { cumulative_record_count: cumulative }
+        }
+      }
+
+      return {
+        source: {
+          streams: Object.fromEntries(accumulatedStreams),
+          global: accumulatedGlobal,
+        },
+        destination: { streams: {}, global: {} },
+        engine: { streams: engineStreams, global: {} },
+      }
+    }
+
     function buildEnrichedEof(reason: EofPayload['reason']): SyncOutput {
       const windowDuration = Math.max((Date.now() - lastWindowAt) / 1000, 0.001)
       const streams = allStreams()
@@ -164,6 +192,7 @@ export function trackProgress(opts: {
       }
       const eof: EofPayload = {
         reason,
+        state: buildAccumulatedState(),
         global_progress: {
           elapsed_ms: elapsedMs(),
           run_record_count: totalRunRecords(),
@@ -198,7 +227,10 @@ export function trackProgress(opts: {
         stateCheckpointCount++
         if (msg.source_state.state_type === 'stream') {
           const stream = msg.source_state.stream
+          accumulatedStreams.set(stream, msg.source_state.data)
           if (!streamStatus.has(stream)) streamStatus.set(stream, 'running')
+        } else if (msg.source_state.state_type === 'global') {
+          accumulatedGlobal = msg.source_state.data as Record<string, unknown>
         }
       } else if (msg.type === 'trace') {
         if (msg.trace.trace_type === 'stream_status') {

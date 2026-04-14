@@ -111,6 +111,17 @@ describe('trackProgress', () => {
       type: 'eof',
       eof: {
         reason: 'complete',
+        state: {
+          source: {
+            streams: { customers: { cursor: '2' } },
+            global: {},
+          },
+          destination: { streams: {}, global: {} },
+          engine: {
+            streams: { customers: { cumulative_record_count: 7 } },
+            global: {},
+          },
+        },
         global_progress: {
           run_record_count: 2,
           state_checkpoint_count: 1,
@@ -126,5 +137,101 @@ describe('trackProgress', () => {
         record_count: { customers: 2 },
       },
     })
+  })
+
+  it('aggregates multiple stream states and global state into EOF', async () => {
+    const counter = createRecordCounter()
+    await collect(
+      counter.tap(
+        toAsync<Message>([
+          {
+            type: 'record',
+            record: {
+              stream: 'customers',
+              data: { id: 'cus_1' },
+              emitted_at: '2024-01-01T00:00:00.000Z',
+            },
+          },
+          {
+            type: 'record',
+            record: {
+              stream: 'invoices',
+              data: { id: 'inv_1' },
+              emitted_at: '2024-01-01T00:00:00.000Z',
+            },
+          },
+        ])
+      )
+    )
+
+    const outputs = await collect(
+      trackProgress({
+        interval_ms: 0,
+        recordCounter: counter,
+      })(
+        toAsync<SyncOutput>([
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+          },
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'invoices', data: { cursor: 'a' } },
+          },
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '3' } },
+          },
+          {
+            type: 'source_state',
+            source_state: {
+              state_type: 'global',
+              data: { events_cursor: 'evt_123' },
+            },
+          },
+          { type: 'eof', eof: { reason: 'complete' } },
+        ])
+      )
+    )
+
+    const eof = outputs.find((m) => m.type === 'eof')
+    expect(eof).toBeDefined()
+    expect(eof).toMatchObject({
+      type: 'eof',
+      eof: {
+        reason: 'complete',
+        state: {
+          source: {
+            streams: {
+              customers: { cursor: '3' },
+              invoices: { cursor: 'a' },
+            },
+            global: { events_cursor: 'evt_123' },
+          },
+          destination: { streams: {}, global: {} },
+          engine: {
+            streams: {
+              customers: { cumulative_record_count: 1 },
+              invoices: { cumulative_record_count: 1 },
+            },
+            global: {},
+          },
+        },
+      },
+    })
+  })
+
+  it('omits state from EOF when no source_state messages were emitted', async () => {
+    const counter = createRecordCounter()
+    const outputs = await collect(
+      trackProgress({
+        interval_ms: 0,
+        recordCounter: counter,
+      })(toAsync<SyncOutput>([{ type: 'eof', eof: { reason: 'complete' } }]))
+    )
+
+    const eof = outputs.find((m) => m.type === 'eof')
+    expect(eof).toBeDefined()
+    expect((eof as any).eof.state).toBeUndefined()
   })
 })
