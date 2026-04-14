@@ -528,6 +528,13 @@ export interface components {
                  * @enum {string}
                  */
                 reason: "complete" | "state_limit" | "time_limit" | "error" | "aborted";
+                /**
+                 * @description Present when reason is time_limit. soft = stopped gracefully between messages; hard = forcibly interrupted a blocked operation.
+                 * @enum {string}
+                 */
+                cutoff?: "soft" | "hard";
+                /** @description Wall-clock milliseconds elapsed since the stream started. Always present when reason is time_limit or aborted. */
+                elapsed_ms?: number;
                 /** @description Final global aggregates. Same shape as trace/progress. */
                 global_progress?: {
                     /** @description Wall-clock milliseconds since the sync run started. */
@@ -569,13 +576,6 @@ export interface components {
                         }[];
                     };
                 };
-                /**
-                 * @description Present when reason is time_limit. soft = stopped gracefully between messages; hard = forcibly interrupted a blocked operation.
-                 * @enum {string}
-                 */
-                cutoff?: "soft" | "hard";
-                /** @description Wall-clock milliseconds elapsed since the stream started. Always present when reason is time_limit or aborted. */
-                elapsed_ms?: number;
                 /** @description Legacy per-stream record counts. Backward compat. */
                 record_count?: {
                     [key: string]: number;
