@@ -4,13 +4,11 @@ import type { ListFn, ListResult } from '@stripe/sync-openapi'
 import type { ResourceConfig } from './types.js'
 import type { SegmentState, BackfillState } from './index.js'
 import type { RateLimiter } from './rate-limiter.js'
+import { MAX_SEGMENTS, MAX_CONCURRENCY } from './rate-limiter.js'
 import { StripeApiRequestError } from '@stripe/sync-openapi'
 import type { StripeClient } from './client.js'
 
 // MARK: - Rate-limit wrapper
-
-const MAX_SEGMENTS = 50
-const MAX_CONCURRENCY = 15
 
 function withRateLimit(listFn: ListFn, rateLimiter: RateLimiter): ListFn {
   return async (params) => {

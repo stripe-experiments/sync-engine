@@ -387,5 +387,10 @@ export { catalogFromRegistry } from './catalog.js'
 export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from './openapi/specParser.js'
 export type { ParsedResourceTable, ParsedOpenApiSpec } from './openapi/types.js'
 export type { RateLimiter } from './rate-limiter.js'
-export { createInMemoryRateLimiter, DEFAULT_MAX_RPS } from './rate-limiter.js'
+export {
+  createInMemoryRateLimiter,
+  DEFAULT_MAX_RPS,
+  MAX_SEGMENTS,
+  MAX_CONCURRENCY,
+} from './rate-limiter.js'
 export { verifyWebhookSignature, WebhookSignatureError } from './webhookVerify.js'
