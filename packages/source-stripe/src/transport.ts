@@ -218,23 +218,33 @@ export function fetchWithProxy(
   }
 
   const method = (init.method ?? 'GET').toUpperCase()
+  const url = String(input)
   const reqId = crypto.randomUUID().slice(0, 8)
   const start = Date.now()
-  const loggedHeaders: Record<string, string> = {}
+
+  const headerPairs: [string, string][] = []
   if (init.headers) {
     new Headers(init.headers as HeadersInit).forEach((v, k) => {
-      loggedHeaders[k] = k.toLowerCase() === 'authorization' ? '[redacted]' : v
+      headerPairs.push([k, v])
     })
   }
-  logger.trace(
-    { headers: loggedHeaders, ...(init.body != null ? { body: String(init.body) } : {}) },
-    `[http ${reqId}] → ${method} ${String(input)}`
-  )
+
+  const curlParts = [`curl -X ${method}`]
+  for (const [k, v] of headerPairs) {
+    curlParts.push(`-H '${k}: ${v}'`)
+  }
+  if (init.body != null) {
+    curlParts.push(`-d '${String(init.body).replaceAll("'", "'\\''")}'`)
+  }
+  curlParts.push(`'${url}'`)
+  const curl = curlParts.join(' \\\n  ')
+
+  logger.trace(`[http ${reqId}] → ${method} ${url}\n${curl}`)
 
   return fetch(input, fetchInit).then((res) => {
     const resClone = res.clone()
     logger.trace(
-      `[http ${reqId}] ← ${method} ${String(input)} ${res.status} (${Date.now() - start}ms)`
+      `[http ${reqId}] ← ${res.status} ${method} ${url} (${Date.now() - start}ms)`
     )
     resClone
       .text()

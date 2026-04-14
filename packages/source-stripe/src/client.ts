@@ -91,14 +91,14 @@ export function makeClient(
     params?: Record<string, unknown>
   ): Promise<unknown> {
     if (method === 'GET') {
-      return withHttpRetry(() => request(method, path, params))
+      return withHttpRetry(() => request(method, path, params), { label: `${method} ${path}` })
     }
     return request(method, path, params)
   }
 
   return {
     async getAccount(): Promise<StripeAccount> {
-      const json = await requestWithRetry('GET', '/v1/account')
+      const json = await request('GET', '/v1/account')
       return StripeAccountSchema.parse(json)
     },
 
