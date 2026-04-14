@@ -227,12 +227,11 @@ async function startEngineDocker(port: number, _mockUrl: string): Promise<Engine
   }
 
   const containerName = `disconnect-test-${port}`
-  execSync(
-    `docker run -d --name ${containerName} -p ${port}:3000 ` +
-      `--add-host=host.docker.internal:host-gateway ` +
-      `${image}`,
-    { cwd: REPO_ROOT, stdio: 'ignore' }
-  )
+  const useHostNetwork = process.env.DISCONNECT_TEST_DOCKER_HOST_NETWORK === '1'
+  const runCommand = useHostNetwork
+    ? `docker run -d --name ${containerName} --network=host -e PORT=${port} ${image}`
+    : `docker run -d --name ${containerName} -p ${port}:3000 --add-host=host.docker.internal:host-gateway ${image}`
+  execSync(runCommand, { cwd: REPO_ROOT, stdio: 'ignore' })
 
   await waitForServer(`http://localhost:${port}`, 60_000)
 
@@ -309,6 +308,7 @@ function makePipelineHeader(mockStripeUrl: string): string {
 
 function normalizeMockUrlForRuntime(runtimeName: string, url: string): string {
   if (runtimeName !== 'docker') return url
+  if (process.env.DISCONNECT_TEST_DOCKER_HOST_NETWORK === '1') return url
   const u = new URL(url)
   if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
     u.hostname = 'host.docker.internal'
