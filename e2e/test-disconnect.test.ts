@@ -137,58 +137,65 @@ function getPort(): number {
 }
 
 async function startEngineNode(port: number): Promise<EngineProcess> {
-  let stderr = ''
+  let output = ''
   let exited = false
   const child = spawn('node', [ENGINE_DIST], {
     env: { ...process.env, PORT: String(port), LOG_LEVEL: 'trace', LOG_PRETTY: '' },
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  // pino logs to stdout by default
+  child.stdout.on('data', (chunk: Buffer) => {
+    output += chunk.toString()
   })
   child.stderr.on('data', (chunk: Buffer) => {
-    stderr += chunk.toString()
+    output += chunk.toString()
   })
   child.on('exit', (code) => {
     exited = true
     if (code !== 0 && code !== null) {
-      console.error(`Engine process exited with code ${code}. stderr:\n${stderr}`)
+      console.error(`Engine process exited with code ${code}. output:\n${output}`)
     }
   })
 
   await waitForServer(`http://localhost:${port}`, 60_000, () => {
-    if (exited) throw new Error(`Engine exited before becoming healthy. stderr:\n${stderr}`)
+    if (exited) throw new Error(`Engine exited before becoming healthy. output:\n${output}`)
   })
   return {
     url: `http://localhost:${port}`,
     get stderr() {
-      return stderr
+      return output
     },
     kill: () => child.kill(),
   }
 }
 
 async function startEngineBun(port: number): Promise<EngineProcess> {
-  let stderr = ''
+  let output = ''
   let exited = false
   const child = spawn('bun', [ENGINE_SRC], {
     env: { ...process.env, PORT: String(port), LOG_LEVEL: 'trace', LOG_PRETTY: '' },
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  child.stdout.on('data', (chunk: Buffer) => {
+    output += chunk.toString()
   })
   child.stderr.on('data', (chunk: Buffer) => {
-    stderr += chunk.toString()
+    output += chunk.toString()
   })
   child.on('exit', (code) => {
     exited = true
     if (code !== 0 && code !== null) {
-      console.error(`Bun engine process exited with code ${code}. stderr:\n${stderr}`)
+      console.error(`Bun engine process exited with code ${code}. output:\n${output}`)
     }
   })
 
   await waitForServer(`http://localhost:${port}`, 60_000, () => {
-    if (exited) throw new Error(`Bun engine exited before becoming healthy. stderr:\n${stderr}`)
+    if (exited) throw new Error(`Bun engine exited before becoming healthy. output:\n${output}`)
   })
   return {
     url: `http://localhost:${port}`,
     get stderr() {
-      return stderr
+      return output
     },
     kill: () => child.kill(),
   }
