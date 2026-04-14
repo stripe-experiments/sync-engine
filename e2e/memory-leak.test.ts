@@ -27,7 +27,9 @@ const SEED_BATCH = 1000
 const WARMUP_ITERATIONS = 25
 const TEST_ITERATIONS = 50
 // Must be short enough that syncs don't complete before the limit fires.
-// 5000 rows at ~3ms/page = ~150ms total; 0.1s ensures early termination.
+// 5000 rows ÷ 100/page = 50 pages at ~3ms each = ~150ms total.
+// time_limit=0.1s processes ~33 pages, guaranteeing early termination.
+// Each response must include an eof with reason=time_limit — verified below.
 const TIME_LIMIT_SECONDS = 0.1
 
 const RANGE_START = Math.floor(new Date('2021-04-03T00:00:00Z').getTime() / 1000)
@@ -104,13 +106,23 @@ function spawnEngine(port: number): { proc: ChildProcess; ready: Promise<void> }
   return { proc, ready }
 }
 
-async function drainResponse(res: Response): Promise<void> {
+const decoder = new TextDecoder()
+
+/** Drain an NDJSON response; returns true if an eof with reason=time_limit was seen. */
+async function drainResponse(res: Response): Promise<boolean> {
   const reader = res.body?.getReader()
-  if (!reader) return
+  if (!reader) return false
+  let sawTimeLimit = false
+  let buffer = ''
   while (true) {
-    const { done } = await reader.read()
+    const { done, value } = await reader.read()
     if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    if (!sawTimeLimit && buffer.includes('"reason":"time_limit"')) {
+      sawTimeLimit = true
+    }
   }
+  return sawTimeLimit
 }
 
 // ── Test suite ───────────────────────────────────────────────────
@@ -228,15 +240,17 @@ describe('memory leak regression', { timeout: 600_000 }, () => {
     const pid = engineProc.pid!
     const rssSamples: number[] = []
     const totalIterations = WARMUP_ITERATIONS + TEST_ITERATIONS
+    let timeLimitEofCount = 0
 
     for (let i = 0; i < totalIterations; i++) {
       const res = await fetch(
         `http://localhost:${enginePort}/pipeline_sync?time_limit=${TIME_LIMIT_SECONDS}`,
         { method: 'POST', headers: { 'X-Pipeline': pipelineHeader } }
       )
-      await drainResponse(res)
+      const sawTimeLimit = await drainResponse(res)
+      if (sawTimeLimit) timeLimitEofCount++
 
-      // Brief pause to let GC run
+      // Brief pause to let V8's incremental GC run
       await new Promise((r) => setTimeout(r, 500))
 
       const rss = getRssKb(pid)
@@ -257,6 +271,20 @@ describe('memory leak regression', { timeout: 600_000 }, () => {
       )
     }
 
+    // ── Canary: verify the test is exercising the leak path ────
+    // If time_limit never fires, syncs complete naturally and the
+    // leak path (orphaned iterators after early termination) is
+    // never exercised, making this test meaningless.
+    const timeLimitPct = (timeLimitEofCount / totalIterations) * 100
+    console.log(
+      `\n  Canary: ${timeLimitEofCount}/${totalIterations} windows ended by time_limit (${timeLimitPct.toFixed(0)}%)`
+    )
+    expect(
+      timeLimitEofCount,
+      `Only ${timeLimitEofCount}/${totalIterations} syncs hit time_limit — ` +
+        `the test is not exercising the leak path. Reduce TIME_LIMIT_SECONDS or add more data.`
+    ).toBeGreaterThanOrEqual(totalIterations * 0.8)
+
     // ── Assertions on post-warmup samples ──────────────────────
     const postWarmup = rssSamples.slice(WARMUP_ITERATIONS)
     expect(
@@ -274,10 +302,9 @@ describe('memory leak regression', { timeout: 600_000 }, () => {
     console.log(`    Total growth:   ${totalGrowthMb.toFixed(1)} MB`)
     console.log(`    Slope:          ${slope.toFixed(1)} KB/iteration`)
 
-    // Before the fix: unbounded leak grows 50-100+ MB per 60s window,
-    // producing slopes well above 5000 KB/iter even with 2s windows.
-    // After the fix: RSS plateaus with minor V8 old-space expansion,
-    // typically <2000 KB/iter slope and <150 MB total growth.
+    // Before the fix: orphaned iterators accumulate in pending arrays,
+    // producing slopes >3000 KB/iter even with short windows.
+    // After the fix: RSS plateaus with minor V8 heap noise.
     expect(slope, `RSS slope ${slope.toFixed(0)} KB/iter exceeds threshold`).toBeLessThan(3000)
 
     expect(
