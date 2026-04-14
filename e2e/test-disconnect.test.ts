@@ -201,10 +201,11 @@ async function startEngineBun(port: number): Promise<EngineProcess> {
   }
 }
 
-async function startEngineDocker(port: number, mockUrl: string): Promise<EngineProcess> {
-  const image = 'sync-engine:disconnect-test'
-  // Build the image
-  execSync(`docker build -t ${image} .`, { cwd: REPO_ROOT, stdio: 'ignore' })
+async function startEngineDocker(port: number, _mockUrl: string): Promise<EngineProcess> {
+  const image = process.env.ENGINE_IMAGE ?? 'sync-engine:disconnect-test'
+  if (!process.env.ENGINE_IMAGE) {
+    execSync(`docker build --target engine -t ${image} .`, { cwd: REPO_ROOT, stdio: 'inherit' })
+  }
 
   const containerName = `disconnect-test-${port}`
   execSync(
@@ -214,7 +215,7 @@ async function startEngineDocker(port: number, mockUrl: string): Promise<EngineP
     { cwd: REPO_ROOT, stdio: 'ignore' }
   )
 
-  await waitForServer(`http://localhost:${port}`)
+  await waitForServer(`http://localhost:${port}`, 60_000)
 
   return {
     url: `http://localhost:${port}`,

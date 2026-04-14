@@ -209,8 +209,33 @@ export function takeLimits<T extends Message>(
       if (hardTimer != null) clearTimeout(hardTimer)
     }
 
+    // Create the abort promise once so we don't leak listeners per iteration
+    const abortP: Promise<{ kind: 'aborted' }> | undefined = opts.signal
+      ? new Promise<{ kind: 'aborted' }>((resolve) => {
+          if (opts.signal!.aborted) {
+            resolve({ kind: 'aborted' })
+            return
+          }
+          opts.signal!.addEventListener('abort', () => resolve({ kind: 'aborted' }), {
+            once: true,
+          })
+        })
+      : undefined
+
     try {
       while (true) {
+        // Check if already aborted before starting the race
+        if (opts.signal?.aborted) {
+          cleanup()
+          logger.warn(
+            { elapsed_ms: Date.now() - startedAt, event: 'SYNC_ABORTED' },
+            'SYNC_ABORTED'
+          )
+          yield makeEof('aborted')
+          await iterator.return?.(undefined)
+          return
+        }
+
         // Build the set of promises to race
         const nextP = iterator.next()
         const racers: Promise<
@@ -228,28 +253,7 @@ export function takeLimits<T extends Message>(
           )
         }
 
-        if (opts.signal && !opts.signal.aborted) {
-          racers.push(
-            new Promise<{ kind: 'aborted' }>((resolve) => {
-              if (opts.signal!.aborted) {
-                resolve({ kind: 'aborted' })
-                return
-              }
-              opts.signal!.addEventListener('abort', () => resolve({ kind: 'aborted' }), {
-                once: true,
-              })
-            })
-          )
-        } else if (opts.signal?.aborted) {
-          cleanup()
-          logger.warn(
-            { elapsed_ms: Date.now() - startedAt, event: 'SYNC_ABORTED' },
-            'SYNC_ABORTED'
-          )
-          yield makeEof('aborted')
-          await iterator.return?.(undefined)
-          return
-        }
+        if (abortP) racers.push(abortP)
 
         const winner = await Promise.race(racers)
         cleanup()

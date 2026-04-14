@@ -88,6 +88,7 @@ export function createRemoteEngine(engineUrl: string): Engine {
       params: { header: { 'x-pipeline': ph }, query: queryParams(opts) },
       parseAs: 'stream',
       headers,
+      signal: opts?.signal,
       ...(body
         ? {
             body,
