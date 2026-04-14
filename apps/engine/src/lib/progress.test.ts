@@ -221,6 +221,121 @@ describe('trackProgress', () => {
     })
   })
 
+  it('merges eof state into the provided initial sync state', async () => {
+    const counter = createRecordCounter()
+    await collect(
+      counter.tap(
+        toAsync<Message>([
+          {
+            type: 'record',
+            record: {
+              stream: 'customers',
+              data: { id: 'cus_1' },
+              emitted_at: '2024-01-01T00:00:00.000Z',
+            },
+          },
+        ])
+      )
+    )
+
+    const outputs = await collect(
+      trackProgress({
+        interval_ms: 0,
+        initial_state: {
+          source: {
+            streams: {
+              customers: { cursor: 'cus_0' },
+              invoices: { cursor: 'inv_2' },
+            },
+            global: { events_cursor: 'evt_old' },
+          },
+          destination: {
+            streams: { customers: { watermark: 10 } },
+            global: { schema_version: 1 },
+          },
+          engine: {
+            streams: {
+              customers: { cumulative_record_count: 5, note: 'keep-me' },
+              invoices: { cumulative_record_count: 2, untouched: true },
+            },
+            global: { sync_id: 'prev' },
+          },
+        },
+        recordCounter: counter,
+      })(
+        toAsync<SyncOutput>([
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: 'cus_1' } },
+          },
+          {
+            type: 'source_state',
+            source_state: { state_type: 'global', data: { events_cursor: 'evt_new' } },
+          },
+          { type: 'eof', eof: { reason: 'complete' } },
+        ])
+      )
+    )
+
+    const eof = outputs.find((m) => m.type === 'eof')
+    expect(eof).toMatchObject({
+      type: 'eof',
+      eof: {
+        state: {
+          source: {
+            streams: {
+              customers: { cursor: 'cus_1' },
+              invoices: { cursor: 'inv_2' },
+            },
+            global: { events_cursor: 'evt_new' },
+          },
+          destination: {
+            streams: { customers: { watermark: 10 } },
+            global: { schema_version: 1 },
+          },
+          engine: {
+            streams: {
+              customers: { cumulative_record_count: 6, note: 'keep-me' },
+              invoices: { cumulative_record_count: 2, untouched: true },
+            },
+            global: { sync_id: 'prev' },
+          },
+        },
+      },
+    })
+  })
+
+  it('returns the initial sync state on a no-op resumed run', async () => {
+    const initialState = {
+      source: {
+        streams: { customers: { cursor: 'cus_9' } },
+        global: { events_cursor: 'evt_9' },
+      },
+      destination: {
+        streams: { customers: { watermark: 99 } },
+        global: { schema_version: 2 },
+      },
+      engine: {
+        streams: { customers: { cumulative_record_count: 9 } },
+        global: { sync_id: 'resume-9' },
+      },
+    }
+
+    const outputs = await collect(
+      trackProgress({
+        interval_ms: 0,
+        initial_state: initialState,
+        recordCounter: createRecordCounter(),
+      })(toAsync<SyncOutput>([{ type: 'eof', eof: { reason: 'complete' } }]))
+    )
+
+    const eof = outputs.find((m) => m.type === 'eof')
+    expect(eof).toMatchObject({
+      type: 'eof',
+      eof: { state: initialState },
+    })
+  })
+
   it('omits state from EOF when no source_state messages were emitted', async () => {
     const counter = createRecordCounter()
     const outputs = await collect(
