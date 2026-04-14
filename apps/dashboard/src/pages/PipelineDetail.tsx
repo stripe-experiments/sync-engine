@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getPipeline,
   pausePipeline,
@@ -13,8 +13,7 @@ interface StreamProgress {
   status: string
   cumulative_record_count: number
   run_record_count: number
-  window_record_count: number
-  records_per_second: number
+  records_per_second?: number
   errors?: Array<{ message: string; failure_type?: string }>
 }
 
@@ -31,102 +30,53 @@ interface PipelineDetailProps {
   onBack: () => void
 }
 
+const POLL_INTERVAL_MS = 5000
+
 export function PipelineDetail({ id, onBack }: PipelineDetailProps) {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
-  const [streamProgress, setStreamProgress] = useState<Record<string, StreamProgress>>({})
-  const [globalProgress, setGlobalProgress] = useState<GlobalProgress | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const [streamProgress] = useState<Record<string, StreamProgress>>({})
+  const [globalProgress] = useState<GlobalProgress | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  async function load() {
-    setLoading(true)
-    setError(null)
+  const load = useCallback(async () => {
     try {
-      setPipeline(await getPipeline(id))
+      const p = await getPipeline(id)
+      setPipeline(p)
+      setError(null)
+      return p
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pipeline')
-    } finally {
-      setLoading(false)
+      return null
     }
-  }
-
-  const startSyncStream = useCallback(async (pipelineConfig: Record<string, unknown>) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    try {
-      const res = await fetch('/api/engine/pipeline_sync', {
-        method: 'POST',
-        headers: {
-          'x-pipeline': JSON.stringify(pipelineConfig),
-        },
-        signal: controller.signal,
-      })
-      if (!res.ok || !res.body) return
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const msg = JSON.parse(line) as Record<string, unknown>
-            if (msg.type === 'trace') {
-              const trace = msg.trace as Record<string, unknown>
-              if (trace.trace_type === 'stream_status') {
-                const ss = trace.stream_status as StreamProgress & { stream: string }
-                if (ss.cumulative_record_count !== undefined) {
-                  setStreamProgress((prev) => ({ ...prev, [ss.stream]: ss }))
-                }
-              } else if (trace.trace_type === 'progress') {
-                setGlobalProgress(trace.progress as GlobalProgress)
-              }
-            } else if (msg.type === 'eof') {
-              const eof = msg.eof as Record<string, unknown>
-              if (eof.global_progress) setGlobalProgress(eof.global_progress as GlobalProgress)
-              if (eof.stream_progress) {
-                const sp = eof.stream_progress as Record<string, StreamProgress>
-                setStreamProgress((prev) => ({ ...prev, ...sp }))
-              }
-            }
-          } catch {
-            // skip unparseable lines
-          }
-        }
-      }
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        console.error('Sync stream error:', err)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    load()
-    return () => abortRef.current?.abort()
   }, [id])
 
   useEffect(() => {
-    if (!pipeline || pipeline.desired_status !== 'active') return
-    const status = pipeline.status
-    if (status === 'backfill' || status === 'ready') {
-      const { id: _, ...config } = pipeline as Record<string, unknown>
-      startSyncStream(config as Record<string, unknown>)
+    setLoading(true)
+    load().finally(() => setLoading(false))
+  }, [load])
+
+  useEffect(() => {
+    if (!pipeline) return
+    const isActive =
+      pipeline.desired_status === 'active' &&
+      (pipeline.status === 'backfill' || pipeline.status === 'ready')
+
+    if (isActive) {
+      pollRef.current = setInterval(() => {
+        load()
+      }, POLL_INTERVAL_MS)
     }
-    return () => abortRef.current?.abort()
-  }, [pipeline?.status, pipeline?.desired_status, startSyncStream])
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [pipeline?.status, pipeline?.desired_status, load])
 
   async function handlePause() {
     setActing(true)
     try {
-      abortRef.current?.abort()
       setPipeline(await pausePipeline(id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Pause failed')
@@ -150,7 +100,6 @@ export function PipelineDetail({ id, onBack }: PipelineDetailProps) {
     if (!confirm(`Delete pipeline ${id}?`)) return
     setActing(true)
     try {
-      abortRef.current?.abort()
       await deletePipeline(id)
       onBack()
     } catch (err) {

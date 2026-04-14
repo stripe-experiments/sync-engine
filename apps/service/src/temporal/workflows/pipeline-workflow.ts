@@ -1,6 +1,6 @@
 import { condition, continueAsNew, setHandler } from '@temporalio/workflow'
 
-import type { SourceInputMessage, SyncState } from '@stripe/sync-protocol'
+import type { SourceInputMessage, SyncState, SectionState } from '@stripe/sync-protocol'
 import { emptySyncState } from '@stripe/sync-protocol'
 import type { DesiredStatus, PipelineStatus } from '../../lib/createSchemas.js'
 import { CONTINUE_AS_NEW_THRESHOLD } from '../../lib/utils.js'
@@ -32,9 +32,19 @@ export interface PipelineWorkflowState {
 export interface PipelineWorkflowOpts {
   desiredStatus?: DesiredStatus
   syncState?: SyncState
+  /** @deprecated Use syncState. Kept for backward compat with in-flight continueAsNew payloads. */
+  sourceState?: SectionState
   inputQueue?: SourceInputMessage[]
   state?: PipelineWorkflowState
   errorRecoveryRequested?: boolean
+}
+
+function resolveSyncState(opts?: PipelineWorkflowOpts): SyncState {
+  if (opts?.syncState) return opts.syncState
+  if (opts?.sourceState) {
+    return { ...emptySyncState(), source: opts.sourceState }
+  }
+  return emptySyncState()
 }
 
 export async function pipelineWorkflow(
@@ -44,7 +54,7 @@ export async function pipelineWorkflow(
   // Persisted through continue-as-new.
   const inputQueue: SourceInputMessage[] = opts?.inputQueue ? [...opts.inputQueue] : []
   let desiredStatus: DesiredStatus = opts?.desiredStatus ?? 'active'
-  let syncState: SyncState = opts?.syncState ?? emptySyncState()
+  let syncState: SyncState = resolveSyncState(opts)
   let state: PipelineWorkflowState = { ...opts?.state }
   let errorRecoveryRequested = opts?.errorRecoveryRequested ?? false
 
