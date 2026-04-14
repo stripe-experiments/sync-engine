@@ -23,12 +23,15 @@ export function ndjsonResponse<T>(
   onError?: (err: unknown) => T
 ): Response {
   const encoder = new TextEncoder()
+  const iterator = iterable[Symbol.asyncIterator]()
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const item of iterable) {
-          controller.enqueue(encoder.encode(JSON.stringify(item) + '\n'))
+        while (true) {
+          const result = await iterator.next()
+          if (result.done) break
+          controller.enqueue(encoder.encode(JSON.stringify(result.value) + '\n'))
         }
       } catch (err) {
         if (onError) {
@@ -37,6 +40,9 @@ export function ndjsonResponse<T>(
       } finally {
         controller.close()
       }
+    },
+    cancel() {
+      iterator.return?.()
     },
   })
 

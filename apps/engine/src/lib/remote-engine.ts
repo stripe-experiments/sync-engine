@@ -139,22 +139,38 @@ export function createRemoteEngine(engineUrl: string): Engine {
         params: { header: { 'x-source': JSON.stringify(source) } },
       })
       if (!response.ok) throw new Error(`source_discover failed: ${response.status}`)
-      yield* parseNdjsonStream<DiscoverOutput>(response.body!)
+      try {
+        yield* parseNdjsonStream<DiscoverOutput>(response.body!)
+      } finally {
+        await response.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_check(pipeline: PipelineConfig): AsyncIterable<CheckOutput> {
       const res = await post('/pipeline_check', pipeline)
-      yield* parseNdjsonStream<CheckOutput>(res.body!)
+      try {
+        yield* parseNdjsonStream<CheckOutput>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_setup(pipeline: PipelineConfig): AsyncIterable<SetupOutput> {
       const res = await post('/pipeline_setup', pipeline)
-      yield* parseNdjsonStream<SetupOutput>(res.body!)
+      try {
+        yield* parseNdjsonStream<SetupOutput>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_teardown(pipeline: PipelineConfig): AsyncIterable<TeardownOutput> {
       const res = await post('/pipeline_teardown', pipeline)
-      yield* parseNdjsonStream<TeardownOutput>(res.body!)
+      try {
+        yield* parseNdjsonStream<TeardownOutput>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_read(
@@ -164,7 +180,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
     ): AsyncIterable<Message> {
       const body = input ? toNdjsonStream(input) : undefined
       const res = await post('/pipeline_read', pipeline, opts, body)
-      yield* parseNdjsonStream<Message>(res.body!)
+      try {
+        yield* parseNdjsonStream<Message>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_write(
@@ -172,7 +192,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
       messages: AsyncIterable<Message>
     ): AsyncIterable<DestinationOutput> {
       const res = await post('/pipeline_write', pipeline, undefined, toNdjsonStream(messages))
-      yield* parseNdjsonStream<DestinationOutput>(res.body!)
+      try {
+        yield* parseNdjsonStream<DestinationOutput>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
 
     async *pipeline_sync(
@@ -182,7 +206,11 @@ export function createRemoteEngine(engineUrl: string): Engine {
     ): AsyncIterable<SyncOutput> {
       const body = input ? toNdjsonStream(input) : undefined
       const res = await post('/pipeline_sync', pipeline, opts, body)
-      yield* parseNdjsonStream<SyncOutput>(res.body!)
+      try {
+        yield* parseNdjsonStream<SyncOutput>(res.body!)
+      } finally {
+        await res.body?.cancel().catch(() => {})
+      }
     },
   }
 }
