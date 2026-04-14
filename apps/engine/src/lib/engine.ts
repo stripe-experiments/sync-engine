@@ -34,10 +34,11 @@ export const SourceReadOptions = z.object({
   state_limit: z.number().int().positive().optional(),
   /** Wall-clock time limit in seconds; the stream stops after this duration. */
   time_limit: z.number().positive().optional(),
-  /** Abort signal for cancellation (e.g. client disconnect). Not serialized over the wire. */
-  signal: z.instanceof(AbortSignal).optional(),
 })
-export type SourceReadOptions = z.infer<typeof SourceReadOptions>
+export type SourceReadOptions = z.infer<typeof SourceReadOptions> & {
+  /** Abort signal for cancellation (e.g. client disconnect). Runtime-only, not serialized. */
+  signal?: AbortSignal
+}
 
 /** Metadata for a single connector type, including its configuration JSON Schema. */
 export const ConnectorInfo = z.object({
