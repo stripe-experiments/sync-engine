@@ -1523,14 +1523,9 @@
                         "type": "string",
                         "enum": [
                           "started",
-                          "running",
-                          "complete",
-                          "transient_error",
-                          "system_error",
-                          "config_error",
-                          "auth_error"
+                          "complete"
                         ],
-                        "description": "Current phase of the stream within this sync run."
+                        "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors. Sources may store richer error statuses internally for retry logic."
                       },
                       "cumulative_record_count": {
                         "description": "Cumulative records synced for this stream across all sync runs. Monotonically increasing; initialized from engine state on resume. Set by the engine, not the source.",
@@ -1543,27 +1538,13 @@
                         "type": "integer",
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991
-                      },
-                      "window_record_count": {
-                        "description": "Records synced since the last stream_status emission for this stream. Set by the engine. Used for instantaneous per-stream throughput.",
-                        "type": "integer",
-                        "minimum": -9007199254740991,
-                        "maximum": 9007199254740991
-                      },
-                      "records_per_second": {
-                        "description": "Average records per second for this stream over the entire run: run_record_count / elapsed seconds. Set by the engine.",
-                        "type": "number"
-                      },
-                      "requests_per_second": {
-                        "description": "Average API requests per second for this stream over the entire run. Set by the engine from source-reported request counts.",
-                        "type": "number"
                       }
                     },
                     "required": [
                       "stream",
                       "status"
                     ],
-                    "description": "Per-stream status update. Sources emit the minimal form (stream + status). The engine emits enriched versions with record counts and throughput rates."
+                    "description": "Per-stream status update. Sources emit the minimal form (stream + status). The engine enriches with record counts. Only emitted on status transitions."
                   }
                 },
                 "required": [
@@ -1614,9 +1595,9 @@
                 "properties": {
                   "trace_type": {
                     "type": "string",
-                    "const": "progress"
+                    "const": "global_progress"
                   },
-                  "progress": {
+                  "global_progress": {
                     "type": "object",
                     "properties": {
                       "elapsed_ms": {
@@ -1631,11 +1612,17 @@
                         "maximum": 9007199254740991,
                         "description": "Total records synced across all streams in this run."
                       },
-                      "rows_per_second": {
+                      "cumulative_record_count": {
+                        "description": "Total records synced across all streams across all runs.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "records_per_second": {
                         "type": "number",
                         "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                       },
-                      "window_rows_per_second": {
+                      "window_records_per_second": {
                         "type": "number",
                         "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                       },
@@ -1644,25 +1631,43 @@
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991,
                         "description": "Total source_state messages observed so far in this sync run."
+                      },
+                      "request_count": {
+                        "description": "Total API requests made by the source in this run.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "cumulative_request_count": {
+                        "description": "Total API requests across all runs.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "cumulative_elapsed_ms": {
+                        "description": "Total wall-clock time across all runs.",
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [
                       "elapsed_ms",
                       "run_record_count",
-                      "rows_per_second",
-                      "window_rows_per_second",
+                      "records_per_second",
+                      "window_records_per_second",
                       "state_checkpoint_count"
                     ],
-                    "description": "Periodic global sync progress emitted by the engine. Aggregate stats only — per-stream detail is in stream_status messages. Each emission is a full replacement."
+                    "description": "Global sync progress emitted by the engine, co-emitted with every stream_status trace. Aggregate stats only — per-stream detail is in stream_status messages. Each emission is a full replacement."
                   }
                 },
                 "required": [
                   "trace_type",
-                  "progress"
+                  "global_progress"
                 ]
               }
             ],
-            "description": "Diagnostic/status payload with subtypes for error, stream status, estimates, and progress.",
+            "description": "Diagnostic/status payload with subtypes for error, stream status, estimates, and global progress.",
             "type": "object",
             "discriminator": {
               "propertyName": "trace_type"
@@ -1893,7 +1898,7 @@
                 "$ref": "#/components/schemas/SyncState"
               },
               "global_progress": {
-                "description": "Final global aggregates. Same shape as trace/progress.",
+                "description": "Final global aggregates. Same shape as trace/global_progress.",
                 "type": "object",
                 "properties": {
                   "elapsed_ms": {
@@ -1908,11 +1913,17 @@
                     "maximum": 9007199254740991,
                     "description": "Total records synced across all streams in this run."
                   },
-                  "rows_per_second": {
+                  "cumulative_record_count": {
+                    "description": "Total records synced across all streams across all runs.",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "records_per_second": {
                     "type": "number",
                     "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                   },
-                  "window_rows_per_second": {
+                  "window_records_per_second": {
                     "type": "number",
                     "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                   },
@@ -1921,13 +1932,31 @@
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991,
                     "description": "Total source_state messages observed so far in this sync run."
+                  },
+                  "request_count": {
+                    "description": "Total API requests made by the source in this run.",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "cumulative_request_count": {
+                    "description": "Total API requests across all runs.",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "cumulative_elapsed_ms": {
+                    "description": "Total wall-clock time across all runs.",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
                   "elapsed_ms",
                   "run_record_count",
-                  "rows_per_second",
-                  "window_rows_per_second",
+                  "records_per_second",
+                  "window_records_per_second",
                   "state_checkpoint_count"
                 ]
               },
@@ -1944,14 +1973,9 @@
                       "type": "string",
                       "enum": [
                         "started",
-                        "running",
-                        "complete",
-                        "transient_error",
-                        "system_error",
-                        "config_error",
-                        "auth_error"
+                        "complete"
                       ],
-                      "description": "Final stream status."
+                      "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors."
                     },
                     "cumulative_record_count": {
                       "type": "integer",
@@ -1964,14 +1988,6 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991,
                       "description": "Records synced in this run."
-                    },
-                    "records_per_second": {
-                      "description": "Average records/sec for this stream over the run.",
-                      "type": "number"
-                    },
-                    "requests_per_second": {
-                      "description": "Average requests/sec for this stream over the run.",
-                      "type": "number"
                     },
                     "errors": {
                       "description": "All accumulated errors for this stream during this run.",
@@ -2375,6 +2391,9 @@
             "$ref": "#/components/schemas/SourceStateMessage"
           },
           {
+            "$ref": "#/components/schemas/CatalogMessage"
+          },
+          {
             "$ref": "#/components/schemas/TraceMessage"
           },
           {
@@ -2392,6 +2411,7 @@
           "propertyName": "type",
           "mapping": {
             "source_state": "#/components/schemas/SourceStateMessage",
+            "catalog": "#/components/schemas/CatalogMessage",
             "trace": "#/components/schemas/TraceMessage",
             "log": "#/components/schemas/LogMessage",
             "eof": "#/components/schemas/EofMessage",

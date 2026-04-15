@@ -61,7 +61,15 @@ function Divider({ width = 60 }: { width?: number }) {
   return <Text dimColor>{'─'.repeat(width)}</Text>
 }
 
-function StatRow({ label, value, dimLabel = false }: { label: string; value: string; dimLabel?: boolean }) {
+function StatRow({
+  label,
+  value,
+  dimLabel = false,
+}: {
+  label: string
+  value: string
+  dimLabel?: boolean
+}) {
   return (
     <Box>
       <Text dimColor={dimLabel}>{label} </Text>
@@ -158,11 +166,7 @@ export function SyncProgressUI({ eof, catalog, final, attempt }: SyncProgressPro
   complete.sort((a, b) => b[1].cumulative_record_count - a[1].cumulative_record_count)
   started.sort((a, b) => b[1].cumulative_record_count - a[1].cumulative_record_count)
 
-  const allStreamNames = [
-    ...complete.map((c) => c[0]),
-    ...started.map((s) => s[0]),
-    ...pending,
-  ]
+  const allStreamNames = [...complete.map((c) => c[0]), ...started.map((s) => s[0]), ...pending]
   const nameWidth = Math.max(...allStreamNames.map((n) => n.length), 12)
 
   const errCount = Object.values(sp).filter((i) => (i.errors?.length ?? 0) > 0).length
@@ -175,17 +179,17 @@ export function SyncProgressUI({ eof, catalog, final, attempt }: SyncProgressPro
       <Box marginBottom={1}>
         {final ? (
           <Box gap={1}>
-            <Text bold color={reasonColor}>{reasonLabel}</Text>
-            {attempt != null && attempt > 1 && (
-              <Text dimColor>({attempt} attempts)</Text>
-            )}
+            <Text bold color={reasonColor}>
+              {reasonLabel}
+            </Text>
+            {attempt != null && attempt > 1 && <Text dimColor>({attempt} attempts)</Text>}
           </Box>
         ) : (
           <Box>
-            <Text bold color="cyan">Syncing</Text>
-            {attempt != null && attempt > 1 && (
-              <Text dimColor> · attempt {attempt}</Text>
-            )}
+            <Text bold color="cyan">
+              Syncing
+            </Text>
+            {attempt != null && attempt > 1 && <Text dimColor> · attempt {attempt}</Text>}
             {gp && (
               <Text dimColor>
                 {' '}
@@ -212,8 +216,14 @@ export function SyncProgressUI({ eof, catalog, final, attempt }: SyncProgressPro
                   : ''
               }`}
             />
-            <StatRow label="Requests" value={fmt(gp.cumulative_request_count ?? gp.request_count ?? 0)} />
-            <StatRow label="Elapsed" value={fmtDuration(gp.cumulative_elapsed_ms ?? gp.elapsed_ms)} />
+            <StatRow
+              label="Requests"
+              value={fmt(gp.cumulative_request_count ?? gp.request_count ?? 0)}
+            />
+            <StatRow
+              label="Elapsed"
+              value={fmtDuration(gp.cumulative_elapsed_ms ?? gp.elapsed_ms)}
+            />
             {final && gp.records_per_second > 0 && (
               <StatRow label="Avg rate" value={fmtRate(gp.records_per_second)} />
             )}
@@ -276,7 +286,7 @@ export function SyncProgressUI({ eof, catalog, final, attempt }: SyncProgressPro
       )}
 
       {/* ── Footer summary ── */}
-      {(complete.length + started.length + pending.length > 0) && (
+      {complete.length + started.length + pending.length > 0 && (
         <Box>
           <Divider />
         </Box>
@@ -289,9 +299,7 @@ export function SyncProgressUI({ eof, catalog, final, attempt }: SyncProgressPro
         {gp && gp.run_record_count > 0 && (
           <Text dimColor>+{fmt(gp.run_record_count)} records this run</Text>
         )}
-        {eof.cutoff && (
-          <Text color="yellow">cutoff: {eof.cutoff}</Text>
-        )}
+        {eof.cutoff && <Text color="yellow">cutoff: {eof.cutoff}</Text>}
       </Box>
     </Box>
   )

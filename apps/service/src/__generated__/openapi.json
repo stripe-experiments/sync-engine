@@ -157,7 +157,7 @@
                                 "$ref": "#/components/schemas/SyncState"
                               },
                               "global_progress": {
-                                "description": "Final global aggregates. Same shape as trace/progress.",
+                                "description": "Final global aggregates. Same shape as trace/global_progress.",
                                 "type": "object",
                                 "properties": {
                                   "elapsed_ms": {
@@ -172,11 +172,17 @@
                                     "maximum": 9007199254740991,
                                     "description": "Total records synced across all streams in this run."
                                   },
-                                  "rows_per_second": {
+                                  "cumulative_record_count": {
+                                    "description": "Total records synced across all streams across all runs.",
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "records_per_second": {
                                     "type": "number",
                                     "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                                   },
-                                  "window_rows_per_second": {
+                                  "window_records_per_second": {
                                     "type": "number",
                                     "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                                   },
@@ -185,13 +191,31 @@
                                     "minimum": -9007199254740991,
                                     "maximum": 9007199254740991,
                                     "description": "Total source_state messages observed so far in this sync run."
+                                  },
+                                  "request_count": {
+                                    "description": "Total API requests made by the source in this run.",
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cumulative_request_count": {
+                                    "description": "Total API requests across all runs.",
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "cumulative_elapsed_ms": {
+                                    "description": "Total wall-clock time across all runs.",
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   }
                                 },
                                 "required": [
                                   "elapsed_ms",
                                   "run_record_count",
-                                  "rows_per_second",
-                                  "window_rows_per_second",
+                                  "records_per_second",
+                                  "window_records_per_second",
                                   "state_checkpoint_count"
                                 ],
                                 "additionalProperties": false
@@ -209,14 +233,9 @@
                                       "type": "string",
                                       "enum": [
                                         "started",
-                                        "running",
-                                        "complete",
-                                        "transient_error",
-                                        "system_error",
-                                        "config_error",
-                                        "auth_error"
+                                        "complete"
                                       ],
-                                      "description": "Final stream status."
+                                      "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors."
                                     },
                                     "cumulative_record_count": {
                                       "type": "integer",
@@ -229,14 +248,6 @@
                                       "minimum": -9007199254740991,
                                       "maximum": 9007199254740991,
                                       "description": "Records synced in this run."
-                                    },
-                                    "records_per_second": {
-                                      "description": "Average records/sec for this stream over the run.",
-                                      "type": "number"
-                                    },
-                                    "requests_per_second": {
-                                      "description": "Average requests/sec for this stream over the run.",
-                                      "type": "number"
                                     },
                                     "errors": {
                                       "description": "All accumulated errors for this stream during this run.",
@@ -468,7 +479,7 @@
                           "$ref": "#/components/schemas/SyncState"
                         },
                         "global_progress": {
-                          "description": "Final global aggregates. Same shape as trace/progress.",
+                          "description": "Final global aggregates. Same shape as trace/global_progress.",
                           "type": "object",
                           "properties": {
                             "elapsed_ms": {
@@ -483,11 +494,17 @@
                               "maximum": 9007199254740991,
                               "description": "Total records synced across all streams in this run."
                             },
-                            "rows_per_second": {
+                            "cumulative_record_count": {
+                              "description": "Total records synced across all streams across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "records_per_second": {
                               "type": "number",
                               "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                             },
-                            "window_rows_per_second": {
+                            "window_records_per_second": {
                               "type": "number",
                               "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                             },
@@ -496,13 +513,31 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991,
                               "description": "Total source_state messages observed so far in this sync run."
+                            },
+                            "request_count": {
+                              "description": "Total API requests made by the source in this run.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_request_count": {
+                              "description": "Total API requests across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_elapsed_ms": {
+                              "description": "Total wall-clock time across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "elapsed_ms",
                             "run_record_count",
-                            "rows_per_second",
-                            "window_rows_per_second",
+                            "records_per_second",
+                            "window_records_per_second",
                             "state_checkpoint_count"
                           ],
                           "additionalProperties": false
@@ -520,14 +555,9 @@
                                 "type": "string",
                                 "enum": [
                                   "started",
-                                  "running",
-                                  "complete",
-                                  "transient_error",
-                                  "system_error",
-                                  "config_error",
-                                  "auth_error"
+                                  "complete"
                                 ],
-                                "description": "Final stream status."
+                                "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors."
                               },
                               "cumulative_record_count": {
                                 "type": "integer",
@@ -540,14 +570,6 @@
                                 "minimum": -9007199254740991,
                                 "maximum": 9007199254740991,
                                 "description": "Records synced in this run."
-                              },
-                              "records_per_second": {
-                                "description": "Average records/sec for this stream over the run.",
-                                "type": "number"
-                              },
-                              "requests_per_second": {
-                                "description": "Average requests/sec for this stream over the run.",
-                                "type": "number"
                               },
                               "errors": {
                                 "description": "All accumulated errors for this stream during this run.",
@@ -747,7 +769,7 @@
                           "$ref": "#/components/schemas/SyncState"
                         },
                         "global_progress": {
-                          "description": "Final global aggregates. Same shape as trace/progress.",
+                          "description": "Final global aggregates. Same shape as trace/global_progress.",
                           "type": "object",
                           "properties": {
                             "elapsed_ms": {
@@ -762,11 +784,17 @@
                               "maximum": 9007199254740991,
                               "description": "Total records synced across all streams in this run."
                             },
-                            "rows_per_second": {
+                            "cumulative_record_count": {
+                              "description": "Total records synced across all streams across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "records_per_second": {
                               "type": "number",
                               "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                             },
-                            "window_rows_per_second": {
+                            "window_records_per_second": {
                               "type": "number",
                               "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                             },
@@ -775,13 +803,31 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991,
                               "description": "Total source_state messages observed so far in this sync run."
+                            },
+                            "request_count": {
+                              "description": "Total API requests made by the source in this run.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_request_count": {
+                              "description": "Total API requests across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_elapsed_ms": {
+                              "description": "Total wall-clock time across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "elapsed_ms",
                             "run_record_count",
-                            "rows_per_second",
-                            "window_rows_per_second",
+                            "records_per_second",
+                            "window_records_per_second",
                             "state_checkpoint_count"
                           ],
                           "additionalProperties": false
@@ -799,14 +845,9 @@
                                 "type": "string",
                                 "enum": [
                                   "started",
-                                  "running",
-                                  "complete",
-                                  "transient_error",
-                                  "system_error",
-                                  "config_error",
-                                  "auth_error"
+                                  "complete"
                                 ],
-                                "description": "Final stream status."
+                                "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors."
                               },
                               "cumulative_record_count": {
                                 "type": "integer",
@@ -819,14 +860,6 @@
                                 "minimum": -9007199254740991,
                                 "maximum": 9007199254740991,
                                 "description": "Records synced in this run."
-                              },
-                              "records_per_second": {
-                                "description": "Average records/sec for this stream over the run.",
-                                "type": "number"
-                              },
-                              "requests_per_second": {
-                                "description": "Average requests/sec for this stream over the run.",
-                                "type": "number"
                               },
                               "errors": {
                                 "description": "All accumulated errors for this stream during this run.",
@@ -1080,7 +1113,7 @@
                           "$ref": "#/components/schemas/SyncState"
                         },
                         "global_progress": {
-                          "description": "Final global aggregates. Same shape as trace/progress.",
+                          "description": "Final global aggregates. Same shape as trace/global_progress.",
                           "type": "object",
                           "properties": {
                             "elapsed_ms": {
@@ -1095,11 +1128,17 @@
                               "maximum": 9007199254740991,
                               "description": "Total records synced across all streams in this run."
                             },
-                            "rows_per_second": {
+                            "cumulative_record_count": {
+                              "description": "Total records synced across all streams across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "records_per_second": {
                               "type": "number",
                               "description": "Overall throughput for the entire run: run_record_count / elapsed seconds."
                             },
-                            "window_rows_per_second": {
+                            "window_records_per_second": {
                               "type": "number",
                               "description": "Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval."
                             },
@@ -1108,13 +1147,31 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991,
                               "description": "Total source_state messages observed so far in this sync run."
+                            },
+                            "request_count": {
+                              "description": "Total API requests made by the source in this run.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_request_count": {
+                              "description": "Total API requests across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "cumulative_elapsed_ms": {
+                              "description": "Total wall-clock time across all runs.",
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "elapsed_ms",
                             "run_record_count",
-                            "rows_per_second",
-                            "window_rows_per_second",
+                            "records_per_second",
+                            "window_records_per_second",
                             "state_checkpoint_count"
                           ],
                           "additionalProperties": false
@@ -1132,14 +1189,9 @@
                                 "type": "string",
                                 "enum": [
                                   "started",
-                                  "running",
-                                  "complete",
-                                  "transient_error",
-                                  "system_error",
-                                  "config_error",
-                                  "auth_error"
+                                  "complete"
                                 ],
-                                "description": "Final stream status."
+                                "description": "Lifecycle status. Errors are orthogonal — a stream can be complete with errors."
                               },
                               "cumulative_record_count": {
                                 "type": "integer",
@@ -1152,14 +1204,6 @@
                                 "minimum": -9007199254740991,
                                 "maximum": 9007199254740991,
                                 "description": "Records synced in this run."
-                              },
-                              "records_per_second": {
-                                "description": "Average records/sec for this stream over the run.",
-                                "type": "number"
-                              },
-                              "requests_per_second": {
-                                "description": "Average requests/sec for this stream over the run.",
-                                "type": "number"
                               },
                               "errors": {
                                 "description": "All accumulated errors for this stream during this run.",

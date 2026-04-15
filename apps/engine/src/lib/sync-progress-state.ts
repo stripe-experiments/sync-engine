@@ -52,7 +52,8 @@ export function createSyncDisplayState(): {
         const ss = t.stream_status
         const sp = ensureStream(ss.stream)
         sp.status = ss.status as 'started' | 'complete'
-        if (ss.cumulative_record_count != null) sp.cumulative_record_count = ss.cumulative_record_count
+        if (ss.cumulative_record_count != null)
+          sp.cumulative_record_count = ss.cumulative_record_count
         if (ss.run_record_count != null) sp.run_record_count = ss.run_record_count
         return true
       }
@@ -74,7 +75,12 @@ export function createSyncDisplayState(): {
           if (!sp.errors) sp.errors = []
           sp.errors.push({
             message: err.message,
-            failure_type: err.failure_type as 'config_error' | 'system_error' | 'transient_error' | 'auth_error' | undefined,
+            failure_type: err.failure_type as
+              | 'config_error'
+              | 'system_error'
+              | 'transient_error'
+              | 'auth_error'
+              | undefined,
           })
         }
         return false
@@ -183,8 +189,7 @@ export function renderSyncProgress(
   function streamLine(name: string, info: EofStreamProgress) {
     const cum = info.cumulative_record_count
     const run = info.run_record_count
-    const countStr =
-      cum > 0 ? `${fmt(cum).padStart(10)}${run > 0 ? ` (+${fmt(run)})` : ''}` : ''
+    const countStr = cum > 0 ? `${fmt(cum).padStart(10)}${run > 0 ? ` (+${fmt(run)})` : ''}` : ''
     lines.push(`    ${name.padEnd(maxName)}  ${countStr}`)
     for (const err of info.errors ?? []) {
       const emoji = ERROR_EMOJI[err.failure_type ?? 'system_error'] ?? '❌'

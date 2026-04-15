@@ -317,35 +317,39 @@ export interface operations {
                                 elapsed_ms?: number;
                                 /** @description Full sync state at the end of the run. source: accumulated from source_state messages; engine: updated cumulative record counts; destination: reserved. Consumers can persist this directly and pass it back on resume. */
                                 state?: components["schemas"]["SyncState"];
-                                /** @description Final global aggregates. Same shape as trace/progress. */
+                                /** @description Final global aggregates. Same shape as trace/global_progress. */
                                 global_progress?: {
                                     /** @description Wall-clock milliseconds since the sync run started. */
                                     elapsed_ms: number;
                                     /** @description Total records synced across all streams in this run. */
                                     run_record_count: number;
+                                    /** @description Total records synced across all streams across all runs. */
+                                    cumulative_record_count?: number;
                                     /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                                    rows_per_second: number;
+                                    records_per_second: number;
                                     /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                                    window_rows_per_second: number;
+                                    window_records_per_second: number;
                                     /** @description Total source_state messages observed so far in this sync run. */
                                     state_checkpoint_count: number;
+                                    /** @description Total API requests made by the source in this run. */
+                                    request_count?: number;
+                                    /** @description Total API requests across all runs. */
+                                    cumulative_request_count?: number;
+                                    /** @description Total wall-clock time across all runs. */
+                                    cumulative_elapsed_ms?: number;
                                 };
                                 /** @description Per-stream end-of-sync summary. Errors only appear here, not in stream_status messages. */
                                 stream_progress?: {
                                     [key: string]: {
                                         /**
-                                         * @description Final stream status.
+                                         * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors.
                                          * @enum {string}
                                          */
-                                        status: "started" | "running" | "complete" | "transient_error" | "system_error" | "config_error" | "auth_error";
+                                        status: "started" | "complete";
                                         /** @description Cumulative records synced for this stream across all runs. */
                                         cumulative_record_count: number;
                                         /** @description Records synced in this run. */
                                         run_record_count: number;
-                                        /** @description Average records/sec for this stream over the run. */
-                                        records_per_second?: number;
-                                        /** @description Average requests/sec for this stream over the run. */
-                                        requests_per_second?: number;
                                         /** @description All accumulated errors for this stream during this run. */
                                         errors?: {
                                             /** @description Human-readable error description. */
@@ -445,35 +449,39 @@ export interface operations {
                             elapsed_ms?: number;
                             /** @description Full sync state at the end of the run. source: accumulated from source_state messages; engine: updated cumulative record counts; destination: reserved. Consumers can persist this directly and pass it back on resume. */
                             state?: components["schemas"]["SyncState"];
-                            /** @description Final global aggregates. Same shape as trace/progress. */
+                            /** @description Final global aggregates. Same shape as trace/global_progress. */
                             global_progress?: {
                                 /** @description Wall-clock milliseconds since the sync run started. */
                                 elapsed_ms: number;
                                 /** @description Total records synced across all streams in this run. */
                                 run_record_count: number;
+                                /** @description Total records synced across all streams across all runs. */
+                                cumulative_record_count?: number;
                                 /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                                rows_per_second: number;
+                                records_per_second: number;
                                 /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                                window_rows_per_second: number;
+                                window_records_per_second: number;
                                 /** @description Total source_state messages observed so far in this sync run. */
                                 state_checkpoint_count: number;
+                                /** @description Total API requests made by the source in this run. */
+                                request_count?: number;
+                                /** @description Total API requests across all runs. */
+                                cumulative_request_count?: number;
+                                /** @description Total wall-clock time across all runs. */
+                                cumulative_elapsed_ms?: number;
                             };
                             /** @description Per-stream end-of-sync summary. Errors only appear here, not in stream_status messages. */
                             stream_progress?: {
                                 [key: string]: {
                                     /**
-                                     * @description Final stream status.
+                                     * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors.
                                      * @enum {string}
                                      */
-                                    status: "started" | "running" | "complete" | "transient_error" | "system_error" | "config_error" | "auth_error";
+                                    status: "started" | "complete";
                                     /** @description Cumulative records synced for this stream across all runs. */
                                     cumulative_record_count: number;
                                     /** @description Records synced in this run. */
                                     run_record_count: number;
-                                    /** @description Average records/sec for this stream over the run. */
-                                    records_per_second?: number;
-                                    /** @description Average requests/sec for this stream over the run. */
-                                    requests_per_second?: number;
                                     /** @description All accumulated errors for this stream during this run. */
                                     errors?: {
                                         /** @description Human-readable error description. */
@@ -565,35 +573,39 @@ export interface operations {
                             elapsed_ms?: number;
                             /** @description Full sync state at the end of the run. source: accumulated from source_state messages; engine: updated cumulative record counts; destination: reserved. Consumers can persist this directly and pass it back on resume. */
                             state?: components["schemas"]["SyncState"];
-                            /** @description Final global aggregates. Same shape as trace/progress. */
+                            /** @description Final global aggregates. Same shape as trace/global_progress. */
                             global_progress?: {
                                 /** @description Wall-clock milliseconds since the sync run started. */
                                 elapsed_ms: number;
                                 /** @description Total records synced across all streams in this run. */
                                 run_record_count: number;
+                                /** @description Total records synced across all streams across all runs. */
+                                cumulative_record_count?: number;
                                 /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                                rows_per_second: number;
+                                records_per_second: number;
                                 /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                                window_rows_per_second: number;
+                                window_records_per_second: number;
                                 /** @description Total source_state messages observed so far in this sync run. */
                                 state_checkpoint_count: number;
+                                /** @description Total API requests made by the source in this run. */
+                                request_count?: number;
+                                /** @description Total API requests across all runs. */
+                                cumulative_request_count?: number;
+                                /** @description Total wall-clock time across all runs. */
+                                cumulative_elapsed_ms?: number;
                             };
                             /** @description Per-stream end-of-sync summary. Errors only appear here, not in stream_status messages. */
                             stream_progress?: {
                                 [key: string]: {
                                     /**
-                                     * @description Final stream status.
+                                     * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors.
                                      * @enum {string}
                                      */
-                                    status: "started" | "running" | "complete" | "transient_error" | "system_error" | "config_error" | "auth_error";
+                                    status: "started" | "complete";
                                     /** @description Cumulative records synced for this stream across all runs. */
                                     cumulative_record_count: number;
                                     /** @description Records synced in this run. */
                                     run_record_count: number;
-                                    /** @description Average records/sec for this stream over the run. */
-                                    records_per_second?: number;
-                                    /** @description Average requests/sec for this stream over the run. */
-                                    requests_per_second?: number;
                                     /** @description All accumulated errors for this stream during this run. */
                                     errors?: {
                                         /** @description Human-readable error description. */
@@ -746,35 +758,39 @@ export interface operations {
                             elapsed_ms?: number;
                             /** @description Full sync state at the end of the run. source: accumulated from source_state messages; engine: updated cumulative record counts; destination: reserved. Consumers can persist this directly and pass it back on resume. */
                             state?: components["schemas"]["SyncState"];
-                            /** @description Final global aggregates. Same shape as trace/progress. */
+                            /** @description Final global aggregates. Same shape as trace/global_progress. */
                             global_progress?: {
                                 /** @description Wall-clock milliseconds since the sync run started. */
                                 elapsed_ms: number;
                                 /** @description Total records synced across all streams in this run. */
                                 run_record_count: number;
+                                /** @description Total records synced across all streams across all runs. */
+                                cumulative_record_count?: number;
                                 /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                                rows_per_second: number;
+                                records_per_second: number;
                                 /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                                window_rows_per_second: number;
+                                window_records_per_second: number;
                                 /** @description Total source_state messages observed so far in this sync run. */
                                 state_checkpoint_count: number;
+                                /** @description Total API requests made by the source in this run. */
+                                request_count?: number;
+                                /** @description Total API requests across all runs. */
+                                cumulative_request_count?: number;
+                                /** @description Total wall-clock time across all runs. */
+                                cumulative_elapsed_ms?: number;
                             };
                             /** @description Per-stream end-of-sync summary. Errors only appear here, not in stream_status messages. */
                             stream_progress?: {
                                 [key: string]: {
                                     /**
-                                     * @description Final stream status.
+                                     * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors.
                                      * @enum {string}
                                      */
-                                    status: "started" | "running" | "complete" | "transient_error" | "system_error" | "config_error" | "auth_error";
+                                    status: "started" | "complete";
                                     /** @description Cumulative records synced for this stream across all runs. */
                                     cumulative_record_count: number;
                                     /** @description Records synced in this run. */
                                     run_record_count: number;
-                                    /** @description Average records/sec for this stream over the run. */
-                                    records_per_second?: number;
-                                    /** @description Average requests/sec for this stream over the run. */
-                                    requests_per_second?: number;
                                     /** @description All accumulated errors for this stream during this run. */
                                     errors?: {
                                         /** @description Human-readable error description. */

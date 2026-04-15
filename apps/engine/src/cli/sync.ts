@@ -52,7 +52,8 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
       },
       baseUrl: {
         type: 'string',
-        description: 'Stripe API base URL (or STRIPE_API_BASE env, default: https://api.stripe.com)',
+        description:
+          'Stripe API base URL (or STRIPE_API_BASE env, default: https://api.stripe.com)',
       },
       progress: {
         type: 'boolean',
