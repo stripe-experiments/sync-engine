@@ -1,14 +1,3 @@
-/**
- * Assert that if HTTPS_PROXY/HTTP_PROXY is set, --use-env-proxy is also active.
- * Without it, Node's built-in fetch (undici) silently bypasses the proxy.
- *
- * Usage (fail fast at startup):
- *   node --import ./scripts/assert-use-env-proxy.ts your-script.js
- *
- * Or run standalone to check the current environment:
- *   scripts/ts-run scripts/assert-use-env-proxy.ts
- */
-
 type Env = Record<string, string | undefined>
 
 export function getProxyUrl(env: Env): string | undefined {
@@ -19,9 +8,20 @@ export function getProxyUrl(env: Env): string | undefined {
   return undefined
 }
 
-export function assertUseEnvProxy(env: Env = process.env, execArgv: string[] = process.execArgv): void {
+/**
+ * Assert that if HTTPS_PROXY/HTTP_PROXY is set, --use-env-proxy is also active.
+ * Without it, Node's built-in fetch (undici) silently bypasses the proxy.
+ */
+export function assertUseEnvProxy(
+  env: Env = process.env,
+  execArgv: string[] = process.execArgv,
+  isBun: boolean = typeof (globalThis as Record<string, unknown>).Bun !== 'undefined',
+): void {
   const proxyUrl = getProxyUrl(env)
   if (!proxyUrl) return
+
+  // Bun always respects proxy env vars natively — no flag needed
+  if (isBun) return
 
   const nodeOptions = (env.NODE_OPTIONS ?? '').split(/\s+/)
   const hasFlag =
@@ -34,9 +34,4 @@ export function assertUseEnvProxy(env: Env = process.env, execArgv: string[] = p
         `Fix: add --use-env-proxy to NODE_OPTIONS or pass it to node directly.`
     )
   }
-}
-
-// When run directly (not imported as a module)
-if (import.meta.url === `file://${process.argv[1]}`) {
-  assertUseEnvProxy()
 }

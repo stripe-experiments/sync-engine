@@ -23,6 +23,11 @@
       "bun": "./src/openapi/index.ts",
       "types": "./dist/openapi/index.d.ts",
       "import": "./dist/openapi/index.js"
+    },
+    "./proxy": {
+      "bun": "./src/proxy.ts",
+      "types": "./dist/proxy.d.ts",
+      "import": "./dist/proxy.js"
     }
   },
   "scripts": {
