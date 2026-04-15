@@ -3,6 +3,7 @@ import type { Engine } from '../lib/engine.js'
 import type { ConnectorResolver } from '../lib/index.js'
 import { readonlyStateStore, type StateStore } from '../lib/state-store.js'
 import { type PipelineConfig, type SyncState, emptySyncState } from '@stripe/sync-protocol'
+import { createSyncDisplayState, renderSyncProgress } from '../lib/sync-progress-state.js'
 
 export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
   return defineCommand({
@@ -46,6 +47,15 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
         type: 'string',
         description: 'Stop after N seconds',
       },
+      baseUrl: {
+        type: 'string',
+        description: 'Stripe API base URL (or STRIPE_API_BASE env, default: https://api.stripe.com)',
+      },
+      progress: {
+        type: 'boolean',
+        default: false,
+        description: 'Force progress display (auto-enabled when stderr is a TTY)',
+      },
       live: {
         type: 'boolean',
         default: false,
@@ -84,6 +94,10 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
 
       // Inject optional source config overrides
       const stripeConfig = pipeline.source.stripe as Record<string, unknown>
+      const baseUrl = args.baseUrl || process.env.STRIPE_API_BASE
+      if (baseUrl) {
+        stripeConfig.base_url = baseUrl
+      }
       if (backfillLimit) {
         stripeConfig.backfill_limit = backfillLimit
       }
@@ -101,7 +115,10 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
         : undefined
       const output = engine.pipeline_sync(pipeline, { state: syncState, time_limit: timeLimit })
 
-      // Persist state checkpoints and stream NDJSON to stdout
+      const showProgress = args.progress || process.stderr.isTTY
+      const display = showProgress ? createSyncDisplayState() : null
+      let linesPrinted = 0
+
       for await (const msg of output) {
         if (msg.type === 'source_state') {
           if (msg.source_state.state_type === 'global') {
@@ -110,7 +127,19 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
             await store.set(msg.source_state.stream, msg.source_state.data)
           }
         }
-        process.stdout.write(JSON.stringify(msg) + '\n')
+
+        if (display) {
+          const changed = display.update(msg)
+          if (changed) {
+            if (linesPrinted > 0) process.stderr.write(`\x1b[${linesPrinted}A\x1b[0J`)
+            const final = msg.type === 'eof'
+            const lines = renderSyncProgress(display.state.eof, display.state.catalog, final)
+            for (const line of lines) process.stderr.write(line + '\n')
+            linesPrinted = lines.length
+          }
+        } else {
+          process.stdout.write(JSON.stringify(msg) + '\n')
+        }
       }
 
       if ('close' in store && typeof store.close === 'function') {

@@ -337,6 +337,11 @@ export function trackProgress(opts: {
         return
       }
 
+      // Suppress upstream stream_status traces — the engine re-emits enriched versions
+      if (msg.type === 'trace' && msg.trace.trace_type === 'stream_status') {
+        continue
+      }
+
       yield msg
     }
   }

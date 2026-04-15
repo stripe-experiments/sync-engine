@@ -10,6 +10,7 @@ import { HTTPException } from 'hono/http-exception'
 import pg from 'pg'
 import type { Message, ConnectorResolver, TraceMessage } from '../lib/index.js'
 import type { EofPayload } from '@stripe/sync-protocol'
+import { renderSyncProgress } from '../lib/sync-progress-state.js'
 import {
   createEngine,
   createConnectorSchemas,
@@ -123,128 +124,8 @@ async function* logApiStream<T>(
 
 const dangerouslyVerbose = process.env.DANGEROUSLY_VERBOSE_LOGGING === 'true'
 
-const REASON_EMOJI: Record<string, string> = {
-  complete: '✅',
-  time_limit: '⏱️',
-  state_limit: '📦',
-  error: '❌',
-  aborted: '🛑',
-}
-
-const ERROR_EMOJI: Record<string, string> = {
-  transient_error: '⚠️',
-  system_error: '❌',
-  config_error: '⚙️',
-  auth_error: '🔒',
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
-  const mins = Math.floor(ms / 60_000)
-  const secs = Math.round((ms % 60_000) / 1000)
-  if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
-  const hrs = Math.floor(mins / 60)
-  const remainMins = mins % 60
-  return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString('en-US')
-}
-
 function formatEof(eof: EofPayload): string {
-  const emoji = REASON_EMOJI[eof.reason] ?? '❓'
-  const gp = eof.global_progress
-  const runRecords = gp?.run_record_count ?? 0
-  const cumulativeRecords = gp?.cumulative_record_count ?? runRecords
-  const rps = gp?.records_per_second?.toFixed(1) ?? '0'
-  const runElapsed = gp?.elapsed_ms ?? 0
-  const cumulativeElapsed = gp?.cumulative_elapsed_ms ?? runElapsed
-  const cumulativeRequests = gp?.cumulative_request_count ?? 0
-  const runRequests = gp?.request_count ?? 0
-
-  const lines: string[] = []
-  lines.push(`${emoji} Sync ${eof.reason}`)
-  lines.push(
-    `   Total: ${formatNumber(cumulativeRecords)} records | ${formatNumber(cumulativeRequests)} requests | ${formatDuration(cumulativeElapsed)}`
-  )
-  lines.push(
-    `   This run: +${formatNumber(runRecords)} records | ${formatNumber(runRequests)} requests | ${formatDuration(runElapsed)} | ${rps} records/s`
-  )
-
-  const sp = eof.stream_progress
-  if (sp) {
-    type StreamEntry = { name: string; cumulative: number; run: number; errors: StreamError[] }
-    type StreamError = { message: string; failure_type?: string }
-    const completeStreams: StreamEntry[] = []
-    const startedStreams: StreamEntry[] = []
-    let errorsCount = 0
-
-    for (const [name, s] of Object.entries(sp)) {
-      const entry: StreamEntry = {
-        name,
-        cumulative: s.cumulative_record_count,
-        run: s.run_record_count,
-        errors: s.errors ?? [],
-      }
-      if (entry.errors.length > 0) errorsCount++
-      if (s.status === 'complete') {
-        completeStreams.push(entry)
-      } else {
-        startedStreams.push(entry)
-      }
-    }
-
-    // Sort by cumulative record count descending
-    completeStreams.sort((a, b) => b.cumulative - a.cumulative)
-    startedStreams.sort((a, b) => b.cumulative - a.cumulative)
-
-    const maxNameLen = Math.max(...Object.keys(sp).map((n) => n.length), 10)
-
-    function formatStreamLine(entry: StreamEntry): string[] {
-      const result: string[] = []
-      const countStr =
-        entry.cumulative > 0
-          ? `${formatNumber(entry.cumulative).padStart(10)}${entry.run > 0 ? ` (+${formatNumber(entry.run)})` : ''}`
-          : ''
-      result.push(`    ${entry.name.padEnd(maxNameLen)}  ${countStr}`)
-      for (const err of entry.errors) {
-        const errEmoji = ERROR_EMOJI[err.failure_type ?? 'system_error'] ?? '❌'
-        result.push(
-          `      ${errEmoji} ${err.message}${err.failure_type ? ` (${err.failure_type})` : ''}`
-        )
-      }
-      return result
-    }
-
-    if (completeStreams.length > 0) {
-      lines.push('')
-      lines.push(`  Complete (${completeStreams.length}):`)
-      for (const s of completeStreams) {
-        lines.push(...formatStreamLine(s))
-      }
-    }
-
-    if (startedStreams.length > 0) {
-      lines.push('')
-      lines.push(`  Started (${startedStreams.length}):`)
-      for (const s of startedStreams) {
-        lines.push(...formatStreamLine(s))
-      }
-    }
-
-    // Summary line
-    lines.push('')
-    const parts: string[] = []
-    if (completeStreams.length) parts.push(`${completeStreams.length} complete`)
-    if (startedStreams.length) parts.push(`${startedStreams.length} started`)
-    if (errorsCount) parts.push(`${errorsCount} streams with errors`)
-    parts.push(`+${formatNumber(runRecords)} records this run`)
-    lines.push(`  📊 ${parts.join(', ')}`)
-  }
-
-  return lines.join('\n')
+  return renderSyncProgress(eof, [], true).join('\n')
 }
 
 /**
