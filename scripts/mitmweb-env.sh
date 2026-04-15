@@ -1,39 +1,94 @@
 #!/bin/bash
 # Source this file to route Node/Bun/curl fetch traffic through mitmweb.
+#
 #   source scripts/mitmweb-env.sh
 #
-# mitmweb must already be running on port 8080 with upstream proxy:
-#   mitmweb --listen-port 8080 --web-port 8081 --no-web-open-browser \
-#     --mode "upstream:http://dynamic-egress-proxy.service.envoy:10071" \
-#     --ssl-insecure --set connection_strategy=lazy
+# mitmweb is started automatically if not already running.
+# If an upstream proxy is configured in http_proxy/https_proxy, mitmweb will
+# chain through it (e.g. on Stripe dev boxes). In clean environments (CI,
+# local without a corp proxy) mitmweb runs in direct mode.
+#
+# Install mitmproxy if needed:
+#   pip install mitmproxy          # any platform
+#   brew install mitmproxy         # macOS
+#   pipx install mitmproxy         # isolated install
 
 MITM_PROXY="http://127.0.0.1:8080"
+MITM_WEB="http://127.0.0.1:8081"
 MITM_CA="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
 
+# ---------------------------------------------------------------------------
+# 1. Ensure mitmweb is installed
+# ---------------------------------------------------------------------------
+if ! command -v mitmweb &>/dev/null; then
+  echo "mitmweb not found. Install it with one of:"
+  echo "  pip install mitmproxy"
+  echo "  brew install mitmproxy     # macOS"
+  echo "  pipx install mitmproxy"
+  echo ""
+  echo "Attempting auto-install via pip..."
+  if command -v pip3 &>/dev/null; then
+    pip3 install --quiet mitmproxy
+  elif command -v pip &>/dev/null; then
+    pip install --quiet mitmproxy
+  else
+    echo "ERROR: pip not found — install mitmproxy manually then re-run."
+    return 1 2>/dev/null || exit 1
+  fi
+  if ! command -v mitmweb &>/dev/null; then
+    echo "ERROR: mitmweb still not found after install (check PATH)."
+    return 1 2>/dev/null || exit 1
+  fi
+  echo "mitmproxy installed."
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Start mitmweb if not already listening on 8080
+# ---------------------------------------------------------------------------
 if ! ss -tlnp 2>/dev/null | grep -q ':8080 '; then
-  echo "mitmweb is not running on port 8080. Starting it..."
-  mitmweb \
-    --listen-port 8080 \
-    --web-port 8081 \
-    --no-web-open-browser \
-    --mode "upstream:http://dynamic-egress-proxy.service.envoy:10071" \
-    --ssl-insecure \
-    --set connection_strategy=lazy \
-    2>/dev/null &
-  sleep 3
+  # Detect upstream proxy from the environment (set on Stripe dev boxes, absent in CI)
+  UPSTREAM="${https_proxy:-${http_proxy:-}}"
+
+  MITM_ARGS=(
+    --listen-port 8080
+    --web-port 8081
+    --no-web-open-browser
+    --ssl-insecure
+    --set connection_strategy=lazy
+  )
+
+  if [ -n "$UPSTREAM" ]; then
+    echo "Starting mitmweb with upstream proxy: $UPSTREAM"
+    MITM_ARGS+=(--mode "upstream:$UPSTREAM")
+  else
+    echo "Starting mitmweb in direct mode (no upstream proxy detected)."
+  fi
+
+  mitmweb "${MITM_ARGS[@]}" 2>/dev/null &
+
+  # Wait up to 5 s for the port to open
+  for i in $(seq 1 10); do
+    ss -tlnp 2>/dev/null | grep -q ':8080 ' && break
+    sleep 0.5
+  done
+
   if ! ss -tlnp 2>/dev/null | grep -q ':8080 '; then
-    echo "ERROR: Failed to start mitmweb"
+    echo "ERROR: mitmweb failed to start."
     return 1 2>/dev/null || exit 1
   fi
 fi
 
-# -- Proxy settings (both cases for compat) --
+# ---------------------------------------------------------------------------
+# 3. Export proxy environment for all supported runtimes
+# ---------------------------------------------------------------------------
+
+# -- Proxy settings --
 export HTTP_PROXY="$MITM_PROXY"
 export HTTPS_PROXY="$MITM_PROXY"
 export http_proxy="$MITM_PROXY"
 export https_proxy="$MITM_PROXY"
 
-# Override no_proxy so traffic actually goes through mitmweb
+# Clear no_proxy so localhost proxy address is never excluded as a destination
 export NO_PROXY="localhost,127.0.0.1,::1,*.local,*.localhost"
 export no_proxy="$NO_PROXY"
 
@@ -52,10 +107,6 @@ export CURL_CA_BUNDLE="$MITM_CA"
 export SSL_CERT_FILE="$MITM_CA"
 export SSL_CERT_DIR="$HOME/.mitmproxy"
 
-# -- Go --
-export GOPROXY="$MITM_PROXY,direct"
-export GOFLAGS="-insecure"
-
 # -- Python --
 export REQUESTS_CA_BUNDLE="$MITM_CA"
 
@@ -66,14 +117,17 @@ export GIT_SSL_CAINFO="$MITM_CA"
 export GLOBAL_AGENT_HTTP_PROXY="$MITM_PROXY"
 export GLOBAL_AGENT_NO_PROXY="$NO_PROXY"
 
+# -- Go --
+export GOPROXY="$MITM_PROXY,direct"
+export GOFLAGS="-insecure"
+
 echo "----------------------------------------------"
 echo "--------  MITMWEB INTERCEPT ACTIVE  ----------"
 echo "----------------------------------------------"
 echo "Proxy:   $MITM_PROXY"
-echo "Web UI:  http://127.0.0.1:8081"
+echo "Web UI:  $MITM_WEB"
 echo "CA Cert: $MITM_CA"
 echo ""
-echo "All HTTP/HTTPS from this shell is routed through mitmweb."
 echo "Supports: Node fetch, Bun fetch, curl, Python requests, Go net/http"
 echo ""
 echo "To stop: unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NODE_TLS_REJECT_UNAUTHORIZED NODE_EXTRA_CA_CERTS"

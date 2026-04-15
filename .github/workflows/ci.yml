@@ -154,6 +154,12 @@ jobs:
       - name: ESBUILD binary path test
         run: bash e2e/esbuild-binary-path.test.sh
 
+      - name: mitmweb proxy intercept test
+        run: |
+          pip3 install --quiet mitmproxy
+          bash scripts/mitmweb-env.test.sh
+          pkill -f mitmweb || true
+
       - name: Skipped test warnings
         if: always()
         run: '[ -f /tmp/vitest-skip-warnings.txt ] && cat /tmp/vitest-skip-warnings.txt || true'
