@@ -576,10 +576,20 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
 
           const normalizedState = coerceSyncState(opts?.state)
 
-          yield* trackProgress({
-            initial_state: normalizedState,
-            recordCounter,
-          })(limited)
+          try {
+            yield* trackProgress({
+              initial_state: normalizedState,
+              recordCounter,
+            })(limited)
+          } finally {
+            // Ensure split channels + source are torn down (hard deadline is fire-and-forget).
+            const returnP = Promise.all([
+              dataStream[Symbol.asyncIterator]().return?.(),
+              sourceSignals[Symbol.asyncIterator]().return?.(),
+            ]).catch(() => {})
+            const timeoutP = new Promise<void>((r) => setTimeout(r, 2000))
+            await Promise.race([returnP, timeoutP])
+          }
         })()
       )
     },
