@@ -13,15 +13,14 @@ interface StreamProgress {
   status: string
   cumulative_record_count: number
   run_record_count: number
-  records_per_second?: number
   errors?: Array<{ message: string; failure_type?: string }>
 }
 
 interface GlobalProgress {
   elapsed_ms: number
   run_record_count: number
-  rows_per_second: number
-  window_rows_per_second: number
+  records_per_second: number
+  window_records_per_second: number
   state_checkpoint_count: number
 }
 
@@ -201,11 +200,11 @@ export function PipelineDetail({ id, onBack }: PipelineDetailProps) {
           <StatCard label="Total rows" value={formatNumber(globalProgress.run_record_count)} />
           <StatCard
             label="Throughput"
-            value={`${formatNumber(Math.round(globalProgress.rows_per_second))}/s`}
+            value={`${formatNumber(Math.round(globalProgress.records_per_second))}/s`}
           />
           <StatCard
             label="Instantaneous"
-            value={`${formatNumber(Math.round(globalProgress.window_rows_per_second))}/s`}
+            value={`${formatNumber(Math.round(globalProgress.window_records_per_second))}/s`}
           />
           <StatCard label="Elapsed" value={formatDuration(globalProgress.elapsed_ms)} />
         </div>

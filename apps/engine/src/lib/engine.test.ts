@@ -252,7 +252,7 @@ describe('protocol schemas', () => {
           trace_type: 'stream_status',
           stream_status: {
             stream: 'customers',
-            status: 'running',
+            status: 'started',
           },
         },
       })
@@ -1072,7 +1072,7 @@ describe('engine.pipeline_sync() pipeline', () => {
             trace_type: 'stream_status' as const,
             stream_status: {
               stream: 'customers',
-              status: 'running' as const,
+              status: 'started' as const,
             },
           },
         }

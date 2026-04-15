@@ -131,89 +131,116 @@ const REASON_EMOJI: Record<string, string> = {
   aborted: '🛑',
 }
 
-const STATUS_EMOJI: Record<string, string> = {
-  complete: '✅',
-  started: '🔄',
-  running: '🔄',
+const ERROR_EMOJI: Record<string, string> = {
   transient_error: '⚠️',
   system_error: '❌',
-  config_error: '❌',
+  config_error: '⚙️',
   auth_error: '🔒',
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const mins = Math.floor(ms / 60_000)
+  const secs = Math.round((ms % 60_000) / 1000)
+  if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  const remainMins = mins % 60
+  return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('en-US')
 }
 
 function formatEof(eof: EofPayload): string {
   const emoji = REASON_EMOJI[eof.reason] ?? '❓'
-  const elapsed = eof.global_progress?.elapsed_ms
-    ? `${(eof.global_progress.elapsed_ms / 1000).toFixed(1)}s`
-    : ''
-  const totalRows = eof.global_progress?.run_record_count ?? 0
-  const rps = eof.global_progress?.rows_per_second?.toFixed(1) ?? '0'
-  const checkpoints = eof.global_progress?.state_checkpoint_count ?? 0
+  const gp = eof.global_progress
+  const runRecords = gp?.run_record_count ?? 0
+  const cumulativeRecords = gp?.cumulative_record_count ?? runRecords
+  const rps = gp?.records_per_second?.toFixed(1) ?? '0'
+  const runElapsed = gp?.elapsed_ms ?? 0
+  const cumulativeElapsed = gp?.cumulative_elapsed_ms ?? runElapsed
+  const cumulativeRequests = gp?.cumulative_request_count ?? 0
+  const runRequests = gp?.request_count ?? 0
 
   const lines: string[] = []
+  lines.push(`${emoji} Sync ${eof.reason}`)
   lines.push(
-    `${emoji} Sync ${eof.reason}${elapsed ? ` (${elapsed}` : ''}${totalRows ? ` | ${totalRows} rows, ${rps} rows/s` : ''}${checkpoints ? `, ${checkpoints} checkpoints` : ''}${elapsed ? ')' : ''}`
+    `   Total: ${formatNumber(cumulativeRecords)} records | ${formatNumber(cumulativeRequests)} requests | ${formatDuration(cumulativeElapsed)}`
+  )
+  lines.push(
+    `   This run: +${formatNumber(runRecords)} records | ${formatNumber(runRequests)} requests | ${formatDuration(runElapsed)} | ${rps} records/s`
   )
 
   const sp = eof.stream_progress
   if (sp) {
-    let complete = 0
-    let inProgress = 0
-    let errored = 0
-    let pending = 0
-    const errorStreams: string[] = []
-    const activeStreams: { name: string; rows: number; rps: string }[] = []
+    type StreamEntry = { name: string; cumulative: number; run: number; errors: StreamError[] }
+    type StreamError = { message: string; failure_type?: string }
+    const completeStreams: StreamEntry[] = []
+    const startedStreams: StreamEntry[] = []
+    let errorsCount = 0
 
     for (const [name, s] of Object.entries(sp)) {
+      const entry: StreamEntry = {
+        name,
+        cumulative: s.cumulative_record_count,
+        run: s.run_record_count,
+        errors: s.errors ?? [],
+      }
+      if (entry.errors.length > 0) errorsCount++
       if (s.status === 'complete') {
-        complete++
-        if (s.run_record_count > 0) {
-          activeStreams.push({
-            name,
-            rows: s.run_record_count,
-            rps: s.records_per_second?.toFixed(1) ?? '0',
-          })
-        }
-      } else if (s.status === 'started' || s.status === 'running') {
-        inProgress++
-        if (s.run_record_count > 0) {
-          activeStreams.push({
-            name,
-            rows: s.run_record_count,
-            rps: s.records_per_second?.toFixed(1) ?? '0',
-          })
-        }
-      } else if (
-        s.status === 'transient_error' ||
-        s.status === 'system_error' ||
-        s.status === 'config_error' ||
-        s.status === 'auth_error'
-      ) {
-        errored++
-        const errMsg = s.errors?.[0]?.message ?? s.status
-        errorStreams.push(`${STATUS_EMOJI[s.status]} ${name}: ${errMsg}`)
+        completeStreams.push(entry)
       } else {
-        pending++
+        startedStreams.push(entry)
       }
     }
 
-    // Show streams that synced rows this run
-    for (const s of activeStreams.sort((a, b) => b.rows - a.rows)) {
-      lines.push(`  ✅ ${s.name}: ${s.rows} rows @ ${s.rps} rows/s`)
+    // Sort by cumulative record count descending
+    completeStreams.sort((a, b) => b.cumulative - a.cumulative)
+    startedStreams.sort((a, b) => b.cumulative - a.cumulative)
+
+    const maxNameLen = Math.max(...Object.keys(sp).map((n) => n.length), 10)
+
+    function formatStreamLine(entry: StreamEntry): string[] {
+      const result: string[] = []
+      const countStr =
+        entry.cumulative > 0
+          ? `${formatNumber(entry.cumulative).padStart(10)}${entry.run > 0 ? ` (+${formatNumber(entry.run)})` : ''}`
+          : ''
+      result.push(`    ${entry.name.padEnd(maxNameLen)}  ${countStr}`)
+      for (const err of entry.errors) {
+        const errEmoji = ERROR_EMOJI[err.failure_type ?? 'system_error'] ?? '❌'
+        result.push(
+          `      ${errEmoji} ${err.message}${err.failure_type ? ` (${err.failure_type})` : ''}`
+        )
+      }
+      return result
     }
 
-    // Show errored streams
-    for (const e of errorStreams) {
-      lines.push(`  ${e}`)
+    if (completeStreams.length > 0) {
+      lines.push('')
+      lines.push(`  Complete (${completeStreams.length}):`)
+      for (const s of completeStreams) {
+        lines.push(...formatStreamLine(s))
+      }
+    }
+
+    if (startedStreams.length > 0) {
+      lines.push('')
+      lines.push(`  Started (${startedStreams.length}):`)
+      for (const s of startedStreams) {
+        lines.push(...formatStreamLine(s))
+      }
     }
 
     // Summary line
+    lines.push('')
     const parts: string[] = []
-    if (complete) parts.push(`${complete} complete`)
-    if (inProgress) parts.push(`${inProgress} in progress`)
-    if (errored) parts.push(`${errored} errored`)
-    if (pending) parts.push(`${pending} pending`)
-    parts.push(`${totalRows} total rows this run`)
+    if (completeStreams.length) parts.push(`${completeStreams.length} complete`)
+    if (startedStreams.length) parts.push(`${startedStreams.length} started`)
+    if (errorsCount) parts.push(`${errorsCount} streams with errors`)
+    parts.push(`+${formatNumber(runRecords)} records this run`)
     lines.push(`  📊 ${parts.join(', ')}`)
   }
 

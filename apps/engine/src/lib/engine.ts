@@ -14,6 +14,7 @@ import {
   SyncState,
   RecordMessage,
   SourceStateMessage,
+  EofMessage,
   coerceSyncState,
   collectFirst,
   split,
@@ -578,6 +579,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
 
           yield* trackProgress({
             initial_state: normalizedState,
+            catalog: filteredCatalog,
             recordCounter,
           })(limited)
         })()

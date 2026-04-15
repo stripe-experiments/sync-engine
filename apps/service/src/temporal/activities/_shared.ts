@@ -86,12 +86,9 @@ export async function drainMessages(
     count++
     if (message.type === 'eof') {
       eof = message.eof
-      if (eof.stream_progress) {
-        const engineStreams: Record<string, unknown> = { ...state.engine.streams }
-        for (const [name, sp] of Object.entries(eof.stream_progress)) {
-          engineStreams[name] = { cumulative_record_count: sp.cumulative_record_count }
-        }
-        state = { ...state, engine: { ...state.engine, streams: engineStreams } }
+      // eof.state is authoritative — built by trackProgress with full accumulated state
+      if (eof.state) {
+        state = eof.state
       }
     } else if (message.type === 'control') {
       if (message.control.control_type === 'source_config') {

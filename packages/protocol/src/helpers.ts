@@ -108,12 +108,15 @@ export function isTraceStreamStatus(
   return msg.type === 'trace' && msg.trace.trace_type === 'stream_status'
 }
 
-/** Type guard for trace progress messages. */
-export function isTraceProgress(
+/** Type guard for trace global_progress messages. */
+export function isTraceGlobalProgress(
   msg: Message
-): msg is TraceMessage & { trace: { trace_type: 'progress' } } {
-  return msg.type === 'trace' && msg.trace.trace_type === 'progress'
+): msg is TraceMessage & { trace: { trace_type: 'global_progress' } } {
+  return msg.type === 'trace' && msg.trace.trace_type === 'global_progress'
 }
+
+/** @deprecated Use isTraceGlobalProgress. */
+export const isTraceProgress = isTraceGlobalProgress
 
 export function emptySectionState(): SectionState {
   return { streams: {}, global: {} }

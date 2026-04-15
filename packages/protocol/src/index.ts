@@ -23,6 +23,7 @@ export {
   isDataMessage,
   isTraceError,
   isTraceStreamStatus,
+  isTraceGlobalProgress,
   isTraceProgress,
   // State constructors
   coerceSyncState,
