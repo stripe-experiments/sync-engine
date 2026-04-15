@@ -247,3 +247,113 @@ describe('JSON content header — OAS spec', () => {
     expect(xData.content['application/json'].schema.$ref).toBe('#/components/schemas/Item')
   })
 })
+
+// ── Content-type-aware JSON body validation ──────────────────────
+
+describe('JSON body validation — content-type-aware', () => {
+  function createMultiContentApp() {
+    const app = new OpenAPIHono({
+      defaultHook: (result, c) => {
+        if (!result.success) return c.json({ error: result.error.issues }, 400)
+      },
+    })
+
+    const PipelineSchema = z.object({
+      source: z.object({ type: z.string() }),
+    }).meta({ id: 'Pipeline' })
+
+    app.openapi(
+      createRoute({
+        operationId: 'multi_content',
+        method: 'post',
+        path: '/sync',
+        summary: 'Route with both JSON and NDJSON content types',
+        requestParams: {
+          header: z.object({
+            'x-pipeline': z.string().optional(),
+          }),
+        },
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': { schema: z.object({ pipeline: PipelineSchema }) },
+            'application/x-ndjson': { schema: z.object({}) },
+          },
+        },
+        responses: { 200: { description: 'ok' } },
+      }),
+      (c) => {
+        const ct = c.req.header('content-type')
+        if (ct?.includes('application/json')) {
+          const body = c.req.valid('json')
+          return c.json({ mode: 'json', pipeline: body.pipeline }, 200)
+        }
+        return c.json({ mode: 'header', pipeline: c.req.valid('header')['x-pipeline'] }, 200)
+      }
+    )
+
+    return app
+  }
+
+  it('validates JSON body when Content-Type is application/json', async () => {
+    const app = createMultiContentApp()
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipeline: { source: { type: 'stripe' } } }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('json')
+    expect(body.pipeline.source.type).toBe('stripe')
+  })
+
+  it('returns 400 for invalid JSON body when Content-Type is application/json', async () => {
+    const app = createMultiContentApp()
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipeline: { missing: 'source' } }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('skips JSON validation for NDJSON content type', async () => {
+    const app = createMultiContentApp()
+    const ndjson = '{"type":"record","data":{}}\n{"type":"state","data":{}}\n'
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-ndjson',
+        'x-pipeline': 'test',
+      },
+      body: ndjson,
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('header')
+  })
+
+  it('skips JSON validation when no Content-Type is set', async () => {
+    const app = createMultiContentApp()
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: { 'x-pipeline': 'test' },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('header')
+  })
+
+  it('includes JSON body schema in OpenAPI spec alongside NDJSON', async () => {
+    const app = createMultiContentApp()
+    const spec = app.getOpenAPI31Document({
+      info: { title: 'test', version: '1' },
+    }) as any
+
+    const content = spec.paths['/sync'].post.requestBody.content
+    expect(content['application/json']).toBeDefined()
+    expect(content['application/x-ndjson']).toBeDefined()
+    expect(content['application/json'].schema.properties.pipeline).toBeDefined()
+  })
+})

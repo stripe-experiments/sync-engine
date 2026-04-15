@@ -162,6 +162,12 @@ function getParamContentType(schema: AnyZod): string | undefined {
   const content = (meta?.param as any)?.content
   if (typeof content === 'string') return content
   if (content && typeof content === 'object') return Object.keys(content)[0]
+  // Unwrap optional/nullable to find meta on the inner schema
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const def = (schema as any)._zod?.def
+  if ((def?.type === 'optional' || def?.type === 'nullable') && def.innerType) {
+    return getParamContentType(def.innerType)
+  }
   return undefined
 }
 
@@ -209,8 +215,13 @@ function processJsonContentHeaders(op: ZodOpenApiOperationObject): {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isOptional = (fieldSchema as any)._zod?.def?.type === 'optional'
+    // Look up description from the field schema or its inner schema (for optional wrappers)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const meta = z.globalRegistry.get(fieldSchema as any) as Record<string, unknown> | undefined
+    const fieldDef = (fieldSchema as any)._zod?.def
+    const innerSchema = (fieldDef?.type === 'optional' || fieldDef?.type === 'nullable')
+      ? fieldDef.innerType : fieldSchema
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const meta = (z.globalRegistry.get(fieldSchema as any) ?? z.globalRegistry.get(innerSchema as any)) as Record<string, unknown> | undefined
     const description = meta?.description as string | undefined
 
     jsonParams.push({
@@ -239,6 +250,25 @@ function processJsonContentHeaders(op: ZodOpenApiOperationObject): {
       parameters: [...((op.parameters as unknown[]) ?? []), ...jsonParams],
     },
     pipeOutputSchemas,
+  }
+}
+
+// ── Content-type-aware JSON body validator ───────────────────────
+//
+// Standard zValidator('json', schema) calls c.req.json() unconditionally,
+// which fails for NDJSON bodies or missing bodies. This middleware only
+// runs the JSON validator when Content-Type is application/json.
+
+function contentTypeGuardedJsonValidator(
+  schema: AnyZod,
+  hook?: DefaultHook
+): MiddlewareHandler {
+  const jsonValidator = zValidator('json', schema, hook as never)
+  return async (c, next) => {
+    if (c.req.header('content-type')?.includes('application/json')) {
+      return jsonValidator(c, next)
+    }
+    await next()
   }
 }
 
@@ -317,9 +347,13 @@ export class OpenAPIHono<
 
     // Only auto-validate application/json bodies — NDJSON and other streaming
     // content types are not parsed as a single JSON value.
+    // Crucially, skip JSON body parsing entirely when the request's Content-Type
+    // is not application/json, so NDJSON/header-only requests aren't affected.
     const jsonSchema = op.requestBody?.content?.['application/json']?.schema
     if (jsonSchema instanceof Object && 'parse' in (jsonSchema as object)) {
-      middlewares.push(zValidator('json', jsonSchema as AnyZod, this._defaultHook as never))
+      middlewares.push(
+        contentTypeGuardedJsonValidator(jsonSchema as AnyZod, this._defaultHook)
+      )
     }
 
     // Use Hono's generic `on()` to avoid indexing by Method (which doesn't include `head`
