@@ -445,6 +445,48 @@ export async function createApp(resolver: ConnectorResolver) {
     }
   }
 
+  function requireHeaderValue<T>(value: T | undefined, message: string): T {
+    if (value === undefined) throw new HTTPException(400, { message })
+    return value
+  }
+
+  // Hono's `req.valid()` typing is route-specific and doesn't compose cleanly across
+  // helpers, so we keep the helper signatures loose and return strongly typed values.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function getPipeline(c: any): z.infer<typeof TypedPipelineConfig> {
+    if (isJsonBody(c)) return c.req.valid('json').pipeline
+    return requireHeaderValue(
+      c.req.valid('header')['x-pipeline'],
+      'x-pipeline header is required'
+    )
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function getPipelineAndState(c: any): {
+    pipeline: z.infer<typeof TypedPipelineConfig>
+    state: z.infer<typeof SyncState> | undefined
+  } {
+    if (isJsonBody(c)) {
+      const { pipeline, state } = c.req.valid('json')
+      return { pipeline, state }
+    }
+
+    return {
+      pipeline: requireHeaderValue(
+        c.req.valid('header')['x-pipeline'],
+        'x-pipeline header is required'
+      ),
+      state:
+        c.req.valid('header')['x-state'] ?? parseLegacyStateHeader(c.req.header('x-source-state')),
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function getSource(c: any): z.infer<typeof sourceBody>['source'] {
+    if (isJsonBody(c)) return c.req.valid('json').source
+    return requireHeaderValue(c.req.valid('header')['x-source'], 'x-source header is required')
+  }
+
   const syncQueryParams = z.object({
     state_limit: z.coerce.number().int().positive().optional().meta({
       description: 'Stop streaming after N state messages.',
@@ -524,10 +566,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineCheckRoute, async (c) => {
-    const pipeline = isJsonBody(c)
-      ? c.req.valid('json').pipeline
-      : c.req.valid('header')['x-pipeline']
-    if (!pipeline) throw new HTTPException(400, { message: 'x-pipeline header is required' })
+    const pipeline = getPipeline(c)
     const context = { path: '/pipeline_check', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
       logApiStream('Engine API /pipeline_check', engine.pipeline_check(pipeline), context)
@@ -565,10 +604,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineSetupRoute, async (c) => {
-    const pipeline = isJsonBody(c)
-      ? c.req.valid('json').pipeline
-      : c.req.valid('header')['x-pipeline']
-    if (!pipeline) throw new HTTPException(400, { message: 'x-pipeline header is required' })
+    const pipeline = getPipeline(c)
     const only = c.req.valid('query').only
     const context = { path: '/pipeline_setup', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
@@ -603,10 +639,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineTeardownRoute, async (c) => {
-    const pipeline = isJsonBody(c)
-      ? c.req.valid('json').pipeline
-      : c.req.valid('header')['x-pipeline']
-    if (!pipeline) throw new HTTPException(400, { message: 'x-pipeline header is required' })
+    const pipeline = getPipeline(c)
     const only = c.req.valid('query').only
     const context = { path: '/pipeline_teardown', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
@@ -639,10 +672,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(sourceDiscoverRoute, async (c) => {
-    const source = isJsonBody(c)
-      ? c.req.valid('json').source
-      : c.req.valid('header')['x-source']
-    if (!source) throw new HTTPException(400, { message: 'x-source header is required' })
+    const source = getSource(c)
     const context = { path: '/source_discover', sourceName: source.type }
     return ndjsonResponse(
       logApiStream('Engine API /source_discover', engine.source_discover(source), context)
@@ -679,14 +709,11 @@ export async function createApp(resolver: ConnectorResolver) {
   app.openapi(pipelineReadRoute, async (c) => {
     const { state_limit, time_limit } = c.req.valid('query')
 
-    let pipeline: z.infer<typeof TypedPipelineConfig>
-    let state: z.infer<typeof SyncState> | undefined
+    const { pipeline, state } = getPipelineAndState(c)
     let input: AsyncIterable<unknown> | undefined
 
     if (isJsonBody(c)) {
       const json = c.req.valid('json')
-      pipeline = json.pipeline
-      state = json.state
       const bodyMessages = json.body
       if (bodyMessages?.length) {
         if (SourceInputMessage) {
@@ -706,26 +733,19 @@ export async function createApp(resolver: ConnectorResolver) {
           })()
         }
       }
-    } else {
-      const header = c.req.valid('header')['x-pipeline']
-      if (!header) throw new HTTPException(400, { message: 'x-pipeline header is required' })
-      pipeline = header
-      state =
-        c.req.valid('header')['x-state'] ?? parseLegacyStateHeader(c.req.header('x-source-state'))
-      if (hasBody(c)) {
-        if (SourceInputMessage) {
-          input = (async function* () {
-            for await (const msg of verboseInput(
-              'pipeline_read',
-              parseNdjsonStream(c.req.raw.body!)
-            )) {
-              const parsed = SourceInputMessage.parse(msg)
-              yield (parsed as { source_input: unknown }).source_input
-            }
-          })()
-        } else {
-          input = verboseInput('pipeline_read', parseNdjsonStream(c.req.raw.body!))
-        }
+    } else if (hasBody(c)) {
+      if (SourceInputMessage) {
+        input = (async function* () {
+          for await (const msg of verboseInput(
+            'pipeline_read',
+            parseNdjsonStream(c.req.raw.body!)
+          )) {
+            const parsed = SourceInputMessage.parse(msg)
+            yield (parsed as { source_input: unknown }).source_input
+          }
+        })()
+      } else {
+        input = verboseInput('pipeline_read', parseNdjsonStream(c.req.raw.body!))
       }
     }
 
@@ -778,12 +798,11 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineWriteRoute, async (c) => {
-    let pipeline: z.infer<typeof TypedPipelineConfig>
+    const pipeline = getPipeline(c)
     let messages: AsyncIterable<Message>
 
     if (isJsonBody(c)) {
       const json = c.req.valid('json')
-      pipeline = json.pipeline
       messages = (async function* () {
         for (const msg of json.body) {
           if (dangerouslyVerbose) logger.debug({ msg }, 'pipeline_write input')
@@ -791,18 +810,16 @@ export async function createApp(resolver: ConnectorResolver) {
         }
       })() as AsyncIterable<Message>
     } else {
-      const header = c.req.valid('header')['x-pipeline']
-      if (!header) throw new HTTPException(400, { message: 'x-pipeline header is required' })
-      pipeline = header
-      if (!hasBody(c)) {
+      if (hasBody(c)) {
+        messages = verboseInput(
+          'pipeline_write',
+          parseNdjsonStream<Message>(c.req.raw.body!)
+        ) as AsyncIterable<Message>
+      } else {
         const context = { path: '/pipeline_write', ...syncRequestContext(pipeline) }
         logger.error(context, 'Engine API /write missing request body')
         return c.json({ error: 'Request body required for /write' }, 400)
       }
-      messages = verboseInput(
-        'pipeline_write',
-        parseNdjsonStream<Message>(c.req.raw.body!)
-      ) as AsyncIterable<Message>
     }
 
     const context = { path: '/pipeline_write', ...syncRequestContext(pipeline) }
@@ -858,14 +875,11 @@ export async function createApp(resolver: ConnectorResolver) {
   app.openapi(pipelineSyncRoute, async (c) => {
     const { state_limit, time_limit } = c.req.valid('query')
 
-    let pipeline: z.infer<typeof TypedPipelineConfig>
-    let state: z.infer<typeof SyncState> | undefined
+    const { pipeline, state } = getPipelineAndState(c)
     let input: AsyncIterable<unknown> | undefined
 
     if (isJsonBody(c)) {
       const json = c.req.valid('json')
-      pipeline = json.pipeline
-      state = json.state
       const bodyMessages = json.body
       if (bodyMessages?.length) {
         input = (async function* () {
@@ -875,15 +889,8 @@ export async function createApp(resolver: ConnectorResolver) {
           }
         })()
       }
-    } else {
-      const header = c.req.valid('header')['x-pipeline']
-      if (!header) throw new HTTPException(400, { message: 'x-pipeline header is required' })
-      pipeline = header
-      state =
-        c.req.valid('header')['x-state'] ?? parseLegacyStateHeader(c.req.header('x-source-state'))
-      if (hasBody(c)) {
-        input = verboseInput('pipeline_sync', parseNdjsonStream(c.req.raw.body!))
-      }
+    } else if (hasBody(c)) {
+      input = verboseInput('pipeline_sync', parseNdjsonStream(c.req.raw.body!))
     }
 
     const context = { path: '/pipeline_sync', ...syncRequestContext(pipeline) }
