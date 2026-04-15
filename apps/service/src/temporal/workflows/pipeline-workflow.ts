@@ -133,7 +133,7 @@ export async function pipelineWorkflow(
       const result = await pipelineSync(pipelineId, { state: syncState, input: events })
       operationCount++
       syncState = result.state
-      if (classifySyncErrors(result.errors).permanent.length > 0) {
+      if (classifySyncErrors(result.errors).globalPermanent.length > 0) {
         await markPermanentError()
         return
       }
@@ -167,7 +167,7 @@ export async function pipelineWorkflow(
       })
       operationCount++
       syncState = result.state
-      if (classifySyncErrors(result.errors).permanent.length > 0) {
+      if (classifySyncErrors(result.errors).globalPermanent.length > 0) {
         await markPermanentError()
         return
       }

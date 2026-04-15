@@ -203,13 +203,15 @@ export function trackProgress(opts: {
       snapshotWindow()
     }
 
-    function buildStreamProgress(stream: string): EofStreamProgress | undefined {
+    function buildStreamProgress(stream: string, finalEof = false): EofStreamProgress | undefined {
       const status = streamStatus.get(stream)
       if (!status) return undefined
       const run = runRecordCount(stream)
       const cumulative = (cumulativeRecordCount.get(stream) ?? 0) + run
+      // At EOF, no stream can still be in-flight — promote 'started' → 'complete'
+      const resolvedStatus = finalEof && status === 'started' ? 'complete' : status
       return {
-        status,
+        status: resolvedStatus,
         cumulative_record_count: cumulative,
         run_record_count: run,
         errors: streamErrors.has(stream) ? streamErrors.get(stream) : undefined,
@@ -256,7 +258,7 @@ export function trackProgress(opts: {
       const streams = allStreams()
       const streamProgressMap: Record<string, EofStreamProgress> = {}
       for (const s of streams) {
-        const sp = buildStreamProgress(s)
+        const sp = buildStreamProgress(s, true)
         if (sp) streamProgressMap[s] = sp
       }
       const runRecords = totalRunRecords()

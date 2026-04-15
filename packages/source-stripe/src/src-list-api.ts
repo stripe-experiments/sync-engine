@@ -6,6 +6,7 @@ import type { SegmentState, BackfillState } from './index.js'
 import type { RateLimiter } from './rate-limiter.js'
 import { MAX_SEGMENTS, MAX_CONCURRENCY } from './rate-limiter.js'
 import { StripeApiRequestError } from '@stripe/sync-openapi'
+import { isRetryableHttpError } from './retry.js'
 import type { StripeClient } from './client.js'
 
 // MARK: - Rate-limit wrapper
@@ -40,9 +41,15 @@ function withRateLimit(listFn: ListFn, rateLimiter: RateLimiter, signal?: AbortS
 }
 
 export function getFailureType(err: unknown): 'transient_error' | 'system_error' | 'auth_error' {
-  const isRateLimit = err instanceof Error && err.message.includes('Rate limit')
-  const isAuth = err instanceof StripeApiRequestError && (err.status === 401 || err.status === 403)
-  return isRateLimit ? 'transient_error' : isAuth ? 'auth_error' : 'system_error'
+  if (err instanceof StripeApiRequestError && (err.status === 401 || err.status === 403)) {
+    return 'auth_error'
+  }
+  // Rate limit message check (belt + suspenders alongside HTTP status check)
+  if (err instanceof Error && err.message.includes('Rate limit')) {
+    return 'transient_error'
+  }
+  // 429, 5xx, network errors, timeouts → retriable; everything else → permanent
+  return isRetryableHttpError(err) ? 'transient_error' : 'system_error'
 }
 
 export function errorToTrace(err: unknown, stream: string): TraceMessage {
@@ -83,6 +90,7 @@ const SKIPPABLE_ERROR_PATTERNS = [
   'Must provide customer',
   'Must provide ',
   'not set up to use',
+  'Unrecognized request URL',
 ]
 
 // MARK: - Compact state (generative — O(concurrency) not O(total segments))
@@ -696,6 +704,14 @@ export async function* listApiBackfill(opts: {
           ...(streamState?.backfill ? { backfill: streamState.backfill } : {}),
         },
       })
+      // Errors are orthogonal to lifecycle — always emit terminal status
+      yield {
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: stream.name, status: 'complete' },
+        },
+      } satisfies TraceMessage
     }
   }
 }

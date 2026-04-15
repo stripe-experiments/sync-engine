@@ -544,8 +544,8 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      // trace(stream_status started) + trace(error) + source_state(transient_error)
-      expect(messages).toHaveLength(3)
+      // trace(stream_status started) + trace(error) + source_state(transient_error) + trace(stream_status complete)
+      expect(messages).toHaveLength(4)
       expect(messages[0]).toMatchObject({
         type: 'trace',
         trace: {
@@ -574,6 +574,14 @@ describe('StripeSource', () => {
           state_type: 'stream',
           stream: 'customers',
           data: { status: 'transient_error' },
+        },
+      })
+
+      expect(messages[3]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
         },
       })
     })
@@ -628,7 +636,8 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(3)
+      // started + error + state(system_error) + complete
+      expect(messages).toHaveLength(4)
       const errorMsg = messages[1] as TraceMessage
       expect(errorMsg.type).toBe('trace')
       expect(errorMsg.trace.trace_type).toBe('error')
@@ -644,6 +653,14 @@ describe('StripeSource', () => {
           state_type: 'stream',
           stream: 'customers',
           data: { status: 'system_error' },
+        },
+      })
+
+      expect(messages[3]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
         },
       })
     })
@@ -731,7 +748,8 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'tax_ids', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(3)
+      // started + error + state(auth_error) + complete
+      expect(messages).toHaveLength(4)
       const errorMsg = messages[1] as TraceMessage
       expect(errorMsg.trace.trace_type).toBe('error')
       const traceError = (
@@ -747,6 +765,14 @@ describe('StripeSource', () => {
       expect(messages[2]).toMatchObject({
         type: 'source_state',
         source_state: { state_type: 'stream', stream: 'tax_ids', data: { status: 'auth_error' } },
+      })
+
+      expect(messages[3]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'tax_ids', status: 'complete' },
+        },
       })
     })
 
@@ -768,7 +794,8 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(3)
+      // started + error + state(system_error) + complete
+      expect(messages).toHaveLength(4)
       expect(messages[1]).toMatchObject({
         type: 'trace',
         trace: {
@@ -785,6 +812,13 @@ describe('StripeSource', () => {
           state_type: 'stream',
           stream: 'customers',
           data: { status: 'system_error' },
+        },
+      })
+      expect(messages[3]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
         },
       })
     })
@@ -824,6 +858,52 @@ describe('StripeSource', () => {
       })
     })
 
+    it('treats Unrecognized request URL as skippable (feature not available)', async () => {
+      const listFn = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'Unrecognized request URL (GET: /v1/treasury/financial_accounts). Please see https://stripe.com/docs'
+          )
+        )
+
+      const registry: Record<string, ResourceConfig> = {
+        treasury_financial_accounts: makeConfig({
+          order: 1,
+          tableName: 'treasury_financial_accounts',
+          listFn: listFn as ResourceConfig['listFn'],
+        }),
+      }
+
+      vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
+      const messages = await collect(
+        source.read({
+          config,
+          catalog: catalog({
+            name: 'treasury_financial_accounts',
+            primary_key: [['id']],
+          }),
+        })
+      )
+
+      // Skippable: started + complete, no error trace
+      expect(messages).toHaveLength(2)
+      expect(messages[0]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'treasury_financial_accounts', status: 'started' },
+        },
+      })
+      expect(messages[1]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'treasury_financial_accounts', status: 'complete' },
+        },
+      })
+    })
+
     it('continues to next stream after error on previous stream', async () => {
       const failingListFn = vi.fn().mockRejectedValueOnce(new Error('Connection refused'))
       const successListFn = vi.fn().mockResolvedValueOnce({
@@ -855,11 +935,11 @@ describe('StripeSource', () => {
         })
       )
 
-      // customers: started + error + error_state = 3
+      // customers: started + error + error_state + complete = 4
       // invoices: started + record + state + complete = 4
-      expect(messages).toHaveLength(7)
+      expect(messages).toHaveLength(8)
 
-      // Customers errored
+      // Customers errored but still emits terminal stream_status
       expect(messages[0]).toMatchObject({
         type: 'trace',
         trace: {
@@ -879,16 +959,23 @@ describe('StripeSource', () => {
           data: { status: 'system_error' },
         },
       })
+      expect(messages[3]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
+        },
+      })
 
       // Invoices succeeded
-      expect(messages[3]).toMatchObject({
+      expect(messages[4]).toMatchObject({
         type: 'trace',
         trace: {
           trace_type: 'stream_status',
           stream_status: { stream: 'invoices', status: 'started' },
         },
       })
-      expect(messages[6]).toMatchObject({
+      expect(messages[7]).toMatchObject({
         type: 'trace',
         trace: {
           trace_type: 'stream_status',

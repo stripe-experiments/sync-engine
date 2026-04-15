@@ -17,8 +17,12 @@ const emptyState = {
   engine: { streams: {}, global: {} },
 }
 const noErrors: RunResult = { errors: [], state: emptyState }
-const permanentSyncError: RunResult = {
-  errors: [{ message: 'permanent sync failure', failure_type: 'auth_error', stream: 'customers' }],
+const globalPermanentSyncError: RunResult = {
+  errors: [{ message: 'bad API key', failure_type: 'auth_error' }],
+  state: emptyState,
+}
+const streamPermanentSyncError: RunResult = {
+  errors: [{ message: 'stream auth failure', failure_type: 'auth_error', stream: 'customers' }],
   state: emptyState,
 }
 
@@ -341,7 +345,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
     })
   })
 
-  it('transitions to error instead of ready when reconcile returns permanent sync errors', async () => {
+  it('transitions to error when reconcile returns global permanent sync errors', async () => {
     const statusWrites: string[] = []
 
     const worker = await Worker.create({
@@ -354,7 +358,7 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
         },
         pipelineSync: async (_pipelineId: string, opts?) => {
           if (opts?.input) return noErrors
-          return { ...permanentSyncError, eof: { reason: 'complete' as const } }
+          return { ...globalPermanentSyncError, eof: { reason: 'complete' as const } }
         },
       }),
     })
@@ -372,6 +376,41 @@ describe('pipelineWorkflow (unit — stubbed activities)', () => {
 
       expect(statusWrites).toContain('error')
       expect(statusWrites).not.toContain('ready')
+    })
+  })
+
+  it('does not park workflow when reconcile returns stream-scoped permanent errors', async () => {
+    const statusWrites: string[] = []
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      taskQueue: 'test-queue-3b-stream-error',
+      workflowsPath,
+      activities: stubActivities({
+        updatePipelineStatus: async (_id: string, status: string) => {
+          statusWrites.push(status)
+        },
+        pipelineSync: async (_pipelineId: string, opts?) => {
+          if (opts?.input) return noErrors
+          return { ...streamPermanentSyncError, eof: { reason: 'complete' as const } }
+        },
+      }),
+    })
+
+    await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start('pipelineWorkflow', {
+        args: [testPipelineId],
+        workflowId: 'test-sync-3b-stream-error',
+        taskQueue: 'test-queue-3b-stream-error',
+      })
+
+      await new Promise((r) => setTimeout(r, 500))
+      await signalDelete(handle)
+      await handle.result()
+
+      // Stream-scoped permanent errors don't park the workflow
+      expect(statusWrites).toContain('ready')
+      expect(statusWrites).not.toContain('error')
     })
   })
 

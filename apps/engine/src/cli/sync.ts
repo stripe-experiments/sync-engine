@@ -1,9 +1,12 @@
+import React from 'react'
+import { render } from 'ink'
 import { defineCommand } from 'citty'
 import type { Engine } from '../lib/engine.js'
 import type { ConnectorResolver } from '../lib/index.js'
 import { readonlyStateStore, type StateStore } from '../lib/state-store.js'
 import { type PipelineConfig, type SyncState, emptySyncState } from '@stripe/sync-protocol'
-import { createSyncDisplayState, renderSyncProgress } from '../lib/sync-progress-state.js'
+import { createSyncDisplayState } from '../lib/sync-progress-state.js'
+import { SyncProgressUI } from './sync-ui.js'
 
 export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
   return defineCommand({
@@ -117,7 +120,18 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
 
       const showProgress = args.progress || process.stderr.isTTY
       const display = showProgress ? createSyncDisplayState() : null
-      let linesPrinted = 0
+
+      // Mount Ink UI on stderr if showing progress
+      const inkInstance = display
+        ? render(
+            React.createElement(SyncProgressUI, {
+              eof: display.state.eof,
+              catalog: display.state.catalog,
+              final: false,
+            }),
+            { stdout: process.stderr }
+          )
+        : null
 
       for await (const msg of output) {
         if (msg.type === 'source_state') {
@@ -128,19 +142,24 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
           }
         }
 
-        if (display) {
+        if (display && inkInstance) {
           const changed = display.update(msg)
           if (changed) {
-            if (linesPrinted > 0) process.stderr.write(`\x1b[${linesPrinted}A\x1b[0J`)
             const final = msg.type === 'eof'
-            const lines = renderSyncProgress(display.state.eof, display.state.catalog, final)
-            for (const line of lines) process.stderr.write(line + '\n')
-            linesPrinted = lines.length
+            inkInstance.rerender(
+              React.createElement(SyncProgressUI, {
+                eof: display.state.eof,
+                catalog: display.state.catalog,
+                final,
+              })
+            )
           }
-        } else {
+        } else if (!display) {
           process.stdout.write(JSON.stringify(msg) + '\n')
         }
       }
+
+      inkInstance?.unmount()
 
       if ('close' in store && typeof store.close === 'function') {
         await store.close()
