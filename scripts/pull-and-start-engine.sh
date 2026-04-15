@@ -23,8 +23,9 @@ run() {
   echo "Starting ${CONTAINER_NAME} on port ${HOST_PORT}…"
   docker run --rm -it \
     --name "${CONTAINER_NAME}" \
-    -p "${HOST_PORT}:3000" \
-    --env-file <(env | grep -E '^(STRIPE_|DATABASE_|STATE_)' 2>/dev/null || true) \
+    --network host \
+    -e PORT="${HOST_PORT}" \
+    --env-file <(env | grep -E '^(STRIPE_|DATABASE_|STATE_|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY)' 2>/dev/null || true) \
     "${IMAGE}"
 }
 
