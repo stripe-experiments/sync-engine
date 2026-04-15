@@ -127,6 +127,60 @@ describe('split', () => {
     expect(evenResult).toEqual([])
     expect(oddResult).toEqual([1, 3, 5])
   })
+
+  it('propagates return() to source when consumer breaks early', async () => {
+    let sourceReturned = false
+    async function* source() {
+      try {
+        yield 1
+        yield 2
+        yield 3
+      } finally {
+        sourceReturned = true
+      }
+    }
+    const isEven = (n: number): n is number => n % 2 === 0
+    const [, odds] = split(source(), isEven)
+    const it = odds[Symbol.asyncIterator]()
+    await it.next()
+    await it.return!()
+    expect(sourceReturned).toBe(true)
+  })
+
+  it('propagates return() to source from the matches branch', async () => {
+    let sourceReturned = false
+    async function* source() {
+      try {
+        yield 2
+        yield 4
+        yield 6
+      } finally {
+        sourceReturned = true
+      }
+    }
+    const isEven = (n: number): n is number => n % 2 === 0
+    const [evens] = split(source(), isEven)
+    const it = evens[Symbol.asyncIterator]()
+    await it.next()
+    await it.return!()
+    expect(sourceReturned).toBe(true)
+  })
+
+  it('closes sibling branch when one branch returns early', async () => {
+    async function* source() {
+      yield 1
+      yield 2
+      yield 3
+      yield 4
+    }
+    const isEven = (n: number): n is number => n % 2 === 0
+    const [evens, odds] = split(source(), isEven)
+    const oddIt = odds[Symbol.asyncIterator]()
+    await oddIt.next()
+    await oddIt.return!()
+    const remaining = await collect(evens)
+    expect(remaining).toEqual([])
+  })
 })
 
 describe('map', () => {

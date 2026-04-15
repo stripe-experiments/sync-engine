@@ -2,7 +2,7 @@
 // Pure primitives — no external deps, no engine-specific imports.
 
 /**
- * Async push/pull channel. No array buffering — uses linked promise pairs.
+ * Async push/pull channel with unbounded buffer when push outpaces pull.
  *
  * **Error handling:** The channel itself never throws — it is a passive data
  * structure. Producers call `push()` and `close()`; neither can fail.
@@ -12,10 +12,12 @@
 export function channel<T>(): AsyncIterable<T> & {
   push(value: T): void
   close(): void
+  onReturn?: () => void | Promise<unknown>
 } {
   let resolve: ((result: IteratorResult<T>) => void) | null = null
   let done = false
   const pending: T[] = [] // only used when push() is called before next()
+  let onReturn: (() => void | Promise<unknown>) | undefined
 
   const iter: AsyncIterableIterator<T> = {
     [Symbol.asyncIterator]() {
@@ -30,9 +32,20 @@ export function channel<T>(): AsyncIterable<T> & {
         resolve = r
       })
     },
+    async return() {
+      done = true
+      pending.length = 0
+      if (resolve) {
+        const r = resolve
+        resolve = null
+        r({ value: undefined as any, done: true })
+      }
+      await onReturn?.()
+      return { value: undefined as any, done: true }
+    },
   }
 
-  return Object.assign(iter, {
+  const result = Object.assign(iter, {
     push(value: T) {
       if (done) return
       if (resolve) {
@@ -52,6 +65,16 @@ export function channel<T>(): AsyncIterable<T> & {
       }
     },
   })
+  Object.defineProperty(result, 'onReturn', {
+    set(fn: (() => void | Promise<unknown>) | undefined) {
+      onReturn = fn
+    },
+    get() {
+      return onReturn
+    },
+    configurable: true,
+  })
+  return result as typeof result & { onReturn?: () => void | Promise<unknown> }
 }
 
 /**
@@ -87,13 +110,19 @@ export async function* merge<T>(
     enqueue(i)
   }
 
-  while (pending.size > 0) {
-    const { index, result } = await Promise.race(pending.values())
-    if (result.done) {
-      pending.delete(index)
-    } else {
-      yield result.value
-      enqueue(index)
+  try {
+    while (pending.size > 0) {
+      const { index, result } = await Promise.race(pending.values())
+      if (result.done) {
+        pending.delete(index)
+      } else {
+        yield result.value
+        enqueue(index)
+      }
+    }
+  } finally {
+    for (const it of iterators) {
+      it.return?.()
     }
   }
 }
@@ -115,16 +144,29 @@ export function split<T, U extends T>(
   iterable: AsyncIterable<T>,
   predicate: (item: T) => item is U
 ): [AsyncIterable<U>, AsyncIterable<Exclude<T, U>>] {
+  const sourceIterator = iterable[Symbol.asyncIterator]()
   const matches = channel<U>()
   const rest = channel<Exclude<T, U>>()
 
+  let aborted = false
+  const abort = () => {
+    if (aborted) return
+    aborted = true
+    matches.close()
+    rest.close()
+    return sourceIterator.return?.()
+  }
+  matches.onReturn = abort
+  rest.onReturn = abort
   ;(async () => {
     try {
-      for await (const item of iterable) {
-        if (predicate(item)) {
-          matches.push(item)
+      while (true) {
+        const result = await sourceIterator.next()
+        if (result.done) break
+        if (predicate(result.value)) {
+          matches.push(result.value)
         } else {
-          rest.push(item as Exclude<T, U>)
+          rest.push(result.value as Exclude<T, U>)
         }
       }
     } finally {

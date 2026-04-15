@@ -150,8 +150,8 @@ export async function pipelineWorkflow(
 
       const result = await pipelineSync(pipelineId, {
         state: sourceState,
-        state_limit: 100,
-        time_limit: 10,
+        state_limit: 1000,
+        time_limit: 30,
       })
       operationCount++
       sourceState = result.state
