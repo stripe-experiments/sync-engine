@@ -43,10 +43,6 @@ export function createInputQueue() {
   let inputWaiter: ((input: LiveInput) => void) | null = null
   const queue: LiveInput[] = []
 
-  function getAbortError(signal: AbortSignal): unknown {
-    return signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
-  }
-
   function push(input: LiveInput) {
     if (inputWaiter) {
       const waiter = inputWaiter
@@ -63,7 +59,7 @@ export function createInputQueue() {
     }
 
     if (signal?.aborted) {
-      return Promise.reject(getAbortError(signal))
+      return Promise.reject(signal.reason)
     }
 
     return new Promise<LiveInput>((resolve, reject) => {
@@ -76,7 +72,7 @@ export function createInputQueue() {
         if (inputWaiter === waiter) {
           inputWaiter = null
         }
-        reject(getAbortError(signal!))
+        reject(signal!.reason)
       }
 
       inputWaiter = waiter

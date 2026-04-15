@@ -87,18 +87,8 @@ export function isRetryableHttpError(err: unknown): boolean {
   )
 }
 
-function getAbortError(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
-}
-
-function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted) {
-    throw getAbortError(signal)
-  }
-}
-
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  throwIfAborted(signal)
+  signal?.throwIfAborted()
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -109,7 +99,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     const onAbort = () => {
       clearTimeout(timeout)
       signal?.removeEventListener('abort', onAbort)
-      reject(getAbortError(signal!))
+      reject(signal!.reason)
     }
 
     signal?.addEventListener('abort', onAbort, { once: true })
@@ -125,7 +115,7 @@ export async function withHttpRetry<T>(
   let delayMs = opts.baseDelayMs ?? BACKOFF_BASE_MS
 
   for (let attempt = 0; ; attempt++) {
-    throwIfAborted(opts.signal)
+    opts.signal?.throwIfAborted()
 
     try {
       return await fn()

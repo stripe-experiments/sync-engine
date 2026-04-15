@@ -10,13 +10,9 @@ import type { StripeClient } from './client.js'
 
 // MARK: - Rate-limit wrapper
 
-function getAbortError(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
-}
-
 function waitForRateLimit(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
-    return Promise.reject(getAbortError(signal))
+    return Promise.reject(signal.reason)
   }
 
   return new Promise((resolve, reject) => {
@@ -28,7 +24,7 @@ function waitForRateLimit(ms: number, signal?: AbortSignal): Promise<void> {
     const onAbort = () => {
       clearTimeout(timeout)
       signal?.removeEventListener('abort', onAbort)
-      reject(getAbortError(signal!))
+      reject(signal!.reason)
     }
 
     signal?.addEventListener('abort', onAbort, { once: true })

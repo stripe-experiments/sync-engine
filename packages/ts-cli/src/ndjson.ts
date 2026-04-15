@@ -18,8 +18,7 @@ export function writeLine(obj: unknown) {
  * type `T` before closing the stream. The callback must return a valid `T` —
  * this keeps protocol-specific error shapes out of this generic helper.
  *
- * If `onCancel` is provided it is called when the ReadableStream is cancelled
- * (e.g. client disconnect under Bun.serve()). Cancellation also calls
+ * Cancellation (e.g. client disconnect under Bun.serve()) calls
  * `iterator.return()` on the wrapped iterable so normal async-iterator teardown
  * can propagate upstream.
  */
@@ -29,12 +28,10 @@ export function ndjsonResponse<T>(
     | ((err: unknown) => T)
     | {
         onError?: (err: unknown) => T
-        onCancel?: () => void
         signal?: AbortSignal
       }
 ): Response {
   const onError = typeof opts === 'function' ? opts : opts?.onError
-  const onCancel = typeof opts === 'object' ? opts?.onCancel : undefined
   const signal = typeof opts === 'object' ? opts?.signal : undefined
 
   const encoder = new TextEncoder()
@@ -71,7 +68,6 @@ export function ndjsonResponse<T>(
       }
     },
     async cancel() {
-      onCancel?.()
       await stop()
     },
   })

@@ -92,7 +92,7 @@ export function withAbortOnReturn<T>(
 
   function abortLocal() {
     if (!controller.signal.aborted) {
-      controller.abort()
+      controller.abort(new Error('iterator returned'))
     }
   }
 
