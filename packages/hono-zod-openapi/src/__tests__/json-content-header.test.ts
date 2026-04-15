@@ -251,6 +251,11 @@ describe('JSON content header — OAS spec', () => {
 // ── Content-type-aware JSON body validation ──────────────────────
 
 describe('JSON body validation — content-type-aware', () => {
+  function isApplicationJsonContentType(contentType?: string): boolean {
+    const mediaType = contentType?.split(';', 1)[0]?.trim().toLowerCase()
+    return mediaType === 'application/json'
+  }
+
   function createMultiContentApp() {
     const app = new OpenAPIHono({
       defaultHook: (result, c) => {
@@ -284,11 +289,84 @@ describe('JSON body validation — content-type-aware', () => {
       }),
       (c) => {
         const ct = c.req.header('content-type')
-        if (ct?.includes('application/json')) {
+        if (isApplicationJsonContentType(ct)) {
           const body = c.req.valid('json')
           return c.json({ mode: 'json', pipeline: body.pipeline }, 200)
         }
         return c.json({ mode: 'header', pipeline: c.req.valid('header')['x-pipeline'] }, 200)
+      }
+    )
+
+    return app
+  }
+
+  function createJsonOnlyApp() {
+    const app = new OpenAPIHono({
+      defaultHook: (result, c) => {
+        if (!result.success) return c.json({ error: result.error.issues }, 400)
+      },
+    })
+
+    app.openapi(
+      createRoute({
+        operationId: 'json_only',
+        method: 'post',
+        path: '/json-only',
+        summary: 'Route with only JSON request bodies',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: z.object({ name: z.string() }) },
+          },
+        },
+        responses: { 200: { description: 'ok' } },
+      }),
+      (c) => {
+        const body = c.req.valid('json')
+        return c.json({ name: body.name }, 200)
+      }
+    )
+
+    return app
+  }
+
+  function createHeaderAlternativeApp() {
+    const app = new OpenAPIHono({
+      defaultHook: (result, c) => {
+        if (!result.success) return c.json({ error: result.error.issues }, 400)
+      },
+    })
+
+    app.openapi(
+      createRoute({
+        operationId: 'header_or_body',
+        method: 'post',
+        path: '/header-or-body',
+        summary: 'Route with JSON body or JSON header config',
+        requestParams: {
+          header: z.object({
+            'x-data': z
+              .string()
+              .transform(jsonParse)
+              .pipe(ItemSchema)
+              .optional()
+              .meta({ param: { content: { 'application/json': {} } } }),
+          }),
+        },
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': { schema: z.object({ data: ItemSchema }) },
+          },
+        },
+        responses: { 200: { description: 'ok' } },
+      }),
+      (c) => {
+        if (isApplicationJsonContentType(c.req.header('content-type'))) {
+          const body = c.req.valid('json')
+          return c.json({ mode: 'json', data: body.data }, 200)
+        }
+        return c.json({ mode: 'header', data: c.req.valid('header')['x-data'] }, 200)
       }
     )
 
@@ -300,6 +378,19 @@ describe('JSON body validation — content-type-aware', () => {
     const res = await app.request('/sync', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pipeline: { source: { type: 'stripe' } } }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('json')
+    expect(body.pipeline.source.type).toBe('stripe')
+  })
+
+  it('accepts application/json content types with parameters and mixed case', async () => {
+    const app = createMultiContentApp()
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: { 'content-type': 'Application/JSON; charset=utf-8' },
       body: JSON.stringify({ pipeline: { source: { type: 'stripe' } } }),
     })
     expect(res.status).toBe(200)
@@ -343,6 +434,43 @@ describe('JSON body validation — content-type-aware', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.mode).toBe('header')
+  })
+
+  it('does not treat application/json-seq as application/json', async () => {
+    const app = createMultiContentApp()
+    const res = await app.request('/sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json-seq',
+        'x-pipeline': 'test',
+      },
+      body: 'not-json',
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('header')
+  })
+
+  it('keeps strict validation for JSON-only routes with non-JSON content type', async () => {
+    const app = createJsonOnlyApp()
+    const res = await app.request('/json-only', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ name: 'widget' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('skips JSON validation for routes that can use JSON headers instead', async () => {
+    const app = createHeaderAlternativeApp()
+    const res = await app.request('/header-or-body', {
+      method: 'POST',
+      headers: { 'x-data': JSON.stringify({ name: 'widget', count: 5 }) },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mode).toBe('header')
+    expect(body.data).toEqual({ name: 'widget', count: 5 })
   })
 
   it('includes JSON body schema in OpenAPI spec alongside NDJSON', async () => {
