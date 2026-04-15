@@ -45,7 +45,17 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Start mitmweb if not already listening on 8080
 # ---------------------------------------------------------------------------
-if ! ss -tlnp 2>/dev/null | grep -q ':8080 '; then
+_port_listening() {
+  if command -v ss &>/dev/null; then
+    ss -tlnp 2>/dev/null | grep -q ":$1 "
+  elif command -v lsof &>/dev/null; then
+    lsof -iTCP:"$1" -sTCP:LISTEN -P -n &>/dev/null
+  else
+    nc -z 127.0.0.1 "$1" 2>/dev/null
+  fi
+}
+
+if ! _port_listening 8080; then
   # Detect upstream proxy from the environment (set on Stripe dev boxes, absent in CI)
   UPSTREAM="${https_proxy:-${http_proxy:-}}"
 
@@ -68,11 +78,11 @@ if ! ss -tlnp 2>/dev/null | grep -q ':8080 '; then
 
   # Wait up to 5 s for the port to open
   for i in $(seq 1 10); do
-    ss -tlnp 2>/dev/null | grep -q ':8080 ' && break
+    _port_listening 8080 && break
     sleep 0.5
   done
 
-  if ! ss -tlnp 2>/dev/null | grep -q ':8080 '; then
+  if ! _port_listening 8080; then
     echo "ERROR: mitmweb failed to start."
     return 1 2>/dev/null || exit 1
   fi

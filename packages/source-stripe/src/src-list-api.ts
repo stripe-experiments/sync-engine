@@ -10,10 +10,31 @@ import type { StripeClient } from './client.js'
 
 // MARK: - Rate-limit wrapper
 
-function withRateLimit(listFn: ListFn, rateLimiter: RateLimiter): ListFn {
+function waitForRateLimit(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason)
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    const onAbort = () => {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', onAbort)
+      reject(signal!.reason)
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function withRateLimit(listFn: ListFn, rateLimiter: RateLimiter, signal?: AbortSignal): ListFn {
   return async (params) => {
     const wait = await rateLimiter()
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait * 1000))
+    if (wait > 0) await waitForRateLimit(wait * 1000, signal)
     return listFn(params)
   }
 }
@@ -240,6 +261,7 @@ async function getAccountCreatedTimestamp(client: StripeClient): Promise<number>
     const account = await client.getAccount()
     return account.created ?? STRIPE_LAUNCH_TIMESTAMP
   } catch {
+    // TODO: log the error so operators notice auth misconfigurations
     return STRIPE_LAUNCH_TIMESTAMP
   }
 }
@@ -488,6 +510,7 @@ export async function* listApiBackfill(opts: {
   rateLimiter: RateLimiter
   backfillLimit?: number
   drainQueue?: () => AsyncGenerator<Message>
+  signal?: AbortSignal
 }): AsyncGenerator<Message> {
   const { catalog, state, registry, client, accountId, rateLimiter, backfillLimit, drainQueue } =
     opts
@@ -539,7 +562,7 @@ export async function* listApiBackfill(opts: {
     } satisfies TraceMessage
 
     try {
-      const rateLimitedListFn = withRateLimit(resourceConfig.listFn!, rateLimiter)
+      const rateLimitedListFn = withRateLimit(resourceConfig.listFn!, rateLimiter, opts.signal)
 
       // Parallel path: streams that support created filter
       if (resourceConfig.supportsCreatedFilter) {
