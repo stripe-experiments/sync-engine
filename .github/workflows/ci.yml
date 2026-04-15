@@ -181,6 +181,9 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Install mitmproxy
         run: pip3 install --quiet mitmproxy
 
