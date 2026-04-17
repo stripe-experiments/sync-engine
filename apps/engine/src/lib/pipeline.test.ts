@@ -304,13 +304,13 @@ describe('log()', () => {
         type: 'trace',
         trace: {
           trace_type: 'stream_status',
-          stream_status: { stream: 'orders', status: 'running' },
+          stream_status: { stream: 'orders', status: 'started' },
         },
       },
     ]
     await drain(log(toAsync(msgs)))
     expect(logger.info).toHaveBeenCalledWith(
-      { stream: 'orders', status: 'running' },
+      { stream: 'orders', status: 'started' },
       'stream_status'
     )
   })

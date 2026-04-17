@@ -252,7 +252,7 @@ describe('protocol schemas', () => {
           trace_type: 'stream_status',
           stream_status: {
             stream: 'customers',
-            status: 'running',
+            status: 'started',
           },
         },
       })
@@ -1072,7 +1072,7 @@ describe('engine.pipeline_sync() pipeline', () => {
             trace_type: 'stream_status' as const,
             stream_status: {
               stream: 'customers',
-              status: 'running' as const,
+              status: 'started' as const,
             },
           },
         }
@@ -1296,13 +1296,24 @@ describe('engine cancellation integration', () => {
     const engine = await createEngine(makeResolver(source, destination))
     const iter = engine.pipeline_sync(defaultPipeline)[Symbol.asyncIterator]()
 
-    expect(await iter.next()).toMatchObject({
-      value: {
-        type: 'source_state',
-        source_state: { stream: 'customers', data: { cursor: 'cus_1' } },
-      },
-      done: false,
-    })
+    // Consume messages until we find a source_state (engine now emits catalog + trace messages first)
+    let found = false
+    for (let i = 0; i < 20; i++) {
+      const result = await iter.next()
+      if (result.done) break
+      if (result.value?.type === 'source_state') {
+        expect(result).toMatchObject({
+          value: {
+            type: 'source_state',
+            source_state: { stream: 'customers', data: { cursor: 'cus_1' } },
+          },
+          done: false,
+        })
+        found = true
+        break
+      }
+    }
+    expect(found).toBe(true)
 
     const blockedNext = iter.next()
     void blockedNext.catch(() => undefined)

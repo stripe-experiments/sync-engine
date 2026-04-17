@@ -467,7 +467,7 @@ export interface components {
              * @enum {string}
              */
             type: "trace";
-            /** @description Diagnostic/status payload with subtypes for error, stream status, estimates, and progress. */
+            /** @description Diagnostic/status payload with subtypes for error, stream status, estimates, and global progress. */
             trace: {
                 /** @constant */
                 trace_type: "error";
@@ -488,15 +488,15 @@ export interface components {
             } | {
                 /** @constant */
                 trace_type: "stream_status";
-                /** @description Per-stream status update. Sources emit the minimal form (stream + status). The engine emits enriched versions with record counts and throughput rates. */
+                /** @description Per-stream status update. Sources emit the minimal form (stream + status). The engine enriches with record counts. Only emitted on status transitions. */
                 stream_status: {
                     /** @description Stream being reported on. */
                     stream: string;
                     /**
-                     * @description Current phase of the stream within this sync run.
+                     * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors. Sources may store richer error statuses internally for retry logic.
                      * @enum {string}
                      */
-                    status: "start" | "running" | "complete" | "range_complete";
+                    status: "started" | "complete";
                     /** @description Present when status is range_complete. The sub-range that finished. */
                     range_complete?: {
                         /** @description Inclusive lower bound (ISO 8601). */
@@ -508,12 +508,6 @@ export interface components {
                     cumulative_record_count?: number;
                     /** @description Records synced for this stream in the current sync run. Set by the engine. */
                     run_record_count?: number;
-                    /** @description Records synced since the last stream_status emission for this stream. Set by the engine. Used for instantaneous per-stream throughput. */
-                    window_record_count?: number;
-                    /** @description Average records per second for this stream over the entire run: run_record_count / elapsed seconds. Set by the engine. */
-                    records_per_second?: number;
-                    /** @description Average API requests per second for this stream over the entire run. Set by the engine from source-reported request counts. */
-                    requests_per_second?: number;
                 };
             } | {
                 /** @constant */
@@ -529,19 +523,27 @@ export interface components {
                 };
             } | {
                 /** @constant */
-                trace_type: "progress";
-                /** @description Periodic global sync progress emitted by the engine. Aggregate stats only — per-stream detail is in stream_status messages. Each emission is a full replacement. */
-                progress: {
+                trace_type: "global_progress";
+                /** @description Global sync progress emitted by the engine, co-emitted with every stream_status trace. Aggregate stats only — per-stream detail is in stream_status messages. Each emission is a full replacement. */
+                global_progress: {
                     /** @description Wall-clock milliseconds since the sync run started. */
                     elapsed_ms: number;
                     /** @description Total records synced across all streams in this run. */
                     run_record_count: number;
+                    /** @description Total records synced across all streams across all runs. */
+                    cumulative_record_count?: number;
                     /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                    rows_per_second: number;
+                    records_per_second: number;
                     /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                    window_rows_per_second: number;
+                    window_records_per_second: number;
                     /** @description Total source_state messages observed so far in this sync run. */
                     state_checkpoint_count: number;
+                    /** @description Total API requests made by the source in this run. */
+                    request_count?: number;
+                    /** @description Total API requests across all runs. */
+                    cumulative_request_count?: number;
+                    /** @description Total wall-clock time across all runs. */
+                    cumulative_elapsed_ms?: number;
                 };
             };
         };
@@ -651,35 +653,39 @@ export interface components {
                 elapsed_ms?: number;
                 /** @description Full sync state at the end of the run. source: accumulated from source_state messages; engine: updated cumulative record counts; destination: reserved. Consumers can persist this directly and pass it back on resume. */
                 state?: components["schemas"]["SyncState"];
-                /** @description Final global aggregates. Same shape as trace/progress. */
+                /** @description Final global aggregates. Same shape as trace/global_progress. */
                 global_progress?: {
                     /** @description Wall-clock milliseconds since the sync run started. */
                     elapsed_ms: number;
                     /** @description Total records synced across all streams in this run. */
                     run_record_count: number;
+                    /** @description Total records synced across all streams across all runs. */
+                    cumulative_record_count?: number;
                     /** @description Overall throughput for the entire run: run_record_count / elapsed seconds. */
-                    rows_per_second: number;
+                    records_per_second: number;
                     /** @description Instantaneous throughput: total records in last window / window duration. Measures only the most recent reporting interval. */
-                    window_rows_per_second: number;
+                    window_records_per_second: number;
                     /** @description Total source_state messages observed so far in this sync run. */
                     state_checkpoint_count: number;
+                    /** @description Total API requests made by the source in this run. */
+                    request_count?: number;
+                    /** @description Total API requests across all runs. */
+                    cumulative_request_count?: number;
+                    /** @description Total wall-clock time across all runs. */
+                    cumulative_elapsed_ms?: number;
                 };
                 /** @description Per-stream end-of-sync summary. Errors only appear here, not in stream_status messages. */
                 stream_progress?: {
                     [key: string]: {
                         /**
-                         * @description Final stream status.
+                         * @description Lifecycle status. Errors are orthogonal — a stream can be complete with errors.
                          * @enum {string}
                          */
-                        status: "start" | "running" | "complete" | "range_complete";
+                        status: "started" | "complete";
                         /** @description Cumulative records synced for this stream across all runs. */
                         cumulative_record_count: number;
                         /** @description Records synced in this run. */
                         run_record_count: number;
-                        /** @description Average records/sec for this stream over the run. */
-                        records_per_second?: number;
-                        /** @description Average requests/sec for this stream over the run. */
-                        requests_per_second?: number;
                         /** @description All accumulated errors for this stream during this run. */
                         errors?: {
                             /** @description Human-readable error description. */
@@ -779,7 +785,7 @@ export interface components {
         Message: components["schemas"]["RecordMessage"] | components["schemas"]["SourceStateMessage"] | components["schemas"]["CatalogMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["SpecMessage"] | components["schemas"]["ConnectionStatusMessage"] | components["schemas"]["ControlMessage"] | components["schemas"]["EofMessage"];
         DiscoverOutput: components["schemas"]["CatalogMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
         DestinationOutput: components["schemas"]["SourceStateMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["EofMessage"];
-        SyncOutput: components["schemas"]["SourceStateMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["EofMessage"] | components["schemas"]["ControlMessage"];
+        SyncOutput: components["schemas"]["SourceStateMessage"] | components["schemas"]["CatalogMessage"] | components["schemas"]["TraceMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["EofMessage"] | components["schemas"]["ControlMessage"];
         CheckOutput: components["schemas"]["ConnectionStatusMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
         SetupOutput: components["schemas"]["ControlMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];
         TeardownOutput: components["schemas"]["LogMessage"] | components["schemas"]["TraceMessage"];

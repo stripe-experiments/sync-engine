@@ -4,9 +4,10 @@ import type {
   SyncOutput,
   TraceStreamStatus,
   TraceError,
-  TraceProgress,
+  TraceGlobalProgress,
   EofPayload,
   EofStreamProgress,
+  ConfiguredCatalog,
 } from '@stripe/sync-protocol'
 import { emptySyncState } from '@stripe/sync-protocol'
 
@@ -59,15 +60,14 @@ export function createRecordCounter() {
 }
 
 export function trackProgress(opts: {
-  interval_ms?: number
   initial_state?: SyncState
-  initial_cumulative_counts?: Record<string, number>
+  /** Configured catalog — emitted as the first message so the UI knows all streams upfront. */
+  catalog?: ConfiguredCatalog
   /** Shared counter fed by createRecordCounter().tap() on the data path. */
   recordCounter?: ReturnType<typeof createRecordCounter>
 }): (msgs: AsyncIterable<SyncOutput>) => AsyncIterable<SyncOutput> {
-  const intervalMs = opts.interval_ms ?? 2000
-
   return async function* (messages) {
+    // Initialize cumulative counts from engine state
     const initialCumulativeCounts = opts.initial_state?.engine?.streams
       ? Object.fromEntries(
           Object.entries(opts.initial_state.engine.streams)
@@ -77,18 +77,27 @@ export function trackProgress(opts: {
             ])
             .filter(([, v]) => typeof v === 'number' && v >= 0)
         )
-      : (opts.initial_cumulative_counts ?? {})
+      : {}
     const cumulativeRecordCount = new Map<string, number>(Object.entries(initialCumulativeCounts))
-    const prevSnapshotCounts = new Map<string, number>()
+
+    // Initialize cumulative global stats from engine state
+    const engineGlobal = (opts.initial_state?.engine?.global ?? {}) as Record<string, unknown>
+    let cumulativeGlobalRecordCount = (engineGlobal.cumulative_record_count as number) ?? 0
+    let cumulativeRequestCount = (engineGlobal.cumulative_request_count as number) ?? 0
+    let cumulativeElapsedMs = (engineGlobal.cumulative_elapsed_ms as number) ?? 0
+
     let stateCheckpointCount = 0
     const streamStatus = new Map<string, Status>()
     const completedRanges = new Map<string, Range[]>()
+    const lastEmittedStatus = new Map<string, Status>()
 
     // Restore stream statuses and completed_ranges from engine state
     if (opts.initial_state?.engine?.streams) {
       for (const [stream, data] of Object.entries(opts.initial_state.engine.streams)) {
         const d = data as { status?: Status; completed_ranges?: Range[] }
-        if (d?.status) streamStatus.set(stream, d.status)
+        if (d?.status === 'started' || d?.status === 'complete') {
+          streamStatus.set(stream, d.status)
+        }
         if (d?.completed_ranges && Array.isArray(d.completed_ranges)) {
           completedRanges.set(stream, d.completed_ranges.slice())
         }
@@ -96,17 +105,34 @@ export function trackProgress(opts: {
     }
     if (opts.initial_state?.source?.streams) {
       for (const [stream, data] of Object.entries(opts.initial_state.source.streams)) {
-        const status = (data as { status?: string })?.status
-        if (status) streamStatus.set(stream, status as Status)
+        const srcStatus = (data as { status?: string })?.status
+        // Map source error statuses to lifecycle status for the engine
+        if (srcStatus === 'complete') {
+          streamStatus.set(stream, 'complete')
+        } else if (
+          srcStatus === 'pending' ||
+          srcStatus === 'transient_error' ||
+          srcStatus === 'system_error' ||
+          srcStatus === 'config_error' ||
+          srcStatus === 'auth_error'
+        ) {
+          // Source hasn't completed — keep as started (or don't set if not started yet)
+          if (streamStatus.has(stream)) {
+            // Already has a status from engine state, keep it unless it was complete
+            // and source says otherwise
+          } else if (srcStatus !== 'pending') {
+            streamStatus.set(stream, 'started')
+          }
+        }
       }
     }
+
     const streamErrors = new Map<string, StreamError[]>()
     const hadInitialState = opts.initial_state != null
     const finalState: SyncState = structuredClone(opts.initial_state ?? emptySyncState())
 
     const startedAt = Date.now()
     let lastWindowAt = startedAt
-    let lastEmitAt = startedAt
     let prevWindowTotal = 0
 
     function elapsedMs() {
@@ -128,10 +154,6 @@ export function trackProgress(opts: {
       return sum
     }
 
-    function windowRecordCount(stream: string): number {
-      return runRecordCount(stream) - (prevSnapshotCounts.get(stream) ?? 0)
-    }
-
     function totalWindowRecords(): number {
       return totalRunRecords() - prevWindowTotal
     }
@@ -148,12 +170,8 @@ export function trackProgress(opts: {
     }
 
     function snapshotWindow() {
-      if (opts.recordCounter) {
-        for (const [k, v] of opts.recordCounter.counts) prevSnapshotCounts.set(k, v)
-      }
       prevWindowTotal = totalRunRecords()
       lastWindowAt = Date.now()
-      lastEmitAt = Date.now()
     }
 
     function buildStreamStatus(stream: string): SyncOutput | undefined {
@@ -170,8 +188,6 @@ export function trackProgress(opts: {
             status,
             cumulative_record_count: cumulative,
             run_record_count: run,
-            window_record_count: windowRecordCount(stream),
-            records_per_second: run / elapsedSec(),
           },
         },
         _emitted_by: 'engine',
@@ -181,31 +197,49 @@ export function trackProgress(opts: {
 
     function buildGlobalProgress(): SyncOutput {
       const windowDuration = Math.max((Date.now() - lastWindowAt) / 1000, 0.001)
-      const progress: TraceProgress = {
+      const runRecords = totalRunRecords()
+      const globalProgress: TraceGlobalProgress = {
         elapsed_ms: elapsedMs(),
-        run_record_count: totalRunRecords(),
-        rows_per_second: totalRunRecords() / elapsedSec(),
-        window_rows_per_second: totalWindowRecords() / windowDuration,
+        run_record_count: runRecords,
+        cumulative_record_count: cumulativeGlobalRecordCount + runRecords,
+        records_per_second: runRecords / elapsedSec(),
+        window_records_per_second: totalWindowRecords() / windowDuration,
         state_checkpoint_count: stateCheckpointCount,
+        cumulative_request_count: cumulativeRequestCount,
+        cumulative_elapsed_ms: cumulativeElapsedMs + elapsedMs(),
       }
       return {
         type: 'trace',
-        trace: { trace_type: 'progress' as const, progress },
+        trace: { trace_type: 'global_progress' as const, global_progress: globalProgress },
         _emitted_by: 'engine',
         _ts: new Date().toISOString(),
       } as SyncOutput
     }
 
-    function buildStreamProgress(stream: string): EofStreamProgress | undefined {
+    /** Emit stream_status + global_progress pair if status changed. */
+    function* emitIfStatusChanged(stream: string): Iterable<SyncOutput> {
+      const current = streamStatus.get(stream)
+      if (!current) return
+      if (lastEmittedStatus.get(stream) === current) return
+
+      lastEmittedStatus.set(stream, current)
+      const ss = buildStreamStatus(stream)
+      if (ss) yield ss
+      yield buildGlobalProgress()
+      snapshotWindow()
+    }
+
+    function buildStreamProgress(stream: string, finalEof = false): EofStreamProgress | undefined {
       const status = streamStatus.get(stream)
       if (!status) return undefined
       const run = runRecordCount(stream)
       const cumulative = (cumulativeRecordCount.get(stream) ?? 0) + run
+      // At EOF, no stream can still be in-flight — promote 'started' → 'complete'
+      const resolvedStatus = finalEof && status === 'started' ? 'complete' : status
       return {
-        status,
+        status: resolvedStatus,
         cumulative_record_count: cumulative,
         run_record_count: run,
-        records_per_second: run / elapsedSec(),
         errors: streamErrors.has(stream) ? streamErrors.get(stream) : undefined,
       }
     }
@@ -226,6 +260,15 @@ export function trackProgress(opts: {
         }
       }
 
+      // Update engine global state with cumulative totals
+      const runRecords = totalRunRecords()
+      finalState.engine.global = {
+        ...finalState.engine.global,
+        cumulative_record_count: cumulativeGlobalRecordCount + runRecords,
+        cumulative_request_count: cumulativeRequestCount,
+        cumulative_elapsed_ms: cumulativeElapsedMs + elapsedMs(),
+      }
+
       const hasAnyState =
         Object.keys(finalState.source.streams).length > 0 ||
         Object.keys(finalState.source.global).length > 0 ||
@@ -242,18 +285,22 @@ export function trackProgress(opts: {
       const streams = allStreams()
       const streamProgressMap: Record<string, EofStreamProgress> = {}
       for (const s of streams) {
-        const sp = buildStreamProgress(s)
+        const sp = buildStreamProgress(s, true)
         if (sp) streamProgressMap[s] = sp
       }
+      const runRecords = totalRunRecords()
       const eof: EofPayload = {
         reason,
         state: buildAccumulatedState(),
         global_progress: {
           elapsed_ms: elapsedMs(),
-          run_record_count: totalRunRecords(),
-          rows_per_second: totalRunRecords() / elapsedSec(),
-          window_rows_per_second: totalWindowRecords() / windowDuration,
+          run_record_count: runRecords,
+          cumulative_record_count: cumulativeGlobalRecordCount + runRecords,
+          records_per_second: runRecords / elapsedSec(),
+          window_records_per_second: totalWindowRecords() / windowDuration,
           state_checkpoint_count: stateCheckpointCount,
+          cumulative_request_count: cumulativeRequestCount,
+          cumulative_elapsed_ms: cumulativeElapsedMs + elapsedMs(),
         },
         stream_progress: Object.keys(streamProgressMap).length > 0 ? streamProgressMap : undefined,
       }
@@ -265,16 +312,14 @@ export function trackProgress(opts: {
       } as SyncOutput
     }
 
-    function* maybeEmitProgress(): Iterable<SyncOutput> {
-      const now = Date.now()
-      if (now - lastEmitAt < intervalMs) return
-
-      for (const stream of allStreams()) {
-        const ss = buildStreamStatus(stream)
-        if (ss) yield ss
-      }
-      yield buildGlobalProgress()
-      snapshotWindow()
+    // Emit catalog as first message so the UI knows all streams upfront
+    if (opts.catalog) {
+      yield {
+        type: 'catalog',
+        catalog: { streams: opts.catalog.streams.map((cs) => cs.stream) },
+        _emitted_by: 'engine',
+        _ts: new Date().toISOString(),
+      } as SyncOutput
     }
 
     for await (const msg of messages) {
@@ -283,19 +328,25 @@ export function trackProgress(opts: {
         if (msg.source_state.state_type === 'stream') {
           const stream = msg.source_state.stream
           finalState.source.streams[stream] = msg.source_state.data
-          if (!streamStatus.has(stream)) streamStatus.set(stream, 'start')
+          if (!streamStatus.has(stream)) {
+            streamStatus.set(stream, 'started')
+            yield* emitIfStatusChanged(stream)
+          }
         } else if (msg.source_state.state_type === 'global') {
           finalState.source.global = msg.source_state.data as Record<string, unknown>
         }
       } else if (msg.type === 'trace') {
         if (msg.trace.trace_type === 'stream_status') {
           const ss = msg.trace.stream_status
-          if (ss.status === 'range_complete' && ss.range_complete) {
+          if (ss.range_complete) {
             const existing = completedRanges.get(ss.stream) ?? []
             existing.push({ gte: ss.range_complete.gte, lt: ss.range_complete.lt })
             completedRanges.set(ss.stream, mergeRanges(existing))
-          } else {
-            streamStatus.set(ss.stream, ss.status)
+          }
+          const newStatus = ss.status as Status
+          if (newStatus === 'started' || newStatus === 'complete') {
+            streamStatus.set(ss.stream, newStatus)
+            yield* emitIfStatusChanged(ss.stream)
           }
         } else if (msg.trace.trace_type === 'error') {
           const err = msg.trace.error
@@ -308,6 +359,7 @@ export function trackProgress(opts: {
       }
 
       if (msg.type === 'eof') {
+        // Emit final stream_status + global_progress for all streams
         for (const stream of allStreams()) {
           const ss = buildStreamStatus(stream)
           if (ss) yield ss
@@ -317,8 +369,12 @@ export function trackProgress(opts: {
         return
       }
 
+      // Suppress upstream stream_status traces — the engine re-emits enriched versions
+      if (msg.type === 'trace' && msg.trace.trace_type === 'stream_status') {
+        continue
+      }
+
       yield msg
-      yield* maybeEmitProgress()
     }
   }
 }

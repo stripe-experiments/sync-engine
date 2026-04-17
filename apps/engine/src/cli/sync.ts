@@ -1,8 +1,12 @@
+import React from 'react'
+import { render } from 'ink'
 import { defineCommand } from 'citty'
 import type { Engine } from '../lib/engine.js'
 import type { ConnectorResolver } from '../lib/index.js'
 import { readonlyStateStore, type StateStore } from '../lib/state-store.js'
 import { type PipelineConfig, type SyncState, emptySyncState } from '@stripe/sync-protocol'
+import { createSyncDisplayState } from '../lib/sync-progress-state.js'
+import { SyncProgressUI } from './sync-ui.js'
 
 export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
   return defineCommand({
@@ -46,6 +50,16 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
         type: 'string',
         description: 'Stop after N seconds',
       },
+      baseUrl: {
+        type: 'string',
+        description:
+          'Stripe API base URL (or STRIPE_API_BASE env, default: https://api.stripe.com)',
+      },
+      progress: {
+        type: 'boolean',
+        default: false,
+        description: 'Force progress display (auto-enabled when stderr is a TTY)',
+      },
       live: {
         type: 'boolean',
         default: false,
@@ -84,6 +98,10 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
 
       // Inject optional source config overrides
       const stripeConfig = pipeline.source.stripe as Record<string, unknown>
+      const baseUrl = args.baseUrl || process.env.STRIPE_API_BASE
+      if (baseUrl) {
+        stripeConfig.base_url = baseUrl
+      }
       if (backfillLimit) {
         stripeConfig.backfill_limit = backfillLimit
       }
@@ -101,7 +119,21 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
         : undefined
       const output = engine.pipeline_sync(pipeline, { state: syncState, time_limit: timeLimit })
 
-      // Persist state checkpoints and stream NDJSON to stdout
+      const showProgress = args.progress || process.stderr.isTTY
+      const display = showProgress ? createSyncDisplayState() : null
+
+      // Mount Ink UI on stderr if showing progress
+      const inkInstance = display
+        ? render(
+            React.createElement(SyncProgressUI, {
+              eof: display.state.eof,
+              catalog: display.state.catalog,
+              final: false,
+            }),
+            { stdout: process.stderr }
+          )
+        : null
+
       for await (const msg of output) {
         if (msg.type === 'source_state') {
           if (msg.source_state.state_type === 'global') {
@@ -110,8 +142,25 @@ export function createSyncCmd(engine: Engine, _resolver: ConnectorResolver) {
             await store.set(msg.source_state.stream, msg.source_state.data)
           }
         }
-        process.stdout.write(JSON.stringify(msg) + '\n')
+
+        if (display && inkInstance) {
+          const changed = display.update(msg)
+          if (changed) {
+            const final = msg.type === 'eof'
+            inkInstance.rerender(
+              React.createElement(SyncProgressUI, {
+                eof: display.state.eof,
+                catalog: display.state.catalog,
+                final,
+              })
+            )
+          }
+        } else if (!display) {
+          process.stdout.write(JSON.stringify(msg) + '\n')
+        }
       }
+
+      inkInstance?.unmount()
 
       if ('close' in store && typeof store.close === 'function') {
         await store.close()

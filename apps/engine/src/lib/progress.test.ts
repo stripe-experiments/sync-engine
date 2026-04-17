@@ -72,8 +72,14 @@ describe('trackProgress', () => {
 
     const outputs = await collect(
       trackProgress({
-        interval_ms: 0,
-        initial_cumulative_counts: { customers: 5 },
+        initial_state: {
+          source: { streams: {}, global: {} },
+          destination: { streams: {}, global: {} },
+          engine: {
+            streams: { customers: { cumulative_record_count: 5 } },
+            global: {},
+          },
+        },
         recordCounter: counter,
       })(
         toAsync<SyncOutput>([
@@ -100,10 +106,10 @@ describe('trackProgress', () => {
       )
     )
 
-    const progressTraces = outputs.filter(
-      (m) => m.type === 'trace' && m.trace.trace_type === 'progress'
+    const globalProgressTraces = outputs.filter(
+      (m) => m.type === 'trace' && m.trace.trace_type === 'global_progress'
     )
-    expect(progressTraces.length).toBeGreaterThan(0)
+    expect(globalProgressTraces.length).toBeGreaterThan(0)
 
     const eof = outputs.find((m) => m.type === 'eof')
     expect(eof).toBeDefined()
@@ -118,7 +124,7 @@ describe('trackProgress', () => {
           },
           destination: { streams: {}, global: {} },
           engine: {
-            streams: { customers: { cumulative_record_count: 7 } },
+            streams: { customers: { cumulative_record_count: 7, status: 'complete' } },
             global: {},
           },
         },
@@ -136,6 +142,137 @@ describe('trackProgress', () => {
         },
       },
     })
+  })
+
+  it('emits stream_status only on transitions, not periodically', async () => {
+    const counter = createRecordCounter()
+    const outputs = await collect(
+      trackProgress({
+        recordCounter: counter,
+      })(
+        toAsync<SyncOutput>([
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+          },
+          // Second source_state for same stream should NOT emit another stream_status
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '2' } },
+          },
+          {
+            type: 'trace',
+            trace: {
+              trace_type: 'stream_status',
+              stream_status: { stream: 'customers', status: 'complete' },
+            },
+          },
+          { type: 'eof', eof: { reason: 'complete' } },
+        ])
+      )
+    )
+
+    const streamStatusTraces = outputs.filter(
+      (m) =>
+        m.type === 'trace' && m.trace.trace_type === 'stream_status' && m._emitted_by === 'engine'
+    )
+    // First source_state → started transition + complete transition + final on EOF = 3
+    // The second source_state should NOT trigger another (already started)
+    const statusValues = streamStatusTraces.map((m) => (m as any).trace.stream_status.status)
+    // started (from first source_state), complete (from stream_status trace), complete (final on EOF)
+    expect(statusValues).toEqual(['started', 'complete', 'complete'])
+  })
+
+  it('co-emits global_progress with every stream_status', async () => {
+    const counter = createRecordCounter()
+    const outputs = await collect(
+      trackProgress({
+        recordCounter: counter,
+      })(
+        toAsync<SyncOutput>([
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+          },
+          { type: 'eof', eof: { reason: 'complete' } },
+        ])
+      )
+    )
+
+    // Every stream_status from engine should be followed by a global_progress
+    const engineTraces = outputs.filter((m) => m.type === 'trace' && m._emitted_by === 'engine')
+    for (let i = 0; i < engineTraces.length - 1; i++) {
+      const current = engineTraces[i] as any
+      const next = engineTraces[i + 1] as any
+      if (current.trace.trace_type === 'stream_status') {
+        expect(next.trace.trace_type).toBe('global_progress')
+      }
+    }
+  })
+
+  it('emits catalog as first message when provided', async () => {
+    const counter = createRecordCounter()
+    const outputs = await collect(
+      trackProgress({
+        recordCounter: counter,
+        catalog: {
+          streams: [
+            {
+              stream: { name: 'customers', primary_key: [['id']] },
+              sync_mode: 'incremental',
+              destination_sync_mode: 'append',
+            },
+          ],
+        },
+      })(toAsync<SyncOutput>([{ type: 'eof', eof: { reason: 'complete' } }]))
+    )
+
+    expect(outputs[0]).toMatchObject({
+      type: 'catalog',
+      catalog: { streams: [{ name: 'customers', primary_key: [['id']] }] },
+    })
+  })
+
+  it('errors are orthogonal to lifecycle status', async () => {
+    const counter = createRecordCounter()
+    const outputs = await collect(
+      trackProgress({
+        recordCounter: counter,
+      })(
+        toAsync<SyncOutput>([
+          {
+            type: 'source_state',
+            source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+          },
+          {
+            type: 'trace',
+            trace: {
+              trace_type: 'error',
+              error: {
+                message: 'rate limited',
+                failure_type: 'transient_error',
+                stream: 'customers',
+              },
+            },
+          },
+          {
+            type: 'trace',
+            trace: {
+              trace_type: 'stream_status',
+              stream_status: { stream: 'customers', status: 'complete' },
+            },
+          },
+          { type: 'eof', eof: { reason: 'complete' } },
+        ])
+      )
+    )
+
+    const eof = outputs.find((m) => m.type === 'eof') as any
+    // Stream is complete AND has errors — they're orthogonal
+    expect(eof.eof.stream_progress.customers.status).toBe('complete')
+    expect(eof.eof.stream_progress.customers.errors).toEqual([
+      { message: 'rate limited', failure_type: 'transient_error' },
+    ])
   })
 
   it('aggregates multiple stream states and global state into EOF', async () => {
@@ -165,7 +302,6 @@ describe('trackProgress', () => {
 
     const outputs = await collect(
       trackProgress({
-        interval_ms: 0,
         recordCounter: counter,
       })(
         toAsync<SyncOutput>([
@@ -210,8 +346,8 @@ describe('trackProgress', () => {
           destination: { streams: {}, global: {} },
           engine: {
             streams: {
-              customers: { cumulative_record_count: 1 },
-              invoices: { cumulative_record_count: 1 },
+              customers: { cumulative_record_count: 1, status: 'started' },
+              invoices: { cumulative_record_count: 1, status: 'started' },
             },
             global: {},
           },
@@ -239,7 +375,6 @@ describe('trackProgress', () => {
 
     const outputs = await collect(
       trackProgress({
-        interval_ms: 0,
         initial_state: {
           source: {
             streams: {
@@ -294,10 +429,9 @@ describe('trackProgress', () => {
           },
           engine: {
             streams: {
-              customers: { cumulative_record_count: 6, note: 'keep-me' },
+              customers: { cumulative_record_count: 6, note: 'keep-me', status: 'started' },
               invoices: { cumulative_record_count: 2, untouched: true },
             },
-            global: { sync_id: 'prev' },
           },
         },
       },
@@ -322,37 +456,50 @@ describe('trackProgress', () => {
 
     const outputs = await collect(
       trackProgress({
-        interval_ms: 0,
         initial_state: initialState,
         recordCounter: createRecordCounter(),
       })(toAsync<SyncOutput>([{ type: 'eof', eof: { reason: 'complete' } }]))
     )
 
     const eof = outputs.find((m) => m.type === 'eof')
+    // Engine global is enriched with cumulative totals, so partial match
     expect(eof).toMatchObject({
       type: 'eof',
-      eof: { state: initialState },
+      eof: {
+        state: {
+          source: initialState.source,
+          destination: initialState.destination,
+          engine: {
+            streams: initialState.engine.streams,
+          },
+        },
+      },
     })
   })
 
-  it('omits state from EOF when no source_state messages were emitted', async () => {
+  it('includes engine global cumulative stats even when no source_state messages were emitted', async () => {
     const counter = createRecordCounter()
     const outputs = await collect(
       trackProgress({
-        interval_ms: 0,
         recordCounter: counter,
       })(toAsync<SyncOutput>([{ type: 'eof', eof: { reason: 'complete' } }]))
     )
 
-    const eof = outputs.find((m) => m.type === 'eof')
+    const eof = outputs.find((m) => m.type === 'eof') as any
     expect(eof).toBeDefined()
-    expect((eof as any).eof.state).toBeUndefined()
+    // Engine global always has cumulative stats (zeroed out for fresh runs)
+    expect(eof.eof.state.engine.global).toMatchObject({
+      cumulative_record_count: 0,
+      cumulative_request_count: 0,
+    })
+    // No source or destination state since no messages were emitted
+    expect(Object.keys(eof.eof.state.source.streams)).toHaveLength(0)
   })
 
   it('accumulates range_complete into completed_ranges in engine state', async () => {
     const outputs = await collect(
       trackProgress({
-        interval_ms: 999_999,
+
         recordCounter: createRecordCounter(),
       })(
         toAsync<SyncOutput>([
@@ -360,7 +507,7 @@ describe('trackProgress', () => {
             type: 'trace',
             trace: {
               trace_type: 'stream_status',
-              stream_status: { stream: 'customers', status: 'start' },
+              stream_status: { stream: 'customers', status: 'started' },
             },
           },
           {
@@ -369,7 +516,7 @@ describe('trackProgress', () => {
               trace_type: 'stream_status',
               stream_status: {
                 stream: 'customers',
-                status: 'range_complete',
+                status: 'started',
                 range_complete: { gte: '2024-01-01T00:00:00Z', lt: '2024-06-01T00:00:00Z' },
               },
             },
@@ -380,7 +527,7 @@ describe('trackProgress', () => {
               trace_type: 'stream_status',
               stream_status: {
                 stream: 'customers',
-                status: 'range_complete',
+                status: 'started',
                 range_complete: { gte: '2024-06-01T00:00:00Z', lt: '2025-01-01T00:00:00Z' },
               },
             },
@@ -410,7 +557,6 @@ describe('trackProgress', () => {
   it('range_complete does not overwrite stream status', async () => {
     const outputs = await collect(
       trackProgress({
-        interval_ms: 999_999,
         recordCounter: createRecordCounter(),
       })(
         toAsync<SyncOutput>([
@@ -418,7 +564,7 @@ describe('trackProgress', () => {
             type: 'trace',
             trace: {
               trace_type: 'stream_status',
-              stream_status: { stream: 'customers', status: 'running' },
+              stream_status: { stream: 'customers', status: 'started' },
             },
           },
           {
@@ -427,7 +573,7 @@ describe('trackProgress', () => {
               trace_type: 'stream_status',
               stream_status: {
                 stream: 'customers',
-                status: 'range_complete',
+                status: 'started',
                 range_complete: { gte: '2024-01-01T00:00:00Z', lt: '2024-06-01T00:00:00Z' },
               },
             },
@@ -442,7 +588,7 @@ describe('trackProgress', () => {
       type: 'eof',
       eof: {
         stream_progress: {
-          customers: { status: 'running' },
+          customers: { status: 'complete' },
         },
       },
     })
@@ -451,7 +597,7 @@ describe('trackProgress', () => {
   it('seeds completed_ranges from initial engine state', async () => {
     const outputs = await collect(
       trackProgress({
-        interval_ms: 999_999,
+
         initial_state: {
           source: { streams: {}, global: {} },
           destination: { streams: {}, global: {} },
@@ -473,7 +619,7 @@ describe('trackProgress', () => {
               trace_type: 'stream_status',
               stream_status: {
                 stream: 'customers',
-                status: 'range_complete',
+                status: 'started',
                 range_complete: { gte: '2024-06-01T00:00:00Z', lt: '2025-01-01T00:00:00Z' },
               },
             },

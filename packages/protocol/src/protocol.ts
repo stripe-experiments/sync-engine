@@ -271,8 +271,11 @@ export const TraceStreamStatus = z
   .object({
     stream: z.string().describe('Stream being reported on.'),
     status: z
-      .enum(['start', 'running', 'complete', 'range_complete'])
-      .describe('Current phase of the stream within this sync run.'),
+      .enum(['started', 'complete'])
+      .describe(
+        'Lifecycle status. Errors are orthogonal — a stream can be complete with errors. ' +
+          'Sources may store richer error statuses internally for retry logic.'
+      ),
     range_complete: z
       .object({
         gte: z.string().describe('Inclusive lower bound (ISO 8601).'),
@@ -294,32 +297,10 @@ export const TraceStreamStatus = z
       .int()
       .optional()
       .describe('Records synced for this stream in the current sync run. Set by the engine.'),
-    window_record_count: z
-      .number()
-      .int()
-      .optional()
-      .describe(
-        'Records synced since the last stream_status emission for this stream. ' +
-          'Set by the engine. Used for instantaneous per-stream throughput.'
-      ),
-    records_per_second: z
-      .number()
-      .optional()
-      .describe(
-        'Average records per second for this stream over the entire run: ' +
-          'run_record_count / elapsed seconds. Set by the engine.'
-      ),
-    requests_per_second: z
-      .number()
-      .optional()
-      .describe(
-        'Average API requests per second for this stream over the entire run. ' +
-          'Set by the engine from source-reported request counts.'
-      ),
   })
   .describe(
     'Per-stream status update. Sources emit the minimal form (stream + status). ' +
-      'The engine emits enriched versions with record counts and throughput rates.'
+      'The engine enriches with record counts. Only emitted on status transitions.'
   )
 export type TraceStreamStatus = z.infer<typeof TraceStreamStatus>
 
@@ -332,17 +313,22 @@ export const TraceEstimate = z
   .describe('Sync progress estimate for a stream.')
 export type TraceEstimate = z.infer<typeof TraceEstimate>
 
-export const TraceProgress = z
+export const TraceGlobalProgress = z
   .object({
     elapsed_ms: z.number().int().describe('Wall-clock milliseconds since the sync run started.'),
     run_record_count: z
       .number()
       .int()
       .describe('Total records synced across all streams in this run.'),
-    rows_per_second: z
+    cumulative_record_count: z
+      .number()
+      .int()
+      .optional()
+      .describe('Total records synced across all streams across all runs.'),
+    records_per_second: z
       .number()
       .describe('Overall throughput for the entire run: run_record_count / elapsed seconds.'),
-    window_rows_per_second: z
+    window_records_per_second: z
       .number()
       .describe(
         'Instantaneous throughput: total records in last window / window duration. ' +
@@ -352,13 +338,33 @@ export const TraceProgress = z
       .number()
       .int()
       .describe('Total source_state messages observed so far in this sync run.'),
+    request_count: z
+      .number()
+      .int()
+      .optional()
+      .describe('Total API requests made by the source in this run.'),
+    cumulative_request_count: z
+      .number()
+      .int()
+      .optional()
+      .describe('Total API requests across all runs.'),
+    cumulative_elapsed_ms: z
+      .number()
+      .int()
+      .optional()
+      .describe('Total wall-clock time across all runs.'),
   })
   .describe(
-    'Periodic global sync progress emitted by the engine. ' +
+    'Global sync progress emitted by the engine, co-emitted with every stream_status trace. ' +
       'Aggregate stats only — per-stream detail is in stream_status messages. ' +
       'Each emission is a full replacement.'
   )
-export type TraceProgress = z.infer<typeof TraceProgress>
+export type TraceGlobalProgress = z.infer<typeof TraceGlobalProgress>
+
+/** @deprecated Use TraceGlobalProgress. */
+export const TraceProgress = TraceGlobalProgress
+/** @deprecated Use TraceGlobalProgress. */
+export type TraceProgress = TraceGlobalProgress
 
 export const TracePayload = z
   .discriminatedUnion('trace_type', [
@@ -375,35 +381,27 @@ export const TracePayload = z
       estimate: TraceEstimate,
     }),
     z.object({
-      trace_type: z.literal('progress'),
-      progress: TraceProgress,
+      trace_type: z.literal('global_progress'),
+      global_progress: TraceGlobalProgress,
     }),
   ])
   .describe(
-    'Diagnostic/status payload with subtypes for error, stream status, estimates, and progress.'
+    'Diagnostic/status payload with subtypes for error, stream status, estimates, and global progress.'
   )
 export type TracePayload = z.infer<typeof TracePayload>
 
-// MARK: - EOF payload (depends on TraceProgress)
+// MARK: - EOF payload (depends on TraceGlobalProgress)
 
 export const EofStreamProgress = z
   .object({
     status: z
-      .enum(['start', 'running', 'complete', 'range_complete'])
-      .describe('Final stream status.'),
+      .enum(['started', 'complete'])
+      .describe('Lifecycle status. Errors are orthogonal — a stream can be complete with errors.'),
     cumulative_record_count: z
       .number()
       .int()
       .describe('Cumulative records synced for this stream across all runs.'),
     run_record_count: z.number().int().describe('Records synced in this run.'),
-    records_per_second: z
-      .number()
-      .optional()
-      .describe('Average records/sec for this stream over the run.'),
-    requests_per_second: z
-      .number()
-      .optional()
-      .describe('Average requests/sec for this stream over the run.'),
     errors: z
       .array(
         z.object({
@@ -442,8 +440,8 @@ export const EofPayload = z
         'engine: updated cumulative record counts; destination: reserved. ' +
         'Consumers can persist this directly and pass it back on resume.'
     ),
-    global_progress: TraceProgress.optional().describe(
-      'Final global aggregates. Same shape as trace/progress.'
+    global_progress: TraceGlobalProgress.optional().describe(
+      'Final global aggregates. Same shape as trace/global_progress.'
     ),
     stream_progress: z
       .record(z.string(), EofStreamProgress)
@@ -579,6 +577,7 @@ export type DestinationOutput = z.infer<typeof DestinationOutput>
 export const SyncOutput = z
   .discriminatedUnion('type', [
     SourceStateMessage,
+    CatalogMessage,
     TraceMessage,
     LogMessage,
     EofMessage,

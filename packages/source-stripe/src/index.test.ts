@@ -247,7 +247,7 @@ describe('StripeSource', () => {
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
             (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
-              .status === 'start' &&
+              .status === 'started' &&
             (m.trace as { stream_status: { stream?: string } }).stream_status.stream === 'customers'
         )
       ).toBe(true)
@@ -266,8 +266,8 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
-              .status === 'range_complete' &&
+            (m.trace as { stream_status: { range_complete?: unknown; stream?: string } })
+              .stream_status.range_complete != null &&
             (m.trace as { stream_status: { stream?: string } }).stream_status.stream === 'customers'
         )
       ).toBe(true)
@@ -339,8 +339,8 @@ describe('StripeSource', () => {
         })
       )
 
-      // Streams run in parallel — order is not fixed; each stream emits start, records,
-      // checkpoints, range_complete, final state, and complete (counts vary with ranges).
+      // Streams run in parallel — order is not fixed; each stream emits started, records,
+      // checkpoints, segment range_complete, final state, and complete (counts vary with ranges).
       const custRecords = messages.filter(
         (m): m is RecordMessage => m.type === 'record' && m.record.stream === 'customers'
       )
@@ -354,7 +354,10 @@ describe('StripeSource', () => {
         (m) =>
           m.type === 'trace' &&
           m.trace.trace_type === 'stream_status' &&
-          (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+          (m.trace as { stream_status: { status: string; range_complete?: unknown } }).stream_status
+            .status === 'started' &&
+          (m.trace as { stream_status: { range_complete?: unknown } }).stream_status
+            .range_complete == null
       )
       expect(starts).toHaveLength(2)
 
@@ -438,7 +441,7 @@ describe('StripeSource', () => {
             m.trace.trace_type === 'stream_status' &&
             (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
               .stream === 'customers' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+            (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
         )
       ).toBe(true)
       expect(
@@ -455,10 +458,10 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
-              .stream === 'customers' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status ===
-              'range_complete'
+            (m.trace as { stream_status: { range_complete?: unknown; stream?: string } })
+              .stream_status.stream === 'customers' &&
+            (m.trace as { stream_status: { range_complete?: unknown } }).stream_status
+              .range_complete != null
         )
       ).toBe(true)
       expect(
@@ -614,12 +617,13 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(2)
+      // started + error + complete
+      expect(messages).toHaveLength(3)
       expect(messages[0]).toMatchObject({
         type: 'trace',
         trace: {
           trace_type: 'stream_status',
-          stream_status: { stream: 'customers', status: 'start' },
+          stream_status: { stream: 'customers', status: 'started' },
         },
       })
 
@@ -636,6 +640,13 @@ describe('StripeSource', () => {
       expect(traceError.message).toContain('Rate limit')
       expect(traceError.stream).toBe('customers')
       expect(traceError.stack_trace).toBeDefined()
+      expect(messages[2]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
+        },
+      })
     })
 
     it('emits TraceMessage error with failure_type config_error for unknown stream', async () => {
@@ -679,7 +690,7 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(2)
+      expect(messages).toHaveLength(3)
       const errorMsg = messages[1] as TraceMessage
       expect(errorMsg.type).toBe('trace')
       expect(errorMsg.trace.trace_type).toBe('error')
@@ -688,6 +699,13 @@ describe('StripeSource', () => {
       ).error
       expect(traceError.failure_type).toBe('system_error')
       expect(traceError.message).toContain('Connection refused')
+      expect(messages[2]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
+        },
+      })
     })
 
     it('proceeds with backfill using fallback timestamp when getAccount fails (fault-tolerant)', async () => {
@@ -773,6 +791,7 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'tax_ids', primary_key: [['id']] }) })
       )
 
+      // started + error + log (global auth errors do not emit stream complete)
       expect(messages).toHaveLength(3)
       const errorMsg = messages[1] as TraceMessage
       expect(errorMsg.trace.trace_type).toBe('error')
@@ -810,7 +829,7 @@ describe('StripeSource', () => {
         source.read({ config, catalog: catalog({ name: 'customers', primary_key: [['id']] }) })
       )
 
-      expect(messages).toHaveLength(2)
+      expect(messages).toHaveLength(3)
       expect(messages[1]).toMatchObject({
         type: 'trace',
         trace: {
@@ -819,6 +838,13 @@ describe('StripeSource', () => {
             failure_type: 'system_error',
             stream: 'customers',
           },
+        },
+      })
+      expect(messages[2]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'customers', status: 'complete' },
         },
       })
     })
@@ -846,7 +872,7 @@ describe('StripeSource', () => {
         type: 'trace',
         trace: {
           trace_type: 'stream_status',
-          stream_status: { stream: 'invoices', status: 'start' },
+          stream_status: { stream: 'invoices', status: 'started' },
         },
       })
       expect(messages[1]).toMatchObject({
@@ -854,6 +880,52 @@ describe('StripeSource', () => {
         trace: {
           trace_type: 'stream_status',
           stream_status: { stream: 'invoices', status: 'complete' },
+        },
+      })
+    })
+
+    it('treats Unrecognized request URL as skippable (feature not available)', async () => {
+      const listFn = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'Unrecognized request URL (GET: /v1/treasury/financial_accounts). Please see https://stripe.com/docs'
+          )
+        )
+
+      const registry: Record<string, ResourceConfig> = {
+        treasury_financial_accounts: makeConfig({
+          order: 1,
+          tableName: 'treasury_financial_accounts',
+          listFn: listFn as ResourceConfig['listFn'],
+        }),
+      }
+
+      vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
+      const messages = await collect(
+        source.read({
+          config,
+          catalog: catalog({
+            name: 'treasury_financial_accounts',
+            primary_key: [['id']],
+          }),
+        })
+      )
+
+      // Skippable: started + complete, no error trace
+      expect(messages).toHaveLength(2)
+      expect(messages[0]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'treasury_financial_accounts', status: 'started' },
+        },
+      })
+      expect(messages[1]).toMatchObject({
+        type: 'trace',
+        trace: {
+          trace_type: 'stream_status',
+          stream_status: { stream: 'treasury_financial_accounts', status: 'complete' },
         },
       })
     })
@@ -914,7 +986,7 @@ describe('StripeSource', () => {
             .stream === 'customers' &&
           (m.trace as { stream_status: { status: string } }).stream_status.status === 'complete'
       )
-      expect(custComplete).toHaveLength(0)
+      expect(custComplete).toHaveLength(1)
 
       const invComplete = messages.filter(
         (m) =>
@@ -971,7 +1043,7 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+            (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
         )
       ).toBe(true)
     })
@@ -1003,7 +1075,7 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+            (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
         )
       ).toBe(true)
     })
@@ -1035,7 +1107,7 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+            (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
         )
       ).toBe(true)
     })
@@ -1153,7 +1225,7 @@ describe('StripeSource', () => {
             m.trace.trace_type === 'stream_status' &&
             (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
               .stream === 'customers' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+            (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
         )
       ).toBe(true)
       expect(
@@ -1178,10 +1250,10 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string; stream?: string } }).stream_status
-              .stream === 'customers' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status ===
-              'range_complete'
+            (m.trace as { stream_status: { range_complete?: unknown; stream?: string } })
+              .stream_status.stream === 'customers' &&
+            (m.trace as { stream_status: { range_complete?: unknown } }).stream_status
+              .range_complete != null
         )
       ).toBe(true)
       expect(
@@ -1760,7 +1832,7 @@ describe('StripeSource', () => {
       const m1 = await iter.next()
       expect(m1.value).toMatchObject({
         type: 'trace',
-        trace: { trace_type: 'stream_status', stream_status: { status: 'start' } },
+        trace: { trace_type: 'stream_status', stream_status: { status: 'started' } },
       })
       await drainUntilStreamBackfillComplete(iter, 'customers')
 
@@ -1827,7 +1899,7 @@ describe('StripeSource', () => {
       const m1 = await iter.next()
       expect(m1.value).toMatchObject({
         type: 'trace',
-        trace: { trace_type: 'stream_status', stream_status: { status: 'start' } },
+        trace: { trace_type: 'stream_status', stream_status: { status: 'started' } },
       })
 
       // Queue an event AFTER stream_status started — capturedOnEvent is now set.
@@ -1891,8 +1963,8 @@ describe('StripeSource', () => {
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status ===
-              'range_complete'
+            (m.trace as { stream_status: { range_complete?: unknown } }).stream_status
+              .range_complete != null
         )
       ).toBe(true)
       expect(
@@ -2100,15 +2172,15 @@ describe('StripeSource', () => {
 
       expect(messages[0]).toMatchObject({
         type: 'trace',
-        trace: { trace_type: 'stream_status', stream_status: { status: 'start' } },
+        trace: { trace_type: 'stream_status', stream_status: { status: 'started' } },
       })
       expect(
         messages.some(
           (m) =>
             m.type === 'trace' &&
             m.trace.trace_type === 'stream_status' &&
-            (m.trace as { stream_status: { status: string } }).stream_status.status ===
-              'range_complete'
+            (m.trace as { stream_status: { range_complete?: unknown } }).stream_status
+              .range_complete != null
         )
       ).toBe(true)
       expect(messages.some((m) => m.type === 'source_state')).toBe(true)
@@ -2145,7 +2217,7 @@ describe('StripeSource', () => {
         (m): m is TraceMessage =>
           m.type === 'trace' &&
           m.trace.trace_type === 'stream_status' &&
-          (m.trace as { stream_status: { status: string } }).stream_status.status === 'start'
+          (m.trace as { stream_status: { status: string } }).stream_status.status === 'started'
       )
       expect(started).toHaveLength(0)
 
@@ -2624,7 +2696,7 @@ describe('StripeSource', () => {
         type: 'trace',
         trace: {
           trace_type: 'stream_status',
-          stream_status: { stream: 'customers', status: 'start' },
+          stream_status: { stream: 'customers', status: 'started' },
         },
       })
 

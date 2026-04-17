@@ -56,10 +56,12 @@
     "dotenv": "^16.4.7",
     "googleapis": "^148.0.0",
     "hono": "^4",
+    "ink": "^7.0.0",
     "openapi-fetch": "^0.17.0",
     "pg": "^8.16.3",
     "pino": "^10",
     "pino-pretty": "^13",
+    "react": "^19.2.4",
     "ws": "^8.18.0",
     "zod": "^4.3.6"
   },
@@ -67,6 +69,7 @@
     "@hyperjump/json-schema": "^1.17.5",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.4",
+    "@types/react": "^19.2.14",
     "openapi-typescript": "^7.13.0",
     "vitest": "^3.2.4"
   },
