@@ -257,11 +257,11 @@ type SyncError =
 
 type StreamProgress = {
   completed_ranges?: Array<{ gte: string; lt: string }> // merged completed time ranges
-  record_count: number // records this run (across requests)
   state_count: number // checkpoints this run for this stream
-  inserted: number // records inserted (for now, same as record_count)
-  updated: number // records updated (0 until destination supports upsert tracking)
-  deleted: number // records deleted (0 until destination supports delete tracking)
+  change_count: number // total records processed (always known by engine)
+  insert_count: number // 0 until destination reports (insert_count + update_count + delete_count = change_count)
+  update_count: number // 0 until destination reports
+  delete_count: number // 0 until destination reports
 }
 
 type ProgressPayload = {
