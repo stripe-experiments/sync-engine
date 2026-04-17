@@ -31,19 +31,19 @@ range management, stream lifecycle guarantees, and stall detection to the engine
 CLIENT  ←—start/end—→  ENGINE  ←—iterator—→  SOURCE
 ```
 
-| Concern                      | Client                 | Engine                                    | Source                              |
-| ---------------------------- | ---------------------- | ----------------------------------------- | ----------------------------------- |
-| What to sync (streams)       | Provides catalog       | Adjusts catalog (time_range, deprioritize)| Syncs what it's given               |
-| When to sync (scheduling)    | Decides                | —                                         | —                                   |
-| Run identity                 | Generates sync_run_id  | Freezes bounds, tracks continuations      | Unaware                             |
-| Time range bounds            | —                      | Computes, injects into catalog            | Respects `time_range` if present    |
-| Internal pagination          | —                      | —                                         | Manages ranges, parallel pages      |
-| Stream lifecycle             | Consumes progress      | Guarantees terminal status                | Emits `started`, optionally `complete` |
-| Progress reporting           | Consumes               | Enriches source signals, emits progress   | Emits raw stream_status + records   |
-| Error reporting              | Decides retry policy   | Passes through, tracks for stalls         | Emits trace errors                  |
-| State                        | Opaque round-trip      | Manages engine section                    | Manages source section              |
-| Stall detection              | —                      | Tracks per-stream across runs             | —                                   |
-| `has_more`                   | Reads, acts            | Derives from source + engine state        | —                                   |
+| Concern                   | Client                | Engine                                     | Source                                 |
+| ------------------------- | --------------------- | ------------------------------------------ | -------------------------------------- |
+| What to sync (streams)    | Provides catalog      | Adjusts catalog (time_range, deprioritize) | Syncs what it's given                  |
+| When to sync (scheduling) | Decides               | —                                          | —                                      |
+| Run identity              | Generates sync_run_id | Freezes bounds, tracks continuations       | Unaware                                |
+| Time range bounds         | —                     | Computes, injects into catalog             | Respects `time_range` if present       |
+| Internal pagination       | —                     | —                                          | Manages ranges, parallel pages         |
+| Stream lifecycle          | Consumes progress     | Guarantees terminal status                 | Emits `started`, optionally `complete` |
+| Progress reporting        | Consumes              | Enriches source signals, emits progress    | Emits raw stream_status + records      |
+| Error reporting           | Decides retry policy  | Passes through, tracks for stalls          | Emits trace errors                     |
+| State                     | Opaque round-trip     | Manages engine section                     | Manages source section                 |
+| Stall detection           | —                     | Tracks per-stream across runs              | —                                      |
+| `has_more`                | Reads, acts           | Derives from source + engine state         | —                                      |
 
 ---
 
@@ -143,12 +143,12 @@ The engine emits four message types: `progress`, `record`, `log`, and `end`.
 
 `ProgressPayload` is used in two places with different scopes:
 
-| Scope                     | Where to find it                              |
-| ------------------------- | --------------------------------------------- |
-| Between two progress msgs | Client diffs consecutive `progress` messages  |
-| This request              | `end.request_progress` (ProgressPayload)      |
-| This run (across requests)| Latest `progress` message (ProgressPayload)   |
-| All time (across runs)    | Sum of `completed_ranges` coverage + record counts  |
+| Scope                      | Where to find it                                   |
+| -------------------------- | -------------------------------------------------- |
+| Between two progress msgs  | Client diffs consecutive `progress` messages       |
+| This request               | `end.request_progress` (ProgressPayload)           |
+| This run (across requests) | Latest `progress` message (ProgressPayload)        |
+| All time (across runs)     | Sum of `completed_ranges` coverage + record counts |
 
 The engine does NOT emit trace messages to the client. Source errors are
 included inside `progress`. Source traces and logs are consumed by the engine
@@ -168,11 +168,11 @@ type StreamStatus =
   | { stream: string; status: 'complete' }
 ```
 
-| Status | Emitted by | Engine action |
-|---|---|---|
-| `start` | Source | Stream is active |
-| `range_complete` | Source | Merge range into `completed_ranges` |
-| `complete` | Source (optional) | Stream is done; engine derives this if source exhausts without it |
+| Status           | Emitted by        | Engine action                                                     |
+| ---------------- | ----------------- | ----------------------------------------------------------------- |
+| `start`          | Source            | Stream is active                                                  |
+| `range_complete` | Source            | Merge range into `completed_ranges`                               |
+| `complete`       | Source (optional) | Stream is done; engine derives this if source exhausts without it |
 
 A stream's backfill is done when `completed_ranges` covers the full range
 `[0, started_at)`.
@@ -197,22 +197,20 @@ before passing to the source.
 ```ts
 type ConfiguredStream = {
   stream: {
-    name: string                              // e.g. "customers", "invoices"
-    primary_key: string[][]                   // e.g. [["id"]]
+    name: string // e.g. "customers", "invoices"
+    primary_key: string[][] // e.g. [["id"]]
     json_schema?: Record<string, unknown>
-    metadata?: Record<string, unknown>        // e.g. { api_version, account_id, live_mode }
+    metadata?: Record<string, unknown> // e.g. { api_version, account_id, live_mode }
   }
   sync_mode: 'full_refresh' | 'incremental'
   destination_sync_mode: 'append' | 'overwrite' | 'append_dedup'
   cursor_field?: string[]
-  fields?: string[]                           // field projection
-  backfill_limit?: number                     // cap backfill to N records
-  system_columns?: Array<{ name: string; type: string; index: boolean }>
+  backfill_limit?: number // cap backfill to N records
 
-  // NEW — set by engine, not client
+  // Set by engine, not client
   time_range?: {
-    gte: string                               // inclusive lower bound (ISO 8601)
-    lt: string                                // exclusive upper bound (ISO 8601)
+    gte?: string // inclusive lower bound (ISO 8601); omit for "from the beginning"
+    lt: string // exclusive upper bound (ISO 8601)
   }
 }
 
@@ -225,11 +223,11 @@ type ConfiguredCatalog = {
 
 ```ts
 type StartPayload = {
-  sync_run_id: string                         // client-generated UUID
-  source_config: Record<string, unknown>      // source-specific (e.g. Stripe API key, account)
+  sync_run_id: string // client-generated UUID
+  source_config: Record<string, unknown> // source-specific (e.g. Stripe API key, account)
   destination_config: Record<string, unknown> // destination-specific (e.g. Postgres connection)
   configured_catalog: ConfiguredCatalog
-  state?: SyncState                           // from previous end; omit on first sync
+  state?: SyncState // from previous end; omit on first sync
 }
 ```
 
@@ -238,8 +236,8 @@ type StartPayload = {
 ```ts
 type EndPayload = {
   has_more: boolean
-  state: SyncState                            // round-trip into next start
-  request: ProgressPayload                    // stats for this request only (same shape as progress)
+  state: SyncState // round-trip into next start
+  request: ProgressPayload // stats for this request only (same shape as progress)
 }
 ```
 
@@ -252,19 +250,19 @@ a reducer.
 ```ts
 // Errors are a discriminated union on error_level.
 type SyncError =
-  | { error_level: 'global';    message: string }
-  | { error_level: 'stream';    message: string; stream: string }
+  | { error_level: 'global'; message: string }
+  | { error_level: 'stream'; message: string; stream: string }
   | { error_level: 'transient'; message: string; stream?: string }
 
 type StreamProgress = {
-  completed_ranges?: Array<{ gte: string; lt: string }>  // merged completed time ranges
-  record_count: number                                    // records this run (across requests)
-  state_count: number                                     // checkpoints this run for this stream
+  completed_ranges?: Array<{ gte: string; lt: string }> // merged completed time ranges
+  record_count: number // records this run (across requests)
+  state_count: number // checkpoints this run for this stream
 }
 
 type ProgressPayload = {
-  elapsed_ms: number                          // wall-clock since run started (across requests)
-  global_state_count: number                  // total checkpoints this run (all streams)
+  elapsed_ms: number // wall-clock since run started (across requests)
+  global_state_count: number // total checkpoints this run (all streams)
   derived: {
     // Computed from the sum of all stream record_counts / (elapsed_ms / 1000).
     // Uses run-level totals, not windowed — so this is the average rate since
@@ -275,8 +273,8 @@ type ProgressPayload = {
     // Computed from global_state_count / (elapsed_ms / 1000).
     states_per_second: number
   }
-  streams: Record<string, StreamProgress>     // keyed by stream name
-  errors: SyncError[]                         // all errors accumulated this run
+  streams: Record<string, StreamProgress> // keyed by stream name
+  errors: SyncError[] // all errors accumulated this run
 }
 ```
 
@@ -284,19 +282,19 @@ type ProgressPayload = {
 
 ```ts
 type SyncState = {
-  source: SourceState                         // opaque to engine — cursor data
-  engine: EngineState                         // opaque to client — run progress + run identity
+  source: SourceState // opaque to engine — cursor data
+  engine: EngineState // opaque to client — run progress + run identity
 }
 
 type SourceState = {
-  streams: Record<string, unknown>            // per-stream cursor data, keyed by stream name
-  global: Record<string, unknown>             // source-wide data (e.g. events cursor)
+  streams: Record<string, unknown> // per-stream cursor data, keyed by stream name
+  global: Record<string, unknown> // source-wide data (e.g. events cursor)
 }
 
 type EngineState = {
-  sync_run_id: string                         // current run ID
-  started_at: string                          // ISO 8601 — frozen snapshot upper bound
-  run_progress: ProgressPayload               // accumulated run-level progress
+  sync_run_id: string // current run ID
+  started_at: string // ISO 8601 — frozen snapshot upper bound
+  run_progress: ProgressPayload // accumulated run-level progress
 }
 ```
 
@@ -309,7 +307,7 @@ opaque; the types below are source-internal.
 // Per-stream state (source-internal, opaque to engine)
 // Minimal — just a pagination cursor. Range management is engine's job.
 type StripeStreamState = {
-  page_cursor: string | null                  // Stripe list pagination cursor
+  page_cursor: string | null // Stripe list pagination cursor
 }
 ```
 
@@ -318,17 +316,18 @@ The engine tracks which ranges are complete and which need work via
 `completed_ranges` and `pending_ranges` in engine state.
 
 **Example — two streams mid-sync:**
+
 ```jsonc
 {
   "source": {
     "streams": {
       "customers": { "page_cursor": "cus_xyz" },
-      "invoices": { "page_cursor": null }
+      "invoices": { "page_cursor": null },
     },
     "global": {
-      "events_cursor": "2024-04-16T23:50:00Z"
-    }
-  }
+      "events_cursor": "2024-04-16T23:50:00Z",
+    },
+  },
 }
 ```
 
@@ -341,13 +340,14 @@ across runs.
 
 ```ts
 type EngineState = {
-  sync_run_id: string                         // current run ID
-  started_at: string                          // ISO 8601 — frozen snapshot upper bound
-  run_progress: ProgressPayload               // accumulated run-level progress
+  sync_run_id: string // current run ID
+  started_at: string // ISO 8601 — frozen snapshot upper bound
+  run_progress: ProgressPayload // accumulated run-level progress
 }
 ```
 
 **Example — customers fully synced, invoices mid-backfill, big_table stalled:**
+
 ```jsonc
 {
   "engine": {
@@ -361,22 +361,22 @@ type EngineState = {
         "customers": {
           "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2024-04-17T00:00:00Z" }],
           "record_count": 45000,
-          "state_count": 16
+          "state_count": 16,
         },
         "invoices": {
           "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2021-06-01T00:00:00Z" }],
           "record_count": 1200,
-          "state_count": 8
+          "state_count": 8,
         },
         "big_table": {
           "completed_ranges": [],
           "record_count": 0,
-          "state_count": 0
-        }
+          "state_count": 0,
+        },
       },
-      "errors": []
-    }
-  }
+      "errors": [],
+    },
+  },
 }
 ```
 
@@ -409,6 +409,7 @@ A sync run is identified by `sync_run_id`. Within a run, the upper time bound
 ### Completion
 
 When `has_more: false`:
+
 - All streams completed their ranges or were marked `incomplete`.
 - Engine promotes completed `pending_range` entries to `completed_ranges`.
 - Client should use a new `sync_run_id` for the next sync.
@@ -497,11 +498,11 @@ has_more = true if any catalog stream where:
 
 Errors carry their blast radius. The `error_level` determines the engine's action:
 
-| `error_level` | Blast radius | Engine action | Example |
-|---|---|---|---|
-| `global` | Entire sync | Abort all streams, `has_more: false` | Invalid API key, bad source config |
-| `stream` | One stream | Skip stream, continue others | Resource not available, permission denied |
-| `transient` | One request | Informational | Rate limited, retried 3x in 4.2s |
+| `error_level` | Blast radius | Engine action                        | Example                                   |
+| ------------- | ------------ | ------------------------------------ | ----------------------------------------- |
+| `global`      | Entire sync  | Abort all streams, `has_more: false` | Invalid API key, bad source config        |
+| `stream`      | One stream   | Skip stream, continue others         | Resource not available, permission denied |
+| `transient`   | One request  | Informational                        | Rate limited, retried 3x in 4.2s          |
 
 ### Source → engine error flow
 
@@ -516,6 +517,7 @@ Errors carry their blast radius. The `error_level` determines the engine's actio
 ```
 
 The source decides the `error_level`:
+
 - **Transient**: Request failed and retried — emit for observability.
 - **Stream**: Stream-level failure (e.g. resource not enabled) — skip stream.
 - **Global**: Unrecoverable (e.g. invalid credentials) — stop everything.
@@ -544,20 +546,20 @@ unexpected ordering — but logs warnings so they're alertable in production.
 
 ### warn
 
-| Message | When |
-|---|---|
-| `state before start: {stream}` | Source emitted `source_state` for a stream before `stream_status: start` |
+| Message                          | When                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `state before start: {stream}`   | Source emitted `source_state` for a stream before `stream_status: start`   |
 | `state after complete: {stream}` | Source emitted `source_state` for a stream after `stream_status: complete` |
-| `duplicate start: {stream}` | Source emitted `stream_status: start` for a stream that already started |
-| `unknown stream: {stream}` | Source emitted a message for a stream not in the catalog |
+| `duplicate start: {stream}`      | Source emitted `stream_status: start` for a stream that already started    |
+| `unknown stream: {stream}`       | Source emitted a message for a stream not in the catalog                   |
 
 ### error
 
-| Message | When |
-|---|---|
-| `global error: {message}` | Source emitted `error_level: global` — sync aborted |
+| Message                             | When                                                  |
+| ----------------------------------- | ----------------------------------------------------- |
+| `global error: {message}`           | Source emitted `error_level: global` — sync aborted   |
 | `stream error: {stream}: {message}` | Source emitted `error_level: stream` — stream skipped |
-| `source crashed: {message}` | Source iterator threw an exception |
+| `source crashed: {message}`         | Source iterator threw an exception                    |
 
 ---
 
