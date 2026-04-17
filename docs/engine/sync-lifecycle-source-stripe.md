@@ -2,7 +2,9 @@
 
 How the Stripe source manages pagination within a `time_range` assigned by the
 engine. For the overall sync lifecycle and protocol, see
-[sync-lifecycle.md](./sync-lifecycle.md).
+[sync-lifecycle.md](./sync-lifecycle.md). Request-to-request continuation is
+driven by the engine's terminal `eof { reason, has_more }` message in this
+phase.
 
 ## Overview
 
@@ -149,7 +151,7 @@ checkpoint.
 ```
 Source initializes: remaining: [{ gte: "2018", lt: "2024", cursor: null }]
 
-← trace   { stream_status: { stream: "customers", status: "start" } }
+← trace   { stream_status: { stream: "customers", status: "started" } }
 ← record  { stream: "customers", data: { id: "cus_001", ... } }
   ... 100 records (page 1) ...
 ← state   { stream: "customers", data: { remaining: [{ gte: "2018", lt: "2024", cursor: "cus_100" }] } }
@@ -160,7 +162,7 @@ Source initializes: remaining: [{ gte: "2018", lt: "2024", cursor: null }]
 ← state   { stream: "customers", data: { remaining: [{ gte: "2018", lt: "2024", cursor: "cus_5000" }] } }
   ... source cut off (time limit / state limit) ...
 
-← end     { has_more: true }
+← eof     { reason: "time_limit", has_more: true }
 ```
 
 Range didn't complete in one request → source will subdivide on next request.
@@ -193,7 +195,7 @@ Last record had created=2019-03. Range didn't complete → subdivide:
            ] } }
   ... cut off ...
 
-← end     { has_more: true }
+← eof     { reason: "time_limit", has_more: true }
 ```
 
 ### Request 3 — finishes remaining ranges
@@ -214,7 +216,7 @@ These ranges made progress last request — no further subdivision, resume.
 ← state   { stream: "customers", data: { remaining: [] } }
 ← trace   { stream_status: { stream: "customers", status: "complete" } }
 
-← end     { has_more: false }
+← eof     { reason: "complete", has_more: false }
 ```
 
 Engine's `completed_ranges` for customers after merging all `range_complete` messages:
@@ -223,7 +225,9 @@ Engine's `completed_ranges` for customers after merging all `range_complete` mes
 ## State on the Wire
 
 Source state is opaque to the engine. The engine learns about range completion
-via `stream_status: range_complete` messages, not by inspecting source state:
+via `stream_status: range_complete` messages, not by inspecting source state.
+The configured `time_range` lives on the stream in the catalog, not inside the
+`source_state` envelope:
 
 ```ts
 {
@@ -231,7 +235,6 @@ via `stream_status: range_complete` messages, not by inspecting source state:
   source_state: {
     state_type: 'stream',
     stream: 'customers',
-    time_range: { gte: '2018-01-01T00:00:00Z', lt: '2024-04-17T00:00:00Z' },
     data: {
       remaining: [
         { gte: '2022-05-16T00:00:00Z', lt: '2024-04-17T00:00:00Z', cursor: 'cus_xyz' }
