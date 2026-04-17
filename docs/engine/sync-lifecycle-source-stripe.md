@@ -248,7 +248,7 @@ type StripeSourceConfig = {
 | 1 stream, live   | live | 1       | 1                   | 20    | 20                        | 20                      |
 | 1 stream, test   | test | 1       | 1                   | 10    | 10                        | 10                      |
 
-When fewer streams are configured, each stream gets more segments — the full
+When fewer streams are configured, each stream gets more remaining — the full
 rate limit budget is distributed across whatever streams exist. A single-stream
 sync gets the entire budget.
 
