@@ -259,10 +259,12 @@ type StreamProgress = {
   completed_ranges?: Array<{ gte: string; lt: string }> // merged completed time ranges
   state_count: number // checkpoints this run for this stream
   record_count: number // record messages processed (always known by engine)
-  // Optional breakdown from destination. When present, insert + update + delete = record_count.
-  insert_count?: number // records inserted
-  update_count?: number // records updated
-  delete_count?: number // records deleted
+  // Future: destination reports breakdown. Not implemented yet — reserved for
+  // when destinations (e.g. Postgres) report per-operation counts.
+  // When present, insert_count + update_count + delete_count = record_count.
+  insert_count?: number
+  update_count?: number
+  delete_count?: number
 }
 
 type ProgressPayload = {
