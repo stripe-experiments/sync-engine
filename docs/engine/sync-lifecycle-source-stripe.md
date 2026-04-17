@@ -1,174 +1,229 @@
 # Sync Lifecycle — Stripe Source
 
-How the Stripe source paginates finite backfills within the lifecycle described
-in [sync-lifecycle.md](./sync-lifecycle.md).
+How the Stripe source manages pagination within a `time_range` assigned by the
+engine. For the overall sync lifecycle and protocol, see
+[sync-lifecycle.md](./sync-lifecycle.md).
 
 ## Overview
 
-Stripe list pagination is resumable because the API accepts an object-ID cursor:
-
-```http
-GET /v1/customers?limit=100&starting_after=cus_123
-```
-
-For the same endpoint and same filter set, `starting_after` means "continue
-after this object in the current list order."
-
-Stripe list endpoints return objects in descending `created` order. That makes
-`starting_after` sufficient for continuation across requests:
-
-- The source stores the last emitted object ID as `starting_after`.
-- On the next request, it replays the same query shape and resumes from that ID.
-- For streams that support `created` filtering, the engine can also assign a
-  fixed `time_range`.
-
-This design does **not** split partially paginated ranges across requests. A
-time-range stream resumes the same assigned range until it emits `complete`.
-
-## Two Stream Modes
-
-### Time-range streams
-
-These streams support Stripe `created[gte]` / `created[lt]` filters.
-
-- The engine injects `time_range`.
-- The source paginates with `created[...]` plus `starting_after`.
-- The source may emit `range_complete` when the assigned range is fully read.
-- The source emits `complete` when the stream is terminal for the run.
-
-### Non-time-range streams
-
-These streams do not support `created` filtering.
-
-- The engine does not inject `time_range`.
-- The source paginates with `starting_after` only.
-- There is no range coverage accounting.
-- The source emits `complete` when the stream is terminal for the run.
-
-Not every Stripe endpoint supports every pagination feature. Streams only enter
-the time-range path if the endpoint supports the necessary `created` filters.
+The engine assigns a `time_range` per stream via the configured catalog. The
+Stripe source paginates all records within that range using an n-ary search
+algorithm: start with the full range, paginate, and subdivide if the range
+takes more than one request to complete. No upfront density probing — the source discovers
+the right granularity by doing the work.
 
 ## Source State
 
-Stripe source state is opaque to the engine. The minimal per-stream form is:
-
 ```ts
 type StripeStreamState = {
-  starting_after: string | null
+  remaining: Array<{
+    gte: string // ISO 8601 — inclusive lower bound
+    lt: string // ISO 8601 — exclusive upper bound
+    cursor: string | null // Stripe pagination cursor; null = not yet started
+  }>
 }
 ```
 
-- `starting_after: null` means "start from the first page".
-- `starting_after: "cus_abc"` means "resume after object `cus_abc`".
+- `cursor: null` → range planned but first page not yet fetched.
+- `cursor: "cus_abc"` → resume pagination after this object.
+- Range removed from list → complete.
+- `remaining: []` → source is done with the assigned `time_range`.
 
-The assigned `time_range`, when present, lives in the configured catalog. It is
-not inferred from source state.
+## Algorithm
 
-## Pagination Algorithm
+### 1. Initialization (no existing state)
 
-### 1. Initialization
+The source receives `time_range` from the catalog and has no state. It starts
+with the full range as a single entry:
 
-If there is no saved state:
+```
+Engine assigns: time_range { gte: "2018-01-01", lt: "2024-04-17" }
 
-- For a time-range stream, the source receives `time_range` from the engine and
-  starts with `starting_after: null`.
-- For a non-time-range stream, the source starts with `starting_after: null`.
-
-### 2. Page fetch
-
-For each page:
-
-1. Build request params.
-2. Call the Stripe list endpoint.
-3. Emit records in the order returned by Stripe.
-4. Save the last emitted object ID as `starting_after`.
-5. Emit `source_state`.
-
-Time-range example:
-
-```http
-GET /v1/customers?limit=100&created[gte]=1514764800&created[lt]=1713312000
-GET /v1/customers?limit=100&created[gte]=1514764800&created[lt]=1713312000&starting_after=cus_100
+state: {
+  remaining: [
+    { gte: "2018-01-01", lt: "2024-04-17", cursor: null }
+  ]
+}
 ```
 
-Non-time-range example:
+### 2. Pagination
 
-```http
-GET /v1/reporting/report_types?limit=100
-GET /v1/reporting/report_types?limit=100&starting_after=rpt_100
+The source picks a range from `remaining` and paginates it:
+
+1. Call the Stripe list API with `created[gte]` and `created[lt]` filters,
+   plus `starting_after` if cursor is set.
+2. Emit records.
+3. Update cursor in state, emit `source_state`.
+4. When a range is exhausted (`has_more: false`), remove it from `remaining`.
+
+```
+First page fetched, got cursor:
+
+state: {
+  remaining: [
+    { gte: "2018-01-01", lt: "2024-04-17", cursor: "cus_abc" }
+  ]
+}
+→ emit source_state
+
+Pagination exhausted, range complete:
+
+state: {
+  remaining: []
+}
+→ emit source_state (done)
 ```
 
-### 3. Resumption
+### 3. Subdivision (n-ary search)
 
-On the next request in the same sync run:
+If a range didn't complete in the previous request, the source subdivides it
+at the start of the next request. The source knows the `created` timestamp of
+the last record it paginated (from the cursor). It splits the unpaginated
+portion into N parts (where N = `max_segments_per_stream`):
 
-- The engine reuses the same `sync_run_id`.
-- For time-range streams, the engine re-injects the same fixed `time_range`.
-- The source loads `starting_after` from source state.
-- The source resumes the exact same query shape with that `starting_after`.
+```
+Previous request ended with:
+  remaining: [{ gte: "2018-01-01", lt: "2024-04-17", cursor: "cus_xyz" }]
 
-This works because `starting_after` is an object ID in Stripe's stable list
-ordering. It is a resume token for pagination, not a derived time boundary.
+Last record seen had created=2020-06-15. Range didn't complete → subdivide.
+The paginated portion [2018, 2020-06-15) keeps its cursor.
+The unpaginated portion [2020-06-15, 2024-04-17) splits into N=2:
 
-### 4. Completion
+  remaining: [
+    { gte: "2018-01-01", lt: "2020-06-15", cursor: "cus_xyz" },
+    { gte: "2020-06-15", lt: "2022-05-16", cursor: null },
+    { gte: "2022-05-16", lt: "2024-04-17", cursor: null }
+  ]
+```
 
-When Stripe returns `has_more: false` for the current stream:
+**When to subdivide:** At the start of a request, if any range in `remaining`
+has a cursor (meaning it was in progress last request but didn't complete).
+Subdivision happens between requests, not mid-request.
 
-1. The source emits a final `source_state`.
-2. If the stream had an assigned `time_range`, the source may emit
-   `stream_status: range_complete` for that range.
-3. The source emits `stream_status: complete`.
+**Recursive:** If a subdivided range still doesn't complete in one request,
+it gets split again next time. Each pass narrows the ranges until they're
+small enough to complete in a single request.
 
-`complete` is the terminal signal the engine trusts. `range_complete` is
-progress telemetry only.
+### 4. Resumption (existing state)
 
-## Message Examples
+If the source has existing state (from a previous request in the same sync
+run), it resumes directly from `remaining`:
 
-### Time-range stream
+```
+Source receives time_range { gte: "2018-01-01", lt: "2024-04-17" }
+Existing state: {
+  remaining: [
+    { gte: "2022-05-16", lt: "2024-04-17", cursor: "cus_xyz" }
+  ]
+}
 
-Request 1:
+→ Resume paginating from cus_xyz in [2022-05-16, 2024-04-17)
+→ No re-initialization
+```
 
-```text
-Engine assigns: customers time_range [2018-01-01, 2024-04-17)
+### 5. Completion
 
-← trace   { stream_status: { stream: "customers", status: "started" } }
+When a sub-range is exhausted, the source removes it from `remaining` and
+emits a `stream_status: range_complete`:
+
+```
+→ emit trace { stream_status: { stream: 'customers', status: 'range_complete',
+    range_complete: { gte: '2018-01-01', lt: '2019-06-01' } } }
+```
+
+The engine merges this into `completed_ranges`.
+
+When all sub-ranges are done (`remaining: []`), the source emits
+`stream_status: complete` for the stream.
+
+## Full Example
+
+Shows the messages emitted by the source during a two-request backfill of
+`customers` with `time_range: [2018, 2024)`.
+
+### Request 1 — full range, doesn't complete
+
+Stripe returns max 100 records per page. Each page = 1 API request = 1 state
+checkpoint.
+
+```
+Source initializes: remaining: [{ gte: "2018", lt: "2024", cursor: null }]
+
+← trace   { stream_status: { stream: "customers", status: "start" } }
 ← record  { stream: "customers", data: { id: "cus_001", ... } }
-← state   { stream: "customers", data: { starting_after: "cus_100" } }
-← record  { stream: "customers", data: { id: "cus_101", ... } }
-← state   { stream: "customers", data: { starting_after: "cus_200" } }
-... cut off ...
+  ... 100 records (page 1) ...
+← state   { stream: "customers", data: { remaining: [{ gte: "2018", lt: "2024", cursor: "cus_100" }] } }
+← record  { stream: "customers", data: { ... } }
+  ... 100 records (page 2) ...
+← state   { stream: "customers", data: { remaining: [{ gte: "2018", lt: "2024", cursor: "cus_200" }] } }
+  ... pages 3-50 (5000 records total) ...
+← state   { stream: "customers", data: { remaining: [{ gte: "2018", lt: "2024", cursor: "cus_5000" }] } }
+  ... source cut off (time limit / state limit) ...
+
 ← end     { has_more: true }
 ```
 
-Request 2:
+Range didn't complete in one request → source will subdivide on next request.
 
-```text
-Engine reassigns the same customers time_range [2018-01-01, 2024-04-17)
-Source resumes with starting_after = "cus_200"
+### Request 2 — source subdivides, finishes first sub-range
 
-← record  { stream: "customers", data: { id: "cus_201", ... } }
-← state   { stream: "customers", data: { starting_after: "cus_300" } }
-... final page ...
-← state   { stream: "customers", data: { starting_after: "cus_5421" } }
+```
+Source resumes, sees remaining: [{ gte: "2018", lt: "2024", cursor: "cus_5000" }]
+Last record had created=2019-03. Range didn't complete → subdivide:
+  remaining: [
+    { gte: "2018", lt: "2019-03", cursor: "cus_5000" },   // current (has cursor)
+    { gte: "2019-03", lt: "2021-09", cursor: null },        // new
+    { gte: "2021-09", lt: "2024", cursor: null }             // new
+  ]
+
+← record  { stream: "customers", data: { ... } }
+  ... 100 records (page) ...
+← state   { ... }
+  ... finishes [2018, 2019-03) after a few more pages ...
 ← trace   { stream_status: { stream: "customers", status: "range_complete",
-              range_complete: { gte: "2018-01-01T00:00:00Z", lt: "2024-04-17T00:00:00Z" } } }
+              range_complete: { gte: "2018", lt: "2019-03" } } }
+← state   { stream: "customers", data: { remaining: [
+              { gte: "2019-03", lt: "2021-09", cursor: null },
+              { gte: "2021-09", lt: "2024", cursor: null }
+           ] } }
+  ... starts [2019-03, 2021-09), paginates several pages ...
+← state   { stream: "customers", data: { remaining: [
+              { gte: "2019-03", lt: "2021-09", cursor: "cus_8000" },
+              { gte: "2021-09", lt: "2024", cursor: null }
+           ] } }
+  ... cut off ...
+
+← end     { has_more: true }
+```
+
+### Request 3 — finishes remaining ranges
+
+```
+Source resumes: remaining: [
+  { gte: "2019-03", lt: "2021-09", cursor: "cus_8000" },
+  { gte: "2021-09", lt: "2024", cursor: null }
+]
+These ranges made progress last request — no further subdivision, resume.
+
+  ... paginates [2019-03, 2021-09) page by page ...
+← trace   { stream_status: { stream: "customers", status: "range_complete",
+              range_complete: { gte: "2019-03", lt: "2021-09" } } }
+  ... paginates [2021-09, 2024) page by page ...
+← trace   { stream_status: { stream: "customers", status: "range_complete",
+              range_complete: { gte: "2021-09", lt: "2024" } } }
+← state   { stream: "customers", data: { remaining: [] } }
 ← trace   { stream_status: { stream: "customers", status: "complete" } }
+
 ← end     { has_more: false }
 ```
 
-### Non-time-range stream
-
-```text
-No time_range assigned
-
-← trace   { stream_status: { stream: "reporting_report_types", status: "started" } }
-← record  { stream: "reporting_report_types", data: { id: "rpt_001", ... } }
-← state   { stream: "reporting_report_types", data: { starting_after: "rpt_001" } }
-... final page ...
-← trace   { stream_status: { stream: "reporting_report_types", status: "complete" } }
-```
+Engine's `completed_ranges` for customers after merging all `range_complete` messages:
+`[{ gte: "2018", lt: "2024" }]`
 
 ## State on the Wire
+
+Source state is opaque to the engine. The engine learns about range completion
+via `stream_status: range_complete` messages, not by inspecting source state:
 
 ```ts
 {
@@ -176,37 +231,96 @@ No time_range assigned
   source_state: {
     state_type: 'stream',
     stream: 'customers',
+    time_range: { gte: '2018-01-01T00:00:00Z', lt: '2024-04-17T00:00:00Z' },
     data: {
-      starting_after: 'cus_200'
+      remaining: [
+        { gte: '2022-05-16T00:00:00Z', lt: '2024-04-17T00:00:00Z', cursor: 'cus_xyz' }
+      ]
     }
   }
 }
 ```
 
-The engine persists this state opaquely and passes it back on continuation. It
-does not inspect `starting_after`.
+## Concurrency
+
+Three controls govern how the source uses the Stripe API:
+
+```ts
+// Source config — only max_concurrent_streams is user-configurable
+type StripeSourceConfig = {
+  api_key: string
+  account_id?: string
+  max_concurrent_streams?: number // default 5
+}
+
+// Derived internally by the source:
+// live_mode              = inferred from api_key prefix (sk_live_ vs sk_test_)
+// max_requests_per_second = live_mode ? 20 : 10
+// effective_streams       = min(max_concurrent_streams, configured_stream_count)
+// max_segments_per_stream = floor(max_requests_per_second / effective_streams)
+```
+
+| Control                   | What it controls                             | How it's set                               |
+| ------------------------- | -------------------------------------------- | ------------------------------------------ |
+| `max_concurrent_streams`  | Streams paginating in parallel               | Config (default 5), capped at catalog size |
+| `max_requests_per_second` | Global rate limit across all activity        | Inferred from API key mode                 |
+| `max_segments_per_stream` | Sub-ranges per stream (n-ary search fan-out) | Derived: rps / concurrent streams          |
+
+### Examples
+
+| Scenario         | Mode | Streams | `effective_streams` | `rps` | `max_segments_per_stream` | Max concurrent requests |
+| ---------------- | ---- | ------- | ------------------- | ----- | ------------------------- | ----------------------- |
+| 20 streams, live | live | 20      | 5                   | 20    | 4                         | 20                      |
+| 20 streams, test | test | 20      | 5                   | 10    | 2                         | 10                      |
+| 3 streams, live  | live | 3       | 3                   | 20    | 6                         | 18                      |
+| 1 stream, live   | live | 1       | 1                   | 20    | 20                        | 20                      |
+| 1 stream, test   | test | 1       | 1                   | 10    | 10                        | 10                      |
+
+When fewer streams are configured, each stream gets more segments — the full
+rate limit budget is distributed across whatever streams exist. A single-stream
+sync gets the entire budget.
+
+## Parallel Pagination
+
+The source paginates up to `max_segments_per_stream` ranges from `remaining`
+concurrently per stream, and up to `effective_streams` streams in parallel.
+Records from different ranges/streams are interleaved on the output stream.
+State checkpoints are emitted after each page, reflecting the current state
+of all ranges. This ensures resumability if the source is cut off mid-run.
+
+The global rate limiter (`max_requests_per_second`) governs all API calls
+regardless of which stream or segment they belong to.
+
+## Source Logs
+
+The Stripe source emits `log` messages for real-time operational visibility.
+These are passed through by the engine.
+
+| Level | Message | When |
+|---|---|---|
+| info | `{stream}: {rps} requests/sec` | Periodically during pagination |
+| warn | `rate limited: retrying in {n}s` | Stripe returned 429 |
+| warn | `retry {n}/{max}: {status} {message}` | Request failed, retrying |
 
 ## Error Handling
 
-- **Transient errors**: retry at the HTTP layer and emit a `transient` error
-  trace for observability.
-- **Stream errors**: emit a `stream` error trace, stop this stream, then emit
-  `complete` for explicit terminality.
-- **Global errors**: emit a `global` error trace and stop the sync.
+- **Transient errors** (rate limits, 5xx, timeouts): Retried at the HTTP
+  layer with exponential backoff. Emit a `transient` error trace for
+  observability regardless of whether the retry succeeded.
+- **Stream errors** (resource not available, permission denied): Emit a
+  `stream` error trace, stop this stream, move to the next.
+- **Global errors** (invalid API key): Emit a `global` error trace, stop.
 
-The source does not encode error semantics into source state.
+The source does not store error state. If a range fails after all retries,
+the range stays in `remaining` with its cursor for the next attempt.
 
-## Exclusions
+## Events
 
-This lifecycle doc does not cover:
+The `/events` endpoint is treated as just another stream in the catalog —
+same `time_range` model, same `remaining`-based pagination. No special
+incremental mode or live polling by default.
 
-- live `/events` polling
-- cross-request range subdivision
-- `ending_before`-driven reverse scans
-- `full_refresh` semantics
-
-In protocol terms, Stripe backfill now explicitly removes:
-
-- using `starting_after` to derive new time boundaries between requests
-- requiring every stream to support `time_range`
-- using `range_complete` to decide terminality
+For experimental live event polling (using events as a webhook replacement),
+an opt-in flag stores cursor state in `source.global`, which is completely
+separate from the per-stream backfill cursor logic. This is not enabled by
+default.
