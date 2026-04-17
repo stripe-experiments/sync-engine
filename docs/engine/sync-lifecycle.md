@@ -37,7 +37,7 @@ CLIENT  ←—start/end—→  ENGINE  ←—iterator—→  SOURCE
 | When to sync (scheduling)    | Decides                | —                                         | —                                   |
 | Run identity                 | Generates sync_run_id  | Freezes bounds, tracks continuations      | Unaware                             |
 | Time range bounds            | —                      | Computes, injects into catalog            | Respects `time_range` if present    |
-| Internal segmentation        | —                      | —                                         | Manages segments, parallel pages    |
+| Internal pagination          | —                      | —                                         | Manages ranges, parallel pages      |
 | Stream lifecycle             | Consumes progress      | Guarantees terminal status                | Emits `started`, optionally `complete` |
 | Progress reporting           | Consumes               | Enriches source signals, emits progress   | Emits raw stream_status + records   |
 | Error reporting              | Decides retry policy   | Passes through, tracks for stalls         | Emits trace errors                  |
@@ -93,7 +93,17 @@ The engine emits three message types: `progress`, `record`, and `end`.
 
 ```ts
 // Progress — emitted on every source_state checkpoint and stream_status change.
-// Each message is a complete snapshot of run-level progress.
+//
+// Each message is a complete run-level snapshot, not a delta. Run-level
+// totals ("45K customers synced across 3 requests") are what clients
+// typically display. Point-in-time rates are derivable by diffing two
+// consecutive snapshots — the common case is served directly, the rare
+// case is still easy.
+//
+// Errors are included for the same reason: separating them into their own
+// event stream would force every client to accumulate errors alongside
+// progress snapshots, defeating the single-message-renders-everything model.
+//
 // All counts are cumulative since the start of the run (across requests with
 // the same sync_run_id). Client can diff consecutive messages for deltas.
 {
@@ -101,7 +111,7 @@ The engine emits three message types: `progress`, `record`, and `end`.
   progress: {
     elapsed_ms: number,                       // wall-clock since run started (across all requests)
     global_state_count: number,               // total checkpoints this run (all streams)
-    rates: {
+    derived: {
       records_per_second: number,
       states_per_second: number,
     },
@@ -132,10 +142,10 @@ The engine emits three message types: `progress`, `record`, and `end`.
 | Between two progress msgs | Client diffs consecutive `progress` messages  |
 | This request              | `end.request_progress` (ProgressPayload)      |
 | This run (across requests)| Latest `progress` message (ProgressPayload)   |
-| All time (across runs)    | Sum of `completed_ranges` coverage + segment counts |
+| All time (across runs)    | Sum of `completed_ranges` coverage + record counts  |
 
 The engine does NOT emit trace messages to the client. Errors are included
-per-segment inside `progress`. Source traces and logs are consumed by the engine
+inside `progress`. Source traces and logs are consumed by the engine
 and distilled into `progress`.
 
 ---
@@ -148,7 +158,7 @@ stream. The engine uses these to know when a stream is active.
 A stream's backfill is done when `completed_ranges` covers the full range
 `[0, started_at)`.
 
-The source manages segments internally — the engine doesn't see or track them.
+The source manages sub-ranges internally — the engine doesn't see or track them.
 The engine learns about completed ranges from `source_state` messages that
 include a `time_range` and have no remaining cursor.
 
@@ -236,8 +246,14 @@ type StreamProgress = {
 type ProgressPayload = {
   elapsed_ms: number                          // wall-clock since run started (across requests)
   global_state_count: number                  // total checkpoints this run (all streams)
-  rates: {                                    // derived, computed by engine
+  derived: {
+    // Computed from the sum of all stream record_counts / (elapsed_ms / 1000).
+    // Uses run-level totals, not windowed — so this is the average rate since
+    // the run started. A client that wants instantaneous rate can diff
+    // record_count between two consecutive progress messages and divide by
+    // the elapsed_ms delta.
     records_per_second: number
+    // Computed from global_state_count / (elapsed_ms / 1000).
     states_per_second: number
   }
   streams: Record<string, StreamProgress>     // keyed by stream name
@@ -258,11 +274,10 @@ type SourceState = {
   global: Record<string, unknown>             // source-wide data (e.g. events cursor)
 }
 
-// Engine state is run progress + run identity. Same ProgressPayload shape
-// used in progress messages, extended with run tracking fields.
-type EngineState = ProgressPayload & {
+type EngineState = {
   sync_run_id: string                         // current run ID
   started_at: string                          // ISO 8601 — frozen snapshot upper bound
+  run_progress: ProgressPayload               // accumulated run-level progress
 }
 ```
 
@@ -300,43 +315,47 @@ The engine tracks which ranges are complete and which need work via
 
 ### Engine state
 
-The engine state is `ProgressPayload` extended with run identity. The client
-round-trips it opaquely. The engine uses it to accumulate progress across
-requests within a run and to track synced ranges across runs.
+The engine state contains run identity and a `run_progress` field that is a
+`ProgressPayload`. The client round-trips it opaquely. The engine uses it to
+accumulate progress across requests within a run and to track completed ranges
+across runs.
 
 ```ts
-type EngineState = ProgressPayload & {
-  sync_run_id: string
+type EngineState = {
+  sync_run_id: string                         // current run ID
   started_at: string                          // ISO 8601 — frozen snapshot upper bound
+  run_progress: ProgressPayload               // accumulated run-level progress
 }
 ```
 
-**Example — customers fully synced through 2023, invoices mid-backfill, big_table stalled:**
+**Example — customers fully synced, invoices mid-backfill, big_table stalled:**
 ```jsonc
 {
   "engine": {
     "sync_run_id": "sr_abc",
     "started_at": "2024-04-17T00:00:00Z",
-    "elapsed_ms": 8400,
-    "global_state_count": 24,
-    "records_per_second": 5500,
-    "states_per_second": 2.9,
-    "streams": {
-      "customers": {
-        "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2024-04-17T00:00:00Z" }],
-        "record_count": 45000,
-        "state_count": 16
+    "run_progress": {
+      "elapsed_ms": 8400,
+      "global_state_count": 24,
+      "derived": { "records_per_second": 5500, "states_per_second": 2.9 },
+      "streams": {
+        "customers": {
+          "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2024-04-17T00:00:00Z" }],
+          "record_count": 45000,
+          "state_count": 16
+        },
+        "invoices": {
+          "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2021-06-01T00:00:00Z" }],
+          "record_count": 1200,
+          "state_count": 8
+        },
+        "big_table": {
+          "completed_ranges": [],
+          "record_count": 0,
+          "state_count": 0
+        }
       },
-      "invoices": {
-        "completed_ranges": [{ "gte": "2018-01-01T00:00:00Z", "lt": "2021-06-01T00:00:00Z" }],
-        "record_count": 1200,
-        "state_count": 8
-      },
-      "big_table": {
-        "completed_ranges": [],
-        "record_count": 0,
-        "state_count": 0
-      }
+      "errors": []
     }
   }
 }
@@ -395,7 +414,7 @@ Completed adjacent ranges merge.
 ## Time Ranges
 
 Time is a first-class concept. The engine sets the outer bounds; the source
-manages pagination and segmentation within them.
+manages pagination and subdivision within them.
 
 ### Flow
 
@@ -408,7 +427,7 @@ Engine sets range:  { stream: "customers", sync_mode: "incremental",
                     (computed from completed_ranges + started_at)
                                 ↓
 Source receives:    time_range on configured stream.
-                    Manages its own segments/subdivision/parallelism within it.
+                    Manages its own subdivision/parallelism within it.
                     Emits source_state with time_range to report range completion.
 ```
 
@@ -437,7 +456,7 @@ On each request, the engine computes the `time_range` to assign:
 - **Frozen upper bounds.** `started_at` does not move within a run.
 - **Adaptive parallelism.** Dense ranges get subdivided; sparse ranges complete in one shot.
 - **Visibility.** Engine knows what fraction of history is synced.
-- **Compact state.** Merged ranges keep state O(active segments), not O(total history).
+- **Compact state.** Merged ranges keep state O(active ranges), not O(total history).
 
 ---
 
@@ -490,7 +509,7 @@ The engine accumulates errors into `progress.errors[]` and acts on them:
 - **`stream`**: Skip that stream, continue others.
 - **`transient`**: No action. Included in `progress.errors` for observability.
 
-Errors are NOT stored in source state. Segment-level concerns (subdivision,
+Errors are NOT stored in source state. Range-level concerns (subdivision,
 retries, timeouts) are managed internally by the source.
 
 ---
