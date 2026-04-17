@@ -291,6 +291,17 @@ of all ranges. This ensures resumability if the source is cut off mid-run.
 The global rate limiter (`max_requests_per_second`) governs all API calls
 regardless of which stream or segment they belong to.
 
+## Source Logs
+
+The Stripe source emits `log` messages for real-time operational visibility.
+These are passed through by the engine.
+
+| Level | Message | When |
+|---|---|---|
+| info | `{stream}: {rps} requests/sec` | Periodically during pagination |
+| warn | `rate limited: retrying in {n}s` | Stripe returned 429 |
+| warn | `retry {n}/{max}: {status} {message}` | Request failed, retrying |
+
 ## Error Handling
 
 - **Transient errors** (rate limits, 5xx, timeouts): Retried at the HTTP

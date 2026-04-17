@@ -535,20 +535,12 @@ retries, timeouts) are managed internally by the source.
 
 ## Engine Logs
 
-The engine emits `log` messages for operational events. These are alertable
-in production. The engine processes source messages tolerantly — it does not
-reject unexpected ordering — but logs warnings for anomalies.
+The engine emits `log` messages for anomalies and failures only. Normal
+progress (stream starts, completions, record counts) is already in the
+`progress` stream — no redundant info logs.
 
-### info
-
-| Message | When |
-|---|---|
-| `stream started: {stream}` | Source emits `stream_status: start` |
-| `stream complete: {stream}` | Source emits `stream_status: complete` |
-| `range complete: {stream} [{gte}, {lt})` | Source emits `stream_status: range_complete` |
-| `sync run started: {sync_run_id}` | New sync run begins |
-| `sync run continued: {sync_run_id}` | Continuation of existing run |
-| `request complete: {record_count} records, {state_count} states` | Request finishes |
+The engine processes source messages tolerantly — it does not reject
+unexpected ordering — but logs warnings so they're alertable in production.
 
 ### warn
 
