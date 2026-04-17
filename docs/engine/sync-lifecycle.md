@@ -92,7 +92,7 @@ Sources are iterators that yield these message types:
 
 ### Engine → client
 
-The engine emits three message types: `progress`, `record`, and `end`.
+The engine emits four message types: `progress`, `record`, `log`, and `end`.
 
 ```ts
 // Progress — emitted on every source_state checkpoint and stream_status change.
@@ -126,6 +126,9 @@ The engine emits three message types: `progress`, `record`, and `end`.
 // Records — passed through from source
 { type: 'record', record: { stream: string, data: Record<string, unknown>, emitted_at: string } }
 
+// Log — engine operational messages (see Engine Logs below)
+{ type: 'log', log: { level: 'info' | 'warn' | 'error', message: string } }
+
 // Terminal — this request is done.
 // end.request has the same shape as progress but scoped to this request only.
 {
@@ -147,9 +150,9 @@ The engine emits three message types: `progress`, `record`, and `end`.
 | This run (across requests)| Latest `progress` message (ProgressPayload)   |
 | All time (across runs)    | Sum of `completed_ranges` coverage + record counts  |
 
-The engine does NOT emit trace messages to the client. Errors are included
-inside `progress`. Source traces and logs are consumed by the engine
-and distilled into `progress`.
+The engine does NOT emit trace messages to the client. Source errors are
+included inside `progress`. Source traces and logs are consumed by the engine
+and distilled into `progress` and `log` messages.
 
 ---
 
@@ -527,6 +530,42 @@ The engine accumulates errors into `progress.errors[]` and acts on them:
 
 Errors are NOT stored in source state. Range-level concerns (subdivision,
 retries, timeouts) are managed internally by the source.
+
+---
+
+## Engine Logs
+
+The engine emits `log` messages for operational events. These are alertable
+in production. The engine processes source messages tolerantly — it does not
+reject unexpected ordering — but logs warnings for anomalies.
+
+### info
+
+| Message | When |
+|---|---|
+| `stream started: {stream}` | Source emits `stream_status: start` |
+| `stream complete: {stream}` | Source emits `stream_status: complete` |
+| `range complete: {stream} [{gte}, {lt})` | Source emits `stream_status: range_complete` |
+| `sync run started: {sync_run_id}` | New sync run begins |
+| `sync run continued: {sync_run_id}` | Continuation of existing run |
+| `request complete: {record_count} records, {state_count} states` | Request finishes |
+
+### warn
+
+| Message | When |
+|---|---|
+| `state before start: {stream}` | Source emitted `source_state` for a stream before `stream_status: start` |
+| `state after complete: {stream}` | Source emitted `source_state` for a stream after `stream_status: complete` |
+| `duplicate start: {stream}` | Source emitted `stream_status: start` for a stream that already started |
+| `unknown stream: {stream}` | Source emitted a message for a stream not in the catalog |
+
+### error
+
+| Message | When |
+|---|---|
+| `global error: {message}` | Source emitted `error_level: global` — sync aborted |
+| `stream error: {stream}: {message}` | Source emitted `error_level: stream` — stream skipped |
+| `source crashed: {message}` | Source iterator threw an exception |
 
 ---
 
