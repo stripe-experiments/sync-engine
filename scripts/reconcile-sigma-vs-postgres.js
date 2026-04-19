@@ -423,29 +423,16 @@ function parseCsv(text) {
 // Comparison + output
 // ---------------------------------------------------------------------------
 
-const SAMPLE_SIZE = 5
-
+// We only care about IDs that exist in Sigma but are missing from Postgres.
+// Rows present in Postgres but absent from Sigma are disregarded.
 function diffSets(sigmaIds, pgIds) {
   const common = new Set()
-  const pgOnly = new Set()
-  const sigmaOnly = new Set()
-  for (const id of pgIds) {
-    if (sigmaIds.has(id)) common.add(id)
-    else pgOnly.add(id)
-  }
+  const postgresMissing = new Set()
   for (const id of sigmaIds) {
-    if (!pgIds.has(id)) sigmaOnly.add(id)
+    if (pgIds.has(id)) common.add(id)
+    else postgresMissing.add(id)
   }
-  return { common, pgOnly, sigmaOnly }
-}
-
-function sampleFromSet(set, n) {
-  const out = []
-  for (const v of set) {
-    if (out.length >= n) break
-    out.push(v)
-  }
-  return out
+  return { common, postgresMissing }
 }
 
 function buildComparisonRows(sigmaIdsByTable, postgresIdsByTable, skippedTables) {
@@ -464,41 +451,33 @@ function buildComparisonRows(sigmaIdsByTable, postgresIdsByTable, skippedTables)
           sigmaCount: null,
           postgresCount: pgIds.size,
           matches: null,
-          pgOnly: null,
-          sigmaOnly: null,
+          postgresMissing: null,
           status: 'skipped_in_sigma',
-          samples: { pgOnly: [], sigmaOnly: [] },
         }
       }
 
-      const { common, pgOnly, sigmaOnly } = diffSets(sigmaIds, pgIds)
-      const status = pgOnly.size === 0 && sigmaOnly.size === 0 ? 'match' : 'diff'
+      const { common, postgresMissing } = diffSets(sigmaIds, pgIds)
+      const status = postgresMissing.size === 0 ? 'match' : 'diff'
 
       return {
         resource,
         sigmaCount: sigmaIds.size,
         postgresCount: pgIds.size,
         matches: common.size,
-        pgOnly: pgOnly.size,
-        sigmaOnly: sigmaOnly.size,
+        postgresMissing: postgresMissing.size,
         status,
-        samples: {
-          pgOnly: sampleFromSet(pgOnly, SAMPLE_SIZE),
-          sigmaOnly: sampleFromSet(sigmaOnly, SAMPLE_SIZE),
-        },
       }
     })
 }
 
 function formatTable(rows) {
-  const headers = ['resource', 'sigma', 'postgres', 'matches', 'pg_only', 'sigma_only', 'status']
+  const headers = ['resource', 'sigma', 'postgres', 'matches', 'postgres_missing', 'status']
   const stringRows = rows.map((r) => [
     r.resource,
     r.sigmaCount?.toString() ?? '-',
     r.postgresCount?.toString() ?? '-',
     r.matches?.toString() ?? '-',
-    r.pgOnly?.toString() ?? '-',
-    r.sigmaOnly?.toString() ?? '-',
+    r.postgresMissing?.toString() ?? '-',
     r.status,
   ])
   const widths = headers.map((h, i) => Math.max(h.length, ...stringRows.map((r) => r[i].length)))
@@ -562,7 +541,6 @@ async function main() {
   const diffCount = rows.filter((r) => r.status === 'diff').length
   const skippedCount = rows.filter((r) => r.status === 'skipped_in_sigma').length
   const skippedRows = rows.filter((r) => r.status === 'skipped_in_sigma')
-  const diffRows = rows.filter((r) => r.status === 'diff')
 
   console.log('')
   console.log(
@@ -586,26 +564,11 @@ async function main() {
   console.log('')
   console.log(formatTable(rows.filter((r) => r.status !== 'skipped_in_sigma')))
 
-  if (diffRows.length > 0) {
-    console.log('')
-    console.log('Sample IDs for diffs:')
-    for (const r of diffRows) {
-      if (r.pgOnly > 0) {
-        console.log(
-          `  ${r.resource} pg_only (${r.pgOnly}): ${r.samples.pgOnly.join(', ')}${
-            r.pgOnly > r.samples.pgOnly.length ? ', ...' : ''
-          }`
-        )
-      }
-      if (r.sigmaOnly > 0) {
-        console.log(
-          `  ${r.resource} sigma_only (${r.sigmaOnly}): ${r.samples.sigmaOnly.join(', ')}${
-            r.sigmaOnly > r.samples.sigmaOnly.length ? ', ...' : ''
-          }`
-        )
-      }
-    }
-  }
+  const summary = Object.fromEntries(
+    rows.filter((r) => r.status !== 'skipped_in_sigma').map((r) => [r.resource, r.status])
+  )
+  console.log('')
+  console.log(JSON.stringify(summary, null, 2))
 
   if (diffCount > 0) process.exitCode = 1
 }
