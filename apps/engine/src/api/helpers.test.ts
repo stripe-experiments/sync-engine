@@ -32,19 +32,23 @@ describe('logApiStream: log ordering', () => {
     const output = await collect(logApiStream('test', source(), {}))
 
     // Extract a simplified sequence for assertion
-    const sequence = output.map((msg) => {
-      const m = msg as { type: string; log?: { message: string }; id?: number }
-      if (m.type === 'log' && m.log?.message?.startsWith('log-for-item-'))
-        return m.log.message
-      if (m.type === 'record') return `item-${m.id}`
-      return null
-    }).filter(Boolean)
+    const sequence = output
+      .map((msg) => {
+        const m = msg as { type: string; log?: { message: string }; id?: number }
+        if (m.type === 'log' && m.log?.message?.startsWith('log-for-item-')) return m.log.message
+        if (m.type === 'record') return `item-${m.id}`
+        return null
+      })
+      .filter(Boolean)
 
     // Each "log-for-item-N" must come immediately before "item-N"
     expect(sequence).toEqual([
-      'log-for-item-1', 'item-1',
-      'log-for-item-2', 'item-2',
-      'log-for-item-3', 'item-3',
+      'log-for-item-1',
+      'item-1',
+      'log-for-item-2',
+      'item-2',
+      'log-for-item-3',
+      'item-3',
     ])
   })
 
@@ -60,19 +64,16 @@ describe('logApiStream: log ordering', () => {
 
     const output = await collect(logApiStream('test', source(), {}))
 
-    const sequence = output.map((msg) => {
-      const m = msg as { type: string; log?: { message: string }; id?: number }
-      if (m.type === 'log') return `log:${m.log?.message}`
-      if (m.type === 'record') return `item-${m.id}`
-      return null
-    }).filter(Boolean)
+    const sequence = output
+      .map((msg) => {
+        const m = msg as { type: string; log?: { message: string }; id?: number }
+        if (m.type === 'log') return `log:${m.log?.message}`
+        if (m.type === 'record') return `item-${m.id}`
+        return null
+      })
+      .filter(Boolean)
 
-    expect(sequence).toEqual([
-      'log:setup-query',
-      'log:query-executed',
-      'log:row-warning',
-      'item-1',
-    ])
+    expect(sequence).toEqual(['log:setup-query', 'log:query-executed', 'log:row-warning', 'item-1'])
   })
 
   it('error logs from a throw appear before the protocol error messages', async () => {
@@ -115,9 +116,7 @@ describe('logApiStream: log ordering', () => {
     const output = await collect(logApiStream('test', source(), {}))
 
     // Find the last 'record' index
-    const lastRecordIdx = output.findLastIndex(
-      (m) => (m as { type: string }).type === 'record'
-    )
+    const lastRecordIdx = output.findLastIndex((m) => (m as { type: string }).type === 'record')
 
     // Everything after the last record should only be engine summary logs
     // (from log.debug(`${label} completed`)), not connector logs

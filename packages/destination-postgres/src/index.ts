@@ -73,7 +73,8 @@ export async function upsertMany(
   primaryKeyColumns: string[] = ['id'],
   newerThanField?: string
 ): Promise<UpsertManyResult> {
-  if (!entries.length) return { created_count: 0, updated_count: 0, deleted_count: 0, skipped_count: 0 }
+  if (!entries.length)
+    return { created_count: 0, updated_count: 0, deleted_count: 0, skipped_count: 0 }
   return await upsertWithStats(
     pool,
     entries.map((e) => ({ _raw_data: e })),
@@ -377,7 +378,10 @@ const destination = {
           if (buffer.length >= batchSize) {
             const err = await flushStream(stream)
             if (err) {
-              log.error({ stream, error: err }, 'dest write: yielding stream_status error (batch flush)')
+              log.error(
+                { stream, error: err },
+                'dest write: yielding stream_status error (batch flush)'
+              )
               yield streamError(stream, err)
               continue
             }
@@ -392,7 +396,10 @@ const destination = {
             }
             const err = await flushStream(stream)
             if (err) {
-              log.error({ stream, error: err }, 'dest write: yielding stream_status error (state flush)')
+              log.error(
+                { stream, error: err },
+                'dest write: yielding stream_status error (state flush)'
+              )
               yield streamError(stream, err)
               continue
             }
@@ -407,7 +414,10 @@ const destination = {
       for (const streamName of streamBuffers.keys()) {
         const err = await flushStream(streamName)
         if (err) {
-          log.error({ stream: streamName, error: err }, 'dest write: yielding stream_status error (final flush)')
+          log.error(
+            { stream: streamName, error: err },
+            'dest write: yielding stream_status error (final flush)'
+          )
           yield streamError(streamName, err)
         }
       }

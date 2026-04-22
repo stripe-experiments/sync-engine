@@ -17,10 +17,7 @@ import { Hono } from 'hono'
 
 // Minimal inline ndjsonResponse — same contract as ts-cli/src/ndjson.ts but
 // without the dependency so this package stays standalone.
-function ndjsonResponse<T>(
-  iterable: AsyncIterable<T>,
-  onError?: (err: unknown) => T
-): Response {
+function ndjsonResponse<T>(iterable: AsyncIterable<T>, onError?: (err: unknown) => T): Response {
   const encoder = new TextEncoder()
   const iterator = iterable[Symbol.asyncIterator]()
   const stream = new ReadableStream({
