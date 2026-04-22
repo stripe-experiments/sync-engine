@@ -446,8 +446,12 @@ jobs:
             ghcr.io/${{ github.repository }}-service:${{ github.sha }}-amd64 \
             ghcr.io/${{ github.repository }}-service:${{ github.sha }}-arm64
 
+      # ENTRYPOINT is serve.js; bare `--version` is ignored and the API runs forever.
       - name: Docker smoke test
-        run: docker run --rm ghcr.io/${{ github.repository }}:${{ github.sha }} --version
+        run: >-
+          docker run --rm --entrypoint node
+          ghcr.io/${{ github.repository }}:${{ github.sha }}
+          --use-env-proxy dist/bin/sync-engine.js --version
 
   # ---------------------------------------------------------------------------
   # E2E Docker — Docker image smoke + engine tests (runs on every push/PR)
