@@ -13,6 +13,8 @@ jobs:
     name: Create DB & monitor sync progress
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
+    env:
+      STRIPE_API_KEY: ${{ secrets.GOLDI_LIVE_KEY }}
 
     steps:
       - name: Checkout repository
@@ -29,11 +31,6 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" \
             | sudo tee /etc/apt/sources.list.d/stripe.list
           sudo apt-get update -qq && sudo apt-get install -y -qq stripe
-
-      - name: Stripe CLI login
-        env:
-          STRIPE_API_KEY: ${{ secrets.GOLDI_LIVE_KEY }}
-        run: echo "$STRIPE_API_KEY" | stripe login --interactive
 
       - name: Create Stripe database
         id: create-db
@@ -132,7 +129,6 @@ jobs:
 
       - name: Sigma validation
         env:
-          STRIPE_API_KEY: ${{ secrets.GOLDI_LIVE_KEY }}
           DATABASE_URL: ${{ steps.create-db.outputs.db_string }}
         run: |
           set +e
