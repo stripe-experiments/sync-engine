@@ -30,15 +30,6 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/stripe.list
           sudo apt-get update -qq && sudo apt-get install -y -qq stripe
 
-      - name: Write Stripe CLI config
-        env:
-          STRIPE_CONFIG_TOML: ${{ secrets.STRIPE_CONFIG_TOML }}
-        run: |
-          mkdir -p ~/.config/stripe
-          echo "$STRIPE_CONFIG_TOML" > ~/.config/stripe/config.toml
-          chmod 600 ~/.config/stripe/config.toml
-          echo "Stripe CLI config written to ~/.config/stripe/config.toml"
-
       - name: Stripe CLI login
         env:
           STRIPE_API_KEY: ${{ secrets.GOLDI_LIVE_KEY }}
@@ -48,7 +39,7 @@ jobs:
         id: create-db
         run: |
           echo "Creating Stripe database..."
-          RESULT=$(stripe databases create)
+          RESULT=$(stripe databases create --live)
 
           DB_ID=$(echo "$RESULT" | grep -oE 'db_test_[A-Za-z0-9]+' | head -1)
           DB_STRING=$(echo "$RESULT" | grep -oE 'postgresql://[^[:space:]]+')
