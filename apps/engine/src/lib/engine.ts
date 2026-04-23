@@ -589,15 +589,14 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
             input
           )
 
-          // Graceful close: soft_time_limit stops reading from the source
-          // between messages while the destination drains/flushes until
-          // time_limit fires on destOutput. Default: `time_limit - 1`, or
-          // `time_limit * spec.soft_limit_fraction` for destinations with
-          // long flush tails (e.g. Sheets: 0.5).
+          // Graceful close: soft_time_limit is applied to both source and
+          // dest. On the source side it stops reading between messages; on
+          // the dest side it stops between yields. time_limit is the hard
+          // backstop. Default soft: 80% of time_limit; destinations can
+          // override via spec.soft_limit_fraction (e.g. Sheets: 0.5).
           const softTimeLimit =
             opts?.soft_time_limit ??
             defaultSoftTimeLimit(opts?.time_limit, p.destination.softLimitFraction)
-          // signal is enforced on destOutput's takeLimits below — don't duplicate here.
           const sourceGate = limitSource(sourceOutput, { soft_time_limit: softTimeLimit })
 
           const destInput = pipe(sourceGate.iterable, enforceCatalog(activeFilteredCatalog), tapLog)
@@ -608,6 +607,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
           // Apply limits (takeLimits appends eof)
           const limited = takeLimits({
             time_limit: opts?.time_limit,
+            soft_time_limit: softTimeLimit,
             signal,
           })(destOutput)
 
