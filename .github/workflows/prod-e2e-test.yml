@@ -38,7 +38,7 @@ jobs:
           echo "Creating Stripe database..."
           RESULT=$(stripe databases create --live)
 
-          DB_ID=$(echo "$RESULT" | grep -oE 'db_test_[A-Za-z0-9]+' | head -1)
+          DB_ID=$(echo "$RESULT" | grep -oE 'db_[A-Za-z0-9]+' | head -1)
           DB_STRING=$(echo "$RESULT" | grep -oE 'postgresql://[^[:space:]]+')
 
           if [ -z "$DB_ID" ]; then
