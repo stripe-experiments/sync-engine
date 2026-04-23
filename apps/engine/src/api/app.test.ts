@@ -397,6 +397,7 @@ describe('engine request id header', () => {
     }
 
     const app = await createApp(bridgeResolver)
+    const actionId = 'act_bridge_123'
     const res = await app.request('/pipeline_read', {
       method: 'POST',
       headers: {
@@ -404,6 +405,7 @@ describe('engine request id header', () => {
           source: { type: 'bridge', bridge: {} },
           destination: { type: 'test', test: {} },
         }),
+        'X-Action-Id': actionId,
       },
     })
 
@@ -431,6 +433,7 @@ describe('engine request id header', () => {
         engine_request_id: expect.stringMatching(
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
         ),
+        action_id: actionId,
       })
     )
   })
