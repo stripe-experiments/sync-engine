@@ -47,6 +47,17 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/stripe.list
           sudo apt-get update -qq && sudo apt-get install -y -qq stripe
 
+      - name: Validate API key
+        run: |
+          if [ -z "$STRIPE_API_KEY" ]; then
+            echo "::error::STRIPE_API_KEY is empty — check that the ${{ matrix.api_key }} secret is set"
+            exit 1
+          fi
+          if ! stripe customers list --limit 1 --api-base ${{ matrix.api_base }} >/dev/null 2>&1; then
+            echo "::error::STRIPE_API_KEY (${{ matrix.api_key }}) is invalid or expired — rotate it in the Stripe Dashboard and update the GitHub secret"
+            exit 1
+          fi
+
       - name: Create Stripe database
         id: create-db
         run: |
