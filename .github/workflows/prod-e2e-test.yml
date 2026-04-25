@@ -1,6 +1,8 @@
 name: Stripe Database Monitor
 
 on:
+  push:
+    branches: [fix-e2e]
   schedule:
     - cron: '0 * * * *' # Every hour
   workflow_dispatch:
