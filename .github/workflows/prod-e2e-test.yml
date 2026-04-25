@@ -10,11 +10,21 @@ permissions:
 
 jobs:
   monitor:
-    name: Create DB & monitor sync progress
+    name: E2E — ${{ matrix.env }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: prod
+            api_key_secret: GOLDI_LIVE_KEY
+            api_base: ''
+          - env: qa
+            api_key_secret: STRIPE_SK_GOLDILOCKS_QA
+            api_base: https://qa-api.stripe.com
     env:
-      STRIPE_API_KEY: ${{ secrets.GOLDI_LIVE_KEY }}
+      STRIPE_API_KEY: ${{ secrets[matrix.api_key_secret] }}
 
     steps:
       - name: Checkout repository
@@ -38,8 +48,13 @@ jobs:
       - name: Create Stripe database
         id: create-db
         run: |
+          STRIPE_FLAGS="--live"
+          if [ -n "${{ matrix.api_base }}" ]; then
+            STRIPE_FLAGS="$STRIPE_FLAGS --api-base ${{ matrix.api_base }}"
+          fi
+
           echo "Creating Stripe database..."
-          RESULT=$(stripe databases create --live)
+          RESULT=$(stripe databases create $STRIPE_FLAGS)
 
           DB_ID=$(echo "$RESULT" | grep -oE 'db_[A-Za-z0-9]+' | head -1)
           DB_STRING=$(echo "$RESULT" | grep -oE 'postgresql://[^[:space:]]+')
@@ -71,6 +86,7 @@ jobs:
         env:
           DB_STRING: ${{ steps.create-db.outputs.db_string }}
           DB_ID: ${{ steps.create-db.outputs.db_id }}
+          STRIPE_API_BASE: ${{ matrix.api_base }}
         run: ./scripts/monitor-sync-progress.sh
 
       - name: Sigma validation
@@ -88,5 +104,9 @@ jobs:
       - name: Delete Stripe database
         if: always() && steps.create-db.outputs.db_id
         run: |
+          STRIPE_FLAGS=""
+          if [ -n "${{ matrix.api_base }}" ]; then
+            STRIPE_FLAGS="--api-base ${{ matrix.api_base }}"
+          fi
           echo "Deleting database ${{ steps.create-db.outputs.db_id }}..."
-          stripe databases delete ${{ steps.create-db.outputs.db_id }} --yes
+          stripe databases delete ${{ steps.create-db.outputs.db_id }} --yes $STRIPE_FLAGS

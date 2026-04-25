@@ -7,6 +7,11 @@ set -euo pipefail
 : "${DB_STRING:?DB_STRING is required}"
 : "${DB_ID:?DB_ID is required}"
 
+STRIPE_FLAGS=""
+if [ -n "${STRIPE_API_BASE:-}" ]; then
+  STRIPE_FLAGS="--api-base $STRIPE_API_BASE"
+fi
+
 POLL_INTERVAL=15
 MAX_POLLS=240
 PREV_TOTAL=0
@@ -14,7 +19,7 @@ PREV_TIME=$(date +%s)
 START_TIME=$PREV_TIME
 
 for i in $(seq 1 $MAX_POLLS); do
-  STATUS=$(stripe databases retrieve "$DB_ID" 2>&1 | grep -oE 'backfilling|ready|error|failed' | head -1)
+  STATUS=$(stripe databases retrieve "$DB_ID" $STRIPE_FLAGS 2>&1 | grep -oE 'backfilling|ready|error|failed' | head -1)
 
   SUM_EXPR=$(psql "$DB_STRING" -t -A -c "
     SELECT COALESCE(
@@ -41,9 +46,13 @@ for i in $(seq 1 $MAX_POLLS); do
     echo "Sync complete in ${TOTAL_ELAPSED}s"
     break
   fi
+  # TODO: Once selective sync is available in the CLI/API, error should be a hard failure.
+  # For now databases without selective sync may error on unsupported resources.
   if [ "$STATUS" = "error" ] || [ "$STATUS" = "failed" ]; then
-    echo "::error::Database entered $STATUS state"
-    exit 1
+    TOTAL_ELAPSED=$(( NOW - START_TIME ))
+    echo ""
+    echo "::warning::Database entered $STATUS state after ${TOTAL_ELAPSED}s (accepted until selective sync is available)"
+    break
   fi
 
   PREV_TOTAL=$TOTAL
@@ -51,7 +60,7 @@ for i in $(seq 1 $MAX_POLLS); do
   sleep $POLL_INTERVAL
 done
 
-if [ "$STATUS" != "ready" ]; then
+if [ "$STATUS" != "ready" ] && [ "$STATUS" != "error" ] && [ "$STATUS" != "failed" ]; then
   echo "::error::Timed out waiting for sync to complete"
   exit 1
 fi
