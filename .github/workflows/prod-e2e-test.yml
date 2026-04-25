@@ -20,11 +20,13 @@ jobs:
       matrix:
         include:
           - env: prod
+            api_key: GOLDI_LIVE_KEY
             api_base: ''
           - env: qa
+            api_key: STRIPE_SK_GOLDILOCKS_QA
             api_base: https://qa-api.stripe.com
     env:
-      STRIPE_API_KEY: ${{ matrix.env == 'prod' && secrets.GOLDI_LIVE_KEY || secrets.STRIPE_SK_GOLDILOCKS_QA }}
+      STRIPE_API_KEY: ${{ secrets[matrix.api_key] }}
 
     steps:
       - name: Checkout repository
