@@ -89,4 +89,4 @@ jobs:
         if: always() && steps.create-db.outputs.db_id
         run: |
           echo "Deleting database ${{ steps.create-db.outputs.db_id }}..."
-          echo "remove StripeDB" | stripe databases delete ${{ steps.create-db.outputs.db_id }}
+          stripe databases delete ${{ steps.create-db.outputs.db_id }} --yes
