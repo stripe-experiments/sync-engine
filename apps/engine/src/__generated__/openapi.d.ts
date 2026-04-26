@@ -337,8 +337,11 @@ export interface components {
                     metadata?: {
                         [key: string]: unknown;
                     };
-                    /** @description Field whose value increases monotonically. Destination uses it to skip stale writes (e.g. "updated"). */
-                    newer_than_field?: string;
+                    /**
+                     * @description Field whose value increases monotonically. Destination uses it to skip stale writes (e.g. "updated").
+                     * @default _updated_at
+                     */
+                    newer_than_field: string;
                     /** @description Field in record data that signals a soft delete (e.g. "deleted"). Destination uses this to classify upserts as deletes when the field is truthy. */
                     soft_delete_field?: string;
                 }[];

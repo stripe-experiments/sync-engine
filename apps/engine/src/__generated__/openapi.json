@@ -1094,6 +1094,7 @@
                       "additionalProperties": {}
                     },
                     "newer_than_field": {
+                      "default": "_updated_at",
                       "description": "Field whose value increases monotonically. Destination uses it to skip stale writes (e.g. \"updated\").",
                       "type": "string"
                     },
