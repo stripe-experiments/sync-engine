@@ -88,7 +88,7 @@ export async function upsertMany(
   return await upsertWithStats(
     pool,
     records,
-    { schema, table, primaryKeyColumns, newerThanColumn: '_updated_at' },
+    { schema, table, primaryKeyColumns, newerThanColumn: newerThanField },
     `"_raw_data"->>'deleted' = 'true'`
   )
 }
