@@ -390,15 +390,20 @@ export function createDestination(
         for (const prep of prepInputs) {
           if (!prep.needsRead || !prep.primaryKey) continue
           const pkFields = prep.primaryKey.map((p) => p[0])
-          // Suppress narrow reads when deletes (need donor rows) or newer_than_field (need ts column) is in play.
-          const pkIsFirstN =
-            prep.bufferedDeletes.length === 0 &&
-            !streamNewerThanField.has(prep.streamName) &&
-            pkFields.every((field, i) => prep.headers[i] === field)
-          narrowByStream.set(prep.streamName, pkIsFirstN)
+          const newerThanField = streamNewerThanField.get(prep.streamName)
+          const newerThanIdx = newerThanField ? prep.headers.indexOf(newerThanField) : -1
+          const pkIsFirstN = pkFields.every((field, i) => prep.headers[i] === field)
+          const canReadPrefix = prep.bufferedDeletes.length === 0 && pkIsFirstN
+          const columnCount =
+            canReadPrefix && newerThanIdx >= 0
+              ? Math.max(pkFields.length, newerThanIdx + 1)
+              : canReadPrefix
+                ? pkFields.length
+                : undefined
+          narrowByStream.set(prep.streamName, columnCount !== undefined)
           streamsToRead.push({
             name: prep.streamName,
-            ...(pkIsFirstN ? { columnCount: pkFields.length } : {}),
+            ...(columnCount ? { columnCount } : {}),
           })
         }
 
@@ -460,7 +465,7 @@ export function createDestination(
                 const existing = entry.rowKey ? freshMap.get(entry.rowKey) : undefined
                 if (existing !== undefined) {
                   if (newerThanIdx >= 0) {
-                    const existingRow = allRows[existing - 1] ?? []
+                    const existingRow = allRows[isNarrow ? existing - 2 : existing - 1] ?? []
                     const existingCell = existingRow[newerThanIdx]
                     const existingValue = existingCell == null ? '' : String(existingCell)
                     const incomingValue = entry.row[newerThanIdx] ?? ''
@@ -670,6 +675,15 @@ export function createDestination(
             recordCount++
             const { stream, data } = msg.record
             const cleanData: Record<string, unknown> = stripSystemFields(data)
+            const newerThanField = streamNewerThanField.get(stream)
+            if (
+              newerThanField !== undefined &&
+              (!(newerThanField in cleanData) || cleanData[newerThanField] === undefined)
+            ) {
+              throw new Error(
+                `stream "${stream}" record missing newer_than_field "${newerThanField}"; source must stamp this field on every record per DDR-009`
+              )
+            }
             const headers = await ensureHeadersForRecord(stream, cleanData)
             const row = headers.map((header) => stringify(cleanData[header]))
             const rowNumber =
@@ -694,30 +708,29 @@ export function createDestination(
               const keyIdx = appendKeyIndex.get(stream)!
               const pendingIdx = keyIdx.get(rowKey)
               if (pendingIdx !== undefined) {
-                // Keep whichever same-batch dupe is newer — matches PG's
-                // EXCLUDED.col > tbl.col staleness gate.
-                const newerThanField = streamNewerThanField.get(stream)!
-                const newerThanIdx = headers.indexOf(newerThanField)
-                const incomingValue = row[newerThanIdx]
-                const pendingValue = buffer[pendingIdx].row[newerThanIdx]
-                if (incomingValue === undefined || pendingValue === undefined) {
-                  throw new Error(
-                    `stream "${stream}" record missing newer_than_field "${newerThanField}" (header index ${newerThanIdx}); source must stamp this field on every record per DDR-009`
-                  )
-                }
-                if (!isStrictlyNewer(incomingValue, pendingValue)) {
-                  log.debug(
-                    {
-                      stream,
-                      rowKey,
-                      newerThanField,
-                      incomingValue,
-                      pendingValue,
-                    },
-                    'in-batch dedup: ignoring stale record'
-                  )
-                  yield msg
-                  continue
+                if (newerThanField !== undefined) {
+                  const newerThanIdx = headers.indexOf(newerThanField)
+                  const incomingValue = row[newerThanIdx]
+                  const pendingValue = buffer[pendingIdx].row[newerThanIdx]
+                  if (incomingValue === undefined || pendingValue === undefined) {
+                    throw new Error(
+                      `stream "${stream}" record missing newer_than_field "${newerThanField}" (header index ${newerThanIdx}); source must stamp this field on every record per DDR-009`
+                    )
+                  }
+                  if (!isStrictlyNewer(incomingValue, pendingValue)) {
+                    log.debug(
+                      {
+                        stream,
+                        rowKey,
+                        newerThanField,
+                        incomingValue,
+                        pendingValue,
+                      },
+                      'in-batch dedup: ignoring stale record'
+                    )
+                    yield msg
+                    continue
+                  }
                 }
                 buffer[pendingIdx] = { row, rowKey }
               } else {

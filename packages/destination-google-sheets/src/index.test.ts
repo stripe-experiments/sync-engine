@@ -43,9 +43,13 @@ async function* toAsyncIter<T>(items: T[]): AsyncIterableIterator<T> {
 }
 
 const now = new Date().toISOString()
+let nextRecordTs = Math.floor(Date.now() / 1000)
 
 function record(stream: string, data: Record<string, unknown>): DestinationInput {
-  return { type: 'record', record: { stream, data, emitted_at: now } }
+  return {
+    type: 'record',
+    record: { stream, data: { _updated_at: nextRecordTs++, ...data }, emitted_at: now },
+  }
 }
 
 function state(stream: string, data: unknown): DestinationInput {
@@ -1606,6 +1610,27 @@ describe('newer_than_field stale write prevention', () => {
     ],
   }
 
+  it('fails loud when an incoming record is missing newer_than_field', async () => {
+    const { sheets } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    const output = await collect(
+      dest.write(
+        { config: cfg(), catalog: newerThanCatalog },
+        toAsyncIter([record('customers', { id: 'cus_1', name: 'Alice' })])
+      )
+    )
+
+    expect(output).toContainEqual({
+      type: 'connection_status',
+      connection_status: {
+        status: 'failed',
+        message:
+          'stream "customers" record missing newer_than_field "updated"; source must stamp this field on every record per DDR-009',
+      },
+    })
+  })
+
   it('skips upsert when incoming record is older than existing (across batches)', async () => {
     const { sheets, getData, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
@@ -1728,13 +1753,8 @@ describe('newer_than_field stale write prevention', () => {
 })
 
 describe('_updated_at column (source-owned, passthrough)', () => {
-  // The Stripe source stamps every record with `_updated_at` (unix
-  // seconds, from `event.created` for webhooks or the HTTP `Date`
-  // header for backfill, falling back to local now()). The destination
-  // is intentionally passive — it does not generate, refresh, or
-  // override the value. PG mirrors this with a generated column over
-  // `_raw_data->>'_updated_at'`; Sheets just passes the raw value
-  // through, no stamping logic of its own.
+  // The Stripe source stamps `_updated_at`; Sheets passes it through and
+  // uses it for stale-write gating, but never invents its own timestamp.
   it('only writes a _updated_at column when the source provides the value', async () => {
     const { sheets, getData, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
@@ -1742,7 +1762,16 @@ describe('_updated_at column (source-owned, passthrough)', () => {
     await collect(
       dest.write(
         { config: cfg(), catalog },
-        toAsyncIter([record('users', { id: 'u1', name: 'Alice' })])
+        toAsyncIter([
+          {
+            type: 'record',
+            record: {
+              stream: 'users',
+              data: { id: 'u1', name: 'Alice' },
+              emitted_at: now,
+            },
+          },
+        ])
       )
     )
 

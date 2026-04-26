@@ -77,7 +77,7 @@ export async function upsertMany(
 
   const records = entries.map((e) => {
     const ts = e[newerThanField] as unknown
-    if (typeof ts !== 'number') {
+    if (typeof ts !== 'number' || !Number.isFinite(ts)) {
       throw new Error(
         `upsertMany: record missing source-stamped "${newerThanField}" (table=${schema}.${table}, id=${String(e.id)}). See DDR-009.`
       )

@@ -14,7 +14,7 @@ export async function ensureSchema(
 ): Promise<void> {
   const q = quoteIdentifier
   await pool.query(`CREATE SCHEMA IF NOT EXISTS ${q(schema)}`)
-  // No trigger needed — destination writes `_updated_at` explicitly (DDR-009).
+  // No trigger needed; tests either use defaults or destination upsertMany.
 }
 
 export async function ensureObjectTable(

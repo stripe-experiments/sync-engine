@@ -43,11 +43,8 @@ function isDeleteEvent(event: StripeEvent): boolean {
  * This is the building block for live mode. The orchestrator/webhook server
  * pushes events in; this method converts them to protocol messages.
  *
- * `newerThanField` is the catalog-declared staleness column for the stream
- * (see catalog.ts). The record gets stamped with a unix-seconds timestamp
- * on this column so destinations can gate out-of-order writes: the
- * record's native `.updated` field is preferred when present, falling
- * back to `event.created` otherwise (see {@link pickRecordTimestamp}).
+ * `newerThanField` is the catalog-declared staleness column; records are
+ * stamped from native `.updated` when present, else `event.created`.
  */
 export function fromStripeEvent(
   event: StripeEvent,
