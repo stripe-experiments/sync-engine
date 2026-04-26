@@ -113,7 +113,12 @@ async function collectOutputs(
 const catalog: ConfiguredCatalog = {
   streams: [
     {
-      stream: { name: 'customers', primary_key: [['id']], metadata: {} },
+      stream: {
+        name: 'customers',
+        primary_key: [['id']],
+        newer_than_field: '_updated_at',
+        metadata: {},
+      },
       sync_mode: 'full_refresh',
       destination_sync_mode: 'overwrite',
     },
@@ -328,7 +333,7 @@ describe('_updated_at column write-through', () => {
   const updatedAtCatalog: ConfiguredCatalog = {
     streams: [
       {
-        stream: { name: 'customers', primary_key: [['id']] },
+        stream: { name: 'customers', primary_key: [['id']], newer_than_field: '_updated_at' },
         sync_mode: 'full_refresh',
         destination_sync_mode: 'overwrite',
       },
@@ -402,6 +407,7 @@ describe('multi-org sync (two account IDs)', () => {
         stream: {
           name: 'customers',
           primary_key: [['id'], ['_account_id']],
+          newer_than_field: '_updated_at',
           metadata: {},
         },
         sync_mode: 'full_refresh',
