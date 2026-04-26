@@ -115,8 +115,6 @@ export type PageResult<T> = {
   hasMore: boolean
   /** The oldest sort-key timestamp (unix seconds) seen on this page, if any. */
   lastObserved: number | null
-  /** Response timestamp in unix seconds, passed through for record stamping. */
-  responseAt: number
 }
 
 /** Yielded by streamingSubdivide for each completed page. */
@@ -128,8 +126,6 @@ export type SubdivisionEvent<T> = {
   exhausted: boolean
   /** Snapshot of all ranges still pending (in queue + in flight). For state checkpoints. */
   remaining: Range[]
-  /** Mirrors PageResult.responseAt — pass-through for record stamping. */
-  responseAt: number
 }
 
 /**
@@ -196,7 +192,7 @@ export async function* streamingSubdivide<T>(opts: {
       inflight.delete(id)
       inflightRanges.delete(id)
 
-      const { range, data, hasMore, lastObserved, responseAt } = result
+      const { range, data, hasMore, lastObserved } = result
 
       if (data.length === 0 && !hasMore) {
         // Empty range — fully exhausted
@@ -224,7 +220,6 @@ export async function* streamingSubdivide<T>(opts: {
         hasMore,
         exhausted: !hasMore,
         remaining: snapshotRemaining(),
-        responseAt,
       }
     }
   } finally {

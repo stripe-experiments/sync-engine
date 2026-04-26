@@ -244,16 +244,18 @@ function isLegacyState(data: unknown): boolean {
 
 /**
  * Fetch one page for a time range — satisfies streamingSubdivide's fetchPage contract.
- * Mutates range.cursor in-place. Returns raw data + lastObserved for subdivision.
+ * Mutates range.cursor in-place. Returns stamped data + lastObserved.
  */
 async function fetchPageForRange(opts: {
   range: RemainingRange
   listFn: ListFn
   streamName: string
+  newerThanField: string
   supportsLimit: boolean
   supportsForwardPagination: boolean
 }): Promise<PageResult<Record<string, unknown>>> {
-  const { range, listFn, streamName, supportsLimit, supportsForwardPagination } = opts
+  const { range, listFn, streamName, newerThanField, supportsLimit, supportsForwardPagination } =
+    opts
 
   const created: Record<string, number> = {}
   if (range.gte) created.gte = toUnixSeconds(range.gte)
@@ -265,6 +267,8 @@ async function fetchPageForRange(opts: {
   if (supportsForwardPagination && range.cursor) params.starting_after = range.cursor
 
   const response = await listFn(params as Parameters<typeof listFn>[0])
+  const responseAt =
+    typeof response.responseAt === 'number' ? response.responseAt : Math.floor(Date.now() / 1000)
 
   const hasMore = supportsForwardPagination && response.has_more
   let nextCursor: string | null = null
@@ -277,9 +281,15 @@ async function fetchPageForRange(opts: {
   // lastObserved = oldest record's created timestamp on this page.
   // Stripe returns newest-first, so the last record is the oldest.
   let lastObserved: number | null = null
+  const data: Record<string, unknown>[] = []
   for (const item of response.data) {
-    const created = (item as Record<string, unknown>).created
+    const record = item as Record<string, unknown>
+    const created = record.created
     if (typeof created === 'number') lastObserved = created
+    data.push({
+      ...record,
+      [newerThanField]: typeof record.updated === 'number' ? record.updated : responseAt,
+    })
   }
 
   log.trace({
@@ -297,10 +307,9 @@ async function fetchPageForRange(opts: {
 
   return {
     range,
-    data: response.data as Record<string, unknown>[],
+    data,
     hasMore,
     lastObserved,
-    responseAt: response.responseAt,
   }
 }
 
@@ -353,8 +362,8 @@ async function* paginateSequential(opts: {
     const response = prefetchedResponse
       ? await prefetchedResponse
       : await listFn(params as Parameters<typeof listFn>[0])
-    // Use Stripe's HTTP Date as the per-page fallback timestamp, then local now().
-    const responseAt = response.responseAt
+    const responseAt =
+      typeof response.responseAt === 'number' ? response.responseAt : Math.floor(Date.now() / 1000)
     prefetchedResponse = null
     totalApiCalls.count++
 
@@ -387,12 +396,11 @@ async function* paginateSequential(opts: {
 
     for (const item of response.data) {
       const record = item as Record<string, unknown>
-      const _updated_at = typeof record.updated === 'number' ? record.updated : responseAt
       yield msg.record({
         stream: streamName,
         data: {
           ...record,
-          [newerThanField]: _updated_at,
+          [newerThanField]: typeof record.updated === 'number' ? record.updated : responseAt,
           _account_id: accountId,
         },
         emitted_at: new Date().toISOString(),
@@ -516,6 +524,7 @@ async function* iterateStream(opts: {
           range,
           listFn: rateLimitedListFn,
           streamName,
+          newerThanField,
           supportsLimit,
           supportsForwardPagination,
         }),
@@ -528,18 +537,10 @@ async function* iterateStream(opts: {
 
       if (drainQueue) yield* drainQueue()
 
-      // Use Stripe's HTTP Date as the per-page fallback timestamp,
-      // then local now().
-      const responseAt = event.responseAt
       for (const item of event.data) {
-        const _updated_at = typeof item.updated === 'number' ? item.updated : responseAt
         yield msg.record({
           stream: streamName,
-          data: {
-            ...item,
-            [newerThanField]: _updated_at,
-            _account_id: accountId,
-          },
+          data: { ...item, _account_id: accountId },
           emitted_at: new Date().toISOString(),
         })
         totalEmitted.count++
