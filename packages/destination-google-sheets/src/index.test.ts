@@ -1992,6 +1992,38 @@ describe('enum constraints on any column', () => {
     expect(stripUpdatedAt(getData(spreadsheetId, 'invoices'))[1]).toEqual(['in_1', '42'])
   })
 
+  it('rejects setup when existing validation disagrees with catalog', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    // First setup with one set of values
+    const catalog1 = catalogWith(['acct_a', 'acct_b'])
+    for await (const msg of dest.setup!({ config: cfg(), catalog: catalog1 })) {
+      void msg
+    }
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    // Same values, different order — should be idempotent
+    const catalog1b = catalogWith(['acct_b', 'acct_a'])
+    for await (const msg of dest.setup!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog: catalog1b,
+    })) {
+      void msg
+    }
+
+    // Different values — should throw
+    const catalog2 = catalogWith(['acct_a'])
+    await expect(async () => {
+      for await (const msg of dest.setup!({
+        config: cfg({ spreadsheet_id: spreadsheetId }),
+        catalog: catalog2,
+      })) {
+        void msg
+      }
+    }).rejects.toThrow(/enum values changed.*_account_id.*acct_a, acct_b.*acct_a/s)
+  })
+
   it('allows optional enum fields to be omitted', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)

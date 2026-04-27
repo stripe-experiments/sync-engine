@@ -232,6 +232,37 @@ export function createDestination(
       const streamNames = catalog.streams.map((s) => s.stream.name)
       const metaAfterEnsure = await getSpreadsheetMeta(sheets, spreadsheetId)
       const desiredEnumRules = extractDesiredEnumRules(catalog)
+
+      // Fail loud on changed enum lists — silent overwrites would mask misconfig.
+      // Read existing validations before writing so we can detect mismatches.
+      const existingSheetNames = new Set(metaAfterEnsure.sheets.map((s) => s.title))
+      const existingValidations = await readEnumValidations(
+        sheets,
+        spreadsheetId,
+        streamHeaders.filter(({ streamName }) => existingSheetNames.has(streamName))
+      )
+      for (const [streamName, desiredStreamRules] of desiredEnumRules) {
+        const existingStreamRules = existingValidations.get(streamName)
+        if (!existingStreamRules) continue
+        for (const [col, desired] of desiredStreamRules) {
+          const existing = existingStreamRules.get(col)
+          if (!existing) continue
+          const desiredSet = new Set(desired.allowedValues)
+          const existingSet = new Set(existing.allowedValues)
+          if (
+            desiredSet.size === existingSet.size &&
+            [...desiredSet].every((v) => existingSet.has(v))
+          )
+            continue
+          const fmt = (vals: string[]) => [...vals].sort().join(', ')
+          throw new Error(
+            `Google Sheets destination: enum values changed for "${col}" on sheet "${streamName}" in spreadsheet ${spreadsheetId}. ` +
+              `Existing validation allows [${fmt(existing.allowedValues)}]; new catalog wants [${fmt(desired.allowedValues)}]. ` +
+              `Remove the data validation on the ${col} column before re-running setup.`
+          )
+        }
+      }
+
       await setEnumValidations(sheets, spreadsheetId, sheetIdMap, streamHeaders, desiredEnumRules)
       await ensureIntroSheet(sheets, spreadsheetId, metaAfterEnsure, streamNames)
 
