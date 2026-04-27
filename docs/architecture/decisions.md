@@ -179,7 +179,7 @@ DEFAULT now()` column at the top of every table. This shape is kept
 
 **Mapping:**
 
-- **Postgres:** `ADD CONSTRAINT chk_<table>_<column> CHECK ((_raw_data->>'<column>') IS NOT NULL AND (_raw_data->>'<column>') IN (…)) NOT VALID`, wrapped in a `DO` block with `EXCEPTION WHEN duplicate_object OR undefined_table`. `NOT VALID` skips the existing-row scan so adopting the constraint never blocks a deploy. Values use standard SQL single-quote escaping.
+- **Postgres:** `ADD CONSTRAINT chk_<table>_<column> CHECK ((_raw_data->>'<column>') IS NOT NULL AND (_raw_data->>'<column>') IN (…))`, wrapped in a `DO` block with `EXCEPTION WHEN duplicate_object OR undefined_table`. The constraint validates existing rows — if any row violates it, setup fails immediately, forcing the operator to clean up bad data before proceeding. Values use standard SQL single-quote escaping.
 - **Google Sheets:** `setup()` writes per-column `__enum_<column>__` marker rows to the Overview sheet; `write()` validates each record's enum-constrained columns against the read-back set.
 
 **Mismatch is fail-loud.** `ADD CONSTRAINT` would silently no-op via `duplicate_object`, so both destinations diff the catalog enum against the existing constraint / Overview row at the top of `setup()` and throw a guiding error (naming both lists and the manual mitigation) when they differ. Same-list re-runs stay idempotent.

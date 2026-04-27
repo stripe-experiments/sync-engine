@@ -182,7 +182,7 @@ export function buildCreateTableWithSchema(
       const escapedCol = colName.replace(/'/g, "''")
       const list = prop.enum.map(quoteLiteral).join(', ')
       stmts.push(
-        `DO $check$\nBEGIN\n  ALTER TABLE ${quotedSchema}.${quotedTable} ADD CONSTRAINT ${qn} CHECK ((_raw_data->>'${escapedCol}') IS NOT NULL AND (_raw_data->>'${escapedCol}') IN (${list})) NOT VALID;\nEXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;\nEND;\n$check$;`
+        `DO $check$\nBEGIN\n  ALTER TABLE ${quotedSchema}.${quotedTable} ADD CONSTRAINT ${qn} CHECK ((_raw_data->>'${escapedCol}') IS NOT NULL AND (_raw_data->>'${escapedCol}') IN (${list}));\nEXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;\nEND;\n$check$;`
       )
     }
   }

@@ -202,7 +202,7 @@ describe('buildCreateTableDDL', () => {
     expect(ddl).toContain(
       `CHECK ((_raw_data->>'_account_id') IS NOT NULL AND (_raw_data->>'_account_id') IN ('acct_a', 'acct_b'))`
     )
-    expect(ddl).toContain('NOT VALID')
+    expect(ddl).not.toContain('NOT VALID')
     expect(ddl).toContain('EXCEPTION WHEN duplicate_object')
     expect(ddl.indexOf('DO $check$')).toBeGreaterThan(ddl.indexOf('$ddl$;'))
   })
@@ -218,7 +218,7 @@ describe('buildCreateTableDDL', () => {
     expect(ddl).toContain(
       `CHECK ((_raw_data->>'status') IS NOT NULL AND (_raw_data->>'status') IN ('active', 'paused', 'cancelled'))`
     )
-    expect(ddl).toContain('NOT VALID')
+    expect(ddl).not.toContain('NOT VALID')
   })
 
   it('buildCreateTableDDL skips CHECK when no enum is present in JSON Schema', () => {

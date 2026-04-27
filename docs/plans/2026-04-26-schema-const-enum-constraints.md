@@ -43,5 +43,5 @@ flowchart LR
 
 ## Notes
 
-- **`NOT VALID` is intentional.** Existing rows are not retroactively checked; a follow-up can offer an opt-in `VALIDATE CONSTRAINT`.
+- **Constraint validates existing rows.** If any row violates the enum, setup fails immediately — forcing the operator to clean up bad data before proceeding.
 - **Rotation is operator-driven.** Mismatches throw with a guiding error rather than silently rewriting the constraint — see DDR-010.
