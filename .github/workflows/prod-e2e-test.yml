@@ -95,24 +95,21 @@ jobs:
       - name: Install psql
         run: sudo apt-get install -y -qq postgresql-client
 
-      - name: Monitor sync progress + verify live sync
+      - name: Verify backfill
+        if: always() && steps.create-db.outputs.db_id != ''
         env:
           DB_STRING: ${{ steps.create-db.outputs.db_string }}
           DB_ID: ${{ steps.create-db.outputs.db_id }}
           STRIPE_API_BASE: ${{ matrix.api_base }}
-        run: |
-          run_prefixed() {
-            local prefix="$1"; shift
-            "$@" 2>&1 | sed "s/^/[$prefix] /"
-            return ${PIPESTATUS[0]}
-          }
-          run_prefixed monitor ./scripts/verify-backfill.sh &
-          MONITOR_PID=$!
-          run_prefixed live-sync ./scripts/verify-live-sync.sh
-          LIVE_STATUS=$?
-          wait $MONITOR_PID
-          MONITOR_STATUS=$?
-          [ $LIVE_STATUS -eq 0 ] && [ $MONITOR_STATUS -eq 0 ]
+        run: bash scripts/verify-backfill.sh
+
+      - name: Verify live sync
+        if: always() && steps.create-db.outputs.db_id != ''
+        env:
+          DB_STRING: ${{ steps.create-db.outputs.db_string }}
+          DB_ID: ${{ steps.create-db.outputs.db_id }}
+          STRIPE_API_BASE: ${{ matrix.api_base }}
+        run: bash scripts/verify-live-sync.sh
 
       # TODO: Make Sigma validation a hard failure once selective sync is available
       # and the DB consistently reaches ready state.
