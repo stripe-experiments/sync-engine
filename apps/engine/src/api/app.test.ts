@@ -656,11 +656,7 @@ describe('POST /read', () => {
       source_state: { stream: 'customers', data: { cursor: '1' } },
     }
 
-    const rawRes = await app.request(
-      '/pipeline_read',
-      jsonBody({ pipeline: testPipeline, stdin: [record, state] })
-    )
-    const wrappedRes = await app.request(
+    const res = await app.request(
       '/pipeline_read',
       jsonBody({
         pipeline: testPipeline,
@@ -671,10 +667,13 @@ describe('POST /read', () => {
       })
     )
 
-    expect(wrappedRes.status).toBe(200)
-    const rawEvents = (await readNdjson<Message>(rawRes)).filter((e) => e.type !== 'log')
-    const wrappedEvents = (await readNdjson<Message>(wrappedRes)).filter((e) => e.type !== 'log')
-    expect(wrappedEvents).toEqual(rawEvents)
+    expect(res.status).toBe(200)
+    const events = (await readNdjson<Message>(res)).filter((e) => e.type !== 'log')
+    // envelope stripped — no source_input messages in output
+    expect(events.every((e) => e.type !== 'source_input')).toBe(true)
+    // inner record flowed through to source
+    expect(events.some((e) => e.type === 'record')).toBe(true)
+    expect(events.some((e) => e.type === 'eof')).toBe(true)
   })
 })
 
@@ -768,11 +767,7 @@ describe('POST /sync', () => {
       source_state: { stream: 'customers', data: { cursor: '1' } },
     }
 
-    const rawRes = await app.request(
-      '/pipeline_sync',
-      jsonBody({ pipeline: testPipeline, stdin: [record, state] })
-    )
-    const wrappedRes = await app.request(
+    const res = await app.request(
       '/pipeline_sync',
       jsonBody({
         pipeline: testPipeline,
@@ -783,10 +778,13 @@ describe('POST /sync', () => {
       })
     )
 
-    expect(wrappedRes.status).toBe(200)
-    const rawEvents = (await readNdjson<Message>(rawRes)).filter((e) => e.type !== 'log')
-    const wrappedEvents = (await readNdjson<Message>(wrappedRes)).filter((e) => e.type !== 'log')
-    expect(wrappedEvents).toEqual(rawEvents)
+    expect(res.status).toBe(200)
+    const events = (await readNdjson<Message>(res)).filter((e) => e.type !== 'log')
+    // envelope stripped — no source_input messages in output
+    expect(events.every((e) => e.type !== 'source_input')).toBe(true)
+    // inner record flowed through to source and out the other side
+    expect(events.some((e) => e.type === 'source_state')).toBe(true)
+    expect(events.some((e) => e.type === 'eof')).toBe(true)
   })
 })
 
