@@ -8,7 +8,6 @@ import type { Message, ConnectorResolver } from '../lib/index.js'
 import {
   createEngine,
   createConnectorSchemas,
-  parseNdjsonStream,
   ConnectorInfo,
   ConnectorListItem,
 } from '../lib/index.js'
@@ -36,7 +35,6 @@ const ndjsonRef = {
   CheckOutput: { $ref: '#/components/schemas/CheckOutput' },
   SetupOutput: { $ref: '#/components/schemas/SetupOutput' },
   TeardownOutput: { $ref: '#/components/schemas/TeardownOutput' },
-  SourceInputMessage: { $ref: '#/components/schemas/SourceInputMessage' },
 }
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
 import { log } from '../logger.js'
@@ -45,7 +43,7 @@ import {
   stripSslParams,
   withPgConnectProxy,
 } from '@stripe/sync-util-postgres'
-import { syncRequestContext, logApiStream, createConnectionAbort, verboseInput } from './helpers.js'
+import { syncRequestContext, logApiStream, createConnectionAbort } from './helpers.js'
 import {
   ENGINE_REQUEST_ID_HEADER,
   getEngineRequestId,
@@ -109,80 +107,39 @@ export async function createApp(resolver: ConnectorResolver) {
     })
   })
 
-  /** Node.js 24 sets c.req.raw.body to a non-null empty ReadableStream even for bodyless POSTs. */
-  function hasBody(c: { req: { header: (name: string) => string | undefined } }): boolean {
-    const cl = c.req.header('Content-Length')
-    if (cl !== undefined) return Number(cl) > 0
-    if (c.req.header('Transfer-Encoding')) return true
-    return false
-  }
-
-  // ── Typed header schemas (transform + pipe for runtime validation,
-  //    .meta({ param: { content } }) for OAS content encoding) ────
+  // ── JSON body schemas ────────────────────────────────────────
 
   const {
     PipelineConfig: TypedPipelineConfig,
-    SourceInputMessage,
     sourceConfigNames,
     destConfigNames,
   } = createConnectorSchemas(resolver)
 
-  const jsonParse = (s: string, ctx: z.RefinementCtx) => {
-    try {
-      return JSON.parse(s)
-    } catch {
-      ctx.addIssue({ code: 'custom', message: 'Invalid JSON' })
-      return z.NEVER
-    }
-  }
-
-  const xPipelineHeader = z
-    .string()
-    .transform(jsonParse)
-    .pipe(TypedPipelineConfig)
-    .meta({
-      description: 'JSON-encoded PipelineConfig',
-      param: { content: { 'application/json': {} } },
-    })
-
-  const xStateHeader = z
-    .string()
-    .transform(jsonParse)
-    .pipe(SyncState.catch(emptySyncState()))
-    .optional()
-    .meta({
+  const pipelineRequestBody = z.object({
+    pipeline: TypedPipelineConfig,
+    only: z.enum(['source', 'destination']).optional().meta({
       description:
-        'JSON-encoded SyncState ({ source, destination, sync_run }). Falls back to empty state if invalid.',
-      param: { content: { 'application/json': {} } },
-    })
-
-  const xSourceHeader = z
-    .string()
-    .transform(jsonParse)
-    .pipe(z.object({ type: z.string() }).catchall(z.unknown()))
-    .meta({
-      description: 'JSON-encoded source config ({ type, ...config })',
-      param: { content: { 'application/json': {} } },
-    })
-
-  const pipelineHeaders = z.object({ 'x-pipeline': xPipelineHeader })
-  const sourceHeaders = z.object({ 'x-source': xSourceHeader })
-  const allSyncHeaders = z.object({
-    'x-pipeline': xPipelineHeader,
-    'x-state': xStateHeader,
+        'Run only the source or destination side. Useful for optimistic destination setup or isolating a connector when debugging.',
+    }),
   })
 
-  function requireHeaderValue<T>(value: T | undefined, message: string): T {
-    if (value === undefined) throw new HTTPException(400, { message })
-    return value
-  }
-
-  const syncQueryParams = z.object({
-    time_limit: z.coerce.number().positive().optional().meta({
-      description: 'Stop streaming after N seconds.',
-      example: '300',
+  const sourceRequestBody = z.object({
+    source: z.object({ type: z.string() }).catchall(z.unknown()).meta({
+      description: 'Source config ({ type, ...config })',
     }),
-    soft_time_limit: z.coerce
+  })
+
+  const syncRequestBody = z.object({
+    pipeline: TypedPipelineConfig,
+    state: SyncState.catch(emptySyncState()).optional().meta({
+      description:
+        'SyncState ({ source, destination, sync_run }). Falls back to empty state if invalid.',
+    }),
+    time_limit: z.number().positive().optional().meta({
+      description: 'Stop streaming after N seconds.',
+      example: 300,
+    }),
+    soft_time_limit: z
       .number()
       .positive()
       .optional()
@@ -191,11 +148,18 @@ export async function createApp(resolver: ConnectorResolver) {
           'Soft wall-clock deadline in seconds. Stops reading from the source ' +
           'between messages; the destination continues to drain and flush until ' +
           'time_limit fires.',
-        example: '150',
+        example: 150,
       }),
     run_id: z.string().optional().meta({
       description: 'Optional sync run identifier used to track bounded sync progress.',
       example: 'run_demo',
+    }),
+  })
+
+  const writeRequestBody = z.object({
+    pipeline: TypedPipelineConfig,
+    messages: z.array(MessageSchema).meta({
+      description: 'Array of messages to write to the destination.',
     }),
   })
 
@@ -245,14 +209,6 @@ export async function createApp(resolver: ConnectorResolver) {
       )
   )
 
-  const onlyQueryParam = z.object({
-    only: z.enum(['source', 'destination']).optional().meta({
-      description:
-        'Run only the source or destination side. Useful for optimistic destination setup (e.g. creating tables early in a UI) or isolating a connector when debugging.',
-      example: 'destination',
-    }),
-  })
-
   const pipelineCheckRoute = createRoute({
     operationId: 'pipeline_check',
     method: 'post',
@@ -261,8 +217,11 @@ export async function createApp(resolver: ConnectorResolver) {
     summary: 'Check connector connection',
     description:
       'Validates the source/destination config and tests connectivity. Streams NDJSON messages (connection_status, log, trace) tagged with _emitted_by. ' +
-      'Pass ?only=source or ?only=destination to check a single side.',
-    requestParams: { header: pipelineHeaders, query: onlyQueryParam },
+      'Pass only=source or only=destination to check a single side.',
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: pipelineRequestBody } },
+    },
     responses: {
       200: {
         description: 'NDJSON stream of check messages',
@@ -272,11 +231,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineCheckRoute, async (c) => {
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    const only = c.req.valid('query').only
+    const { pipeline, only } = c.req.valid('json')
     const context = { path: '/pipeline_check', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
       logApiStream(
@@ -295,8 +250,11 @@ export async function createApp(resolver: ConnectorResolver) {
     summary: 'Set up destination schema',
     description:
       'Creates destination tables and applies migrations. Streams NDJSON messages (control, log, trace) tagged with _emitted_by. ' +
-      'Pass ?only=destination to run destination setup alone (e.g. optimistic table creation) or ?only=source to isolate the source.',
-    requestParams: { header: pipelineHeaders, query: onlyQueryParam },
+      'Pass only=destination to run destination setup alone (e.g. optimistic table creation) or only=source to isolate the source.',
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: pipelineRequestBody } },
+    },
     responses: {
       200: {
         description: 'NDJSON stream of setup messages',
@@ -306,11 +264,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineSetupRoute, async (c) => {
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    const only = c.req.valid('query').only
+    const { pipeline, only } = c.req.valid('json')
     const context = { path: '/pipeline_setup', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
       logApiStream(
@@ -329,8 +283,11 @@ export async function createApp(resolver: ConnectorResolver) {
     summary: 'Tear down destination schema',
     description:
       'Drops destination tables. Streams NDJSON messages (log, trace) tagged with _emitted_by. ' +
-      'Pass ?only=destination or ?only=source to run a single side.',
-    requestParams: { header: pipelineHeaders, query: onlyQueryParam },
+      'Pass only=destination or only=source to run a single side.',
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: pipelineRequestBody } },
+    },
     responses: {
       200: {
         description: 'NDJSON stream of teardown messages',
@@ -340,11 +297,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineTeardownRoute, async (c) => {
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    const only = c.req.valid('query').only
+    const { pipeline, only } = c.req.valid('json')
     const context = { path: '/pipeline_teardown', ...syncRequestContext(pipeline) }
     return ndjsonResponse(
       logApiStream(
@@ -362,7 +315,10 @@ export async function createApp(resolver: ConnectorResolver) {
     tags: ['Stateless Sync API'],
     summary: 'Discover available streams',
     description: 'Streams NDJSON messages (catalog, logs, traces) for the configured source.',
-    requestParams: { header: sourceHeaders },
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: sourceRequestBody } },
+    },
     responses: {
       200: {
         description: 'NDJSON stream of discover messages',
@@ -372,10 +328,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(sourceDiscoverRoute, async (c) => {
-    const source = requireHeaderValue(
-      c.req.valid('header')['x-source'],
-      'x-source header is required'
-    )
+    const { source } = c.req.valid('json')
     const context = { path: '/source_discover', sourceName: source.type }
     return ndjsonResponse(
       logApiStream('Engine API /source_discover', engine.source_discover(source), context)
@@ -388,16 +341,10 @@ export async function createApp(resolver: ConnectorResolver) {
     path: '/pipeline_read',
     tags: ['Stateless Sync API'],
     summary: 'Read records from source',
-    description:
-      'Streams NDJSON messages (records, state, catalog). Optional NDJSON body provides live events as input.',
-    requestParams: { header: allSyncHeaders, query: syncQueryParams },
+    description: 'Streams NDJSON messages (records, state, catalog).',
     requestBody: {
-      required: false,
-      content: {
-        'application/x-ndjson': {
-          schema: SourceInputMessage ? ndjsonRef.SourceInputMessage : ndjsonRef.Message,
-        },
-      },
+      required: true,
+      content: { 'application/json': { schema: syncRequestBody } },
     },
     responses: {
       200: {
@@ -408,33 +355,9 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineReadRoute, async (c) => {
-    const { time_limit } = c.req.valid('query')
+    const { pipeline, state, time_limit } = c.req.valid('json')
 
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    const state = c.req.valid('header')['x-state']
-    let input: AsyncIterable<unknown> | undefined
-
-    if (hasBody(c)) {
-      if (SourceInputMessage) {
-        input = (async function* () {
-          for await (const msg of verboseInput(
-            'pipeline_read',
-            parseNdjsonStream(c.req.raw.body!)
-          )) {
-            const parsed = SourceInputMessage.parse(msg)
-            yield (parsed as { source_input: unknown }).source_input
-          }
-        })()
-      } else {
-        input = verboseInput('pipeline_read', parseNdjsonStream(c.req.raw.body!))
-      }
-    }
-
-    const inputPresent = !!input
-    const context = { path: '/pipeline_read', inputPresent, ...syncRequestContext(pipeline) }
+    const context = { path: '/pipeline_read', ...syncRequestContext(pipeline) }
     const startedAt = Date.now()
     log.info(context, 'Engine API /pipeline_read started')
 
@@ -445,7 +368,7 @@ export async function createApp(resolver: ConnectorResolver) {
       )
     const ac = createConnectionAbort(c, onDisconnect)
 
-    const output = engine.pipeline_read(pipeline, { state, time_limit }, input)
+    const output = engine.pipeline_read(pipeline, { state, time_limit })
     return ndjsonResponse(logApiStream('Engine API /pipeline_read', output, context, startedAt), {
       signal: ac.signal,
     })
@@ -458,13 +381,10 @@ export async function createApp(resolver: ConnectorResolver) {
     tags: ['Stateless Sync API'],
     summary: 'Write records to destination',
     description:
-      'Reads NDJSON messages from the request body and writes them to the destination. Pipe /read output as input.',
-    requestParams: { header: pipelineHeaders },
+      'Writes messages to the destination. Pass an array of messages in the request body.',
     requestBody: {
       required: true,
-      content: {
-        'application/x-ndjson': { schema: ndjsonRef.Message },
-      },
+      content: { 'application/json': { schema: writeRequestBody } },
     },
     responses: {
       200: {
@@ -475,22 +395,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineWriteRoute, async (c) => {
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    let messages: AsyncIterable<Message>
-
-    if (hasBody(c)) {
-      messages = verboseInput(
-        'pipeline_write',
-        parseNdjsonStream<Message>(c.req.raw.body!)
-      ) as AsyncIterable<Message>
-    } else {
-      const context = { path: '/pipeline_write', ...syncRequestContext(pipeline) }
-      log.error(context, 'Engine API /write missing request body')
-      return c.json({ error: 'Request body required for /write' }, 400)
-    }
+    const { pipeline, messages } = c.req.valid('json')
 
     const context = { path: '/pipeline_write', ...syncRequestContext(pipeline) }
     const startedAt = Date.now()
@@ -503,10 +408,14 @@ export async function createApp(resolver: ConnectorResolver) {
       )
     const ac = createConnectionAbort(c, onDisconnect)
 
+    async function* iter(): AsyncIterable<Message> {
+      for (const m of messages) yield m as Message
+    }
+
     return ndjsonResponse(
       logApiStream(
         'Engine API /write',
-        engine.pipeline_write(pipeline, messages),
+        engine.pipeline_write(pipeline, iter()),
         context,
         startedAt
       ),
@@ -520,17 +429,10 @@ export async function createApp(resolver: ConnectorResolver) {
     path: '/pipeline_sync',
     tags: ['Stateless Sync API'],
     summary: 'Run sync pipeline (read → write)',
-    description:
-      'Without a request body, reads from the source connector and writes to the destination (backfill mode). ' +
-      'With an NDJSON request body, uses the provided messages as input instead of reading from the source (push mode — e.g. piped webhook events).',
-    requestParams: { header: allSyncHeaders, query: syncQueryParams },
+    description: 'Reads from the source connector and writes to the destination (backfill mode).',
     requestBody: {
-      required: false,
-      content: {
-        'application/x-ndjson': {
-          schema: SourceInputMessage ? ndjsonRef.SourceInputMessage : ndjsonRef.Message,
-        },
-      },
+      required: true,
+      content: { 'application/json': { schema: syncRequestBody } },
     },
     responses: {
       200: {
@@ -541,30 +443,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineSyncRoute, async (c) => {
-    const { time_limit, soft_time_limit, run_id } = c.req.valid('query')
-
-    const pipeline = requireHeaderValue(
-      c.req.valid('header')['x-pipeline'],
-      'x-pipeline header is required'
-    )
-    const state = c.req.valid('header')['x-state']
-    let input: AsyncIterable<unknown> | undefined
-
-    if (hasBody(c)) {
-      if (SourceInputMessage) {
-        input = (async function* () {
-          for await (const msg of verboseInput(
-            'pipeline_sync',
-            parseNdjsonStream(c.req.raw.body!)
-          )) {
-            const parsed = SourceInputMessage.parse(msg)
-            yield (parsed as { source_input: unknown }).source_input
-          }
-        })()
-      } else {
-        input = verboseInput('pipeline_sync', parseNdjsonStream(c.req.raw.body!))
-      }
-    }
+    const { pipeline, state, time_limit, soft_time_limit, run_id } = c.req.valid('json')
 
     const context = { path: '/pipeline_sync', ...syncRequestContext(pipeline) }
     const startedAt = Date.now()
@@ -576,11 +455,7 @@ export async function createApp(resolver: ConnectorResolver) {
       )
     const ac = createConnectionAbort(c, onDisconnect)
 
-    const output = engine.pipeline_sync(
-      pipeline,
-      { state, time_limit, soft_time_limit, run_id },
-      input
-    )
+    const output = engine.pipeline_sync(pipeline, { state, time_limit, soft_time_limit, run_id })
 
     const heartbeat = setInterval(() => {
       log.info(
@@ -708,7 +583,7 @@ export async function createApp(resolver: ConnectorResolver) {
         title: 'Stripe Sync Engine',
         version: '1.0.0',
         description:
-          'Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via the `X-Pipeline` header (JSON-encoded PipelineConfig). Optional cursor state can be provided via `X-State`.',
+          'Stripe Sync Engine — stateless, one-shot source/destination sync over HTTP.\nAll sync endpoints accept configuration via a JSON request body.',
       },
       // Register NDJSON message schemas as components (used via raw $ref in routes
       // to avoid zod-openapi generating *Output duplicates for dual-use schemas).
@@ -721,7 +596,6 @@ export async function createApp(resolver: ConnectorResolver) {
           CheckOutput: CheckOutputSchema,
           SetupOutput: SetupOutputSchema,
           TeardownOutput: TeardownOutputSchema,
-          ...(SourceInputMessage ? { SourceInputMessage } : {}),
         },
       },
     })
