@@ -655,7 +655,7 @@ describe('POST /write', () => {
       '/pipeline_write',
       jsonBody({
         pipeline: testPipeline,
-        messages,
+        $stdin: messages,
       })
     )
 

@@ -1085,7 +1085,7 @@ export interface operations {
                 "application/json": {
                     pipeline: components["schemas"]["PipelineConfig"];
                     /** @description Array of messages to write to the destination. */
-                    messages: components["schemas"]["Message"][];
+                    $stdin: components["schemas"]["Message"][];
                 };
             };
         };

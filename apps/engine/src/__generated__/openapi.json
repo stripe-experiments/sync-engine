@@ -428,7 +428,7 @@
                   "pipeline": {
                     "$ref": "#/components/schemas/PipelineConfig"
                   },
-                  "messages": {
+                  "$stdin": {
                     "type": "array",
                     "items": {
                       "$ref": "#/components/schemas/Message"
@@ -438,7 +438,7 @@
                 },
                 "required": [
                   "pipeline",
-                  "messages"
+                  "$stdin"
                 ]
               }
             }

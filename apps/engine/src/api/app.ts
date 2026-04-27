@@ -158,7 +158,7 @@ export async function createApp(resolver: ConnectorResolver) {
 
   const writeRequestBody = z.object({
     pipeline: TypedPipelineConfig,
-    messages: z.array(MessageSchema).meta({
+    $stdin: z.array(MessageSchema).meta({
       description: 'Array of messages to write to the destination.',
     }),
   })
@@ -395,7 +395,7 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineWriteRoute, async (c) => {
-    const { pipeline, messages } = c.req.valid('json')
+    const { pipeline, $stdin: messages } = c.req.valid('json')
 
     const context = { path: '/pipeline_write', ...syncRequestContext(pipeline) }
     const startedAt = Date.now()
