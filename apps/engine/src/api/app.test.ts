@@ -639,6 +639,43 @@ describe('POST /read', () => {
     expect(dataEvents[1]!.type).toBe('source_state')
     expect(dataEvents[2]).toMatchObject({ type: 'eof', eof: { has_more: false } })
   })
+
+  it('unwraps source_input envelopes before passing to source', async () => {
+    const app = await createApp(resolver)
+
+    const record = {
+      type: 'record',
+      record: {
+        stream: 'customers',
+        data: { id: 'cus_wrapped' },
+        emitted_at: new Date().toISOString(),
+      },
+    }
+    const state = {
+      type: 'source_state',
+      source_state: { stream: 'customers', data: { cursor: '1' } },
+    }
+
+    const rawRes = await app.request(
+      '/pipeline_read',
+      jsonBody({ pipeline: testPipeline, stdin: [record, state] })
+    )
+    const wrappedRes = await app.request(
+      '/pipeline_read',
+      jsonBody({
+        pipeline: testPipeline,
+        stdin: [
+          { type: 'source_input', source_input: record },
+          { type: 'source_input', source_input: state },
+        ],
+      })
+    )
+
+    expect(wrappedRes.status).toBe(200)
+    const rawEvents = (await readNdjson<Message>(rawRes)).filter((e) => e.type !== 'log')
+    const wrappedEvents = (await readNdjson<Message>(wrappedRes)).filter((e) => e.type !== 'log')
+    expect(wrappedEvents).toEqual(rawEvents)
+  })
 })
 
 describe('POST /write', () => {
@@ -713,6 +750,43 @@ describe('POST /sync', () => {
     expect(stateAndEof).toHaveLength(2)
     expect(stateAndEof[0]!.type).toBe('source_state')
     expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { has_more: false } })
+  })
+
+  it('unwraps source_input envelopes before passing to source', async () => {
+    const app = await createApp(resolver)
+
+    const record = {
+      type: 'record',
+      record: {
+        stream: 'customers',
+        data: { id: 'cus_wrapped' },
+        emitted_at: new Date().toISOString(),
+      },
+    }
+    const state = {
+      type: 'source_state',
+      source_state: { stream: 'customers', data: { cursor: '1' } },
+    }
+
+    const rawRes = await app.request(
+      '/pipeline_sync',
+      jsonBody({ pipeline: testPipeline, stdin: [record, state] })
+    )
+    const wrappedRes = await app.request(
+      '/pipeline_sync',
+      jsonBody({
+        pipeline: testPipeline,
+        stdin: [
+          { type: 'source_input', source_input: record },
+          { type: 'source_input', source_input: state },
+        ],
+      })
+    )
+
+    expect(wrappedRes.status).toBe(200)
+    const rawEvents = (await readNdjson<Message>(rawRes)).filter((e) => e.type !== 'log')
+    const wrappedEvents = (await readNdjson<Message>(wrappedRes)).filter((e) => e.type !== 'log')
+    expect(wrappedEvents).toEqual(rawEvents)
   })
 })
 

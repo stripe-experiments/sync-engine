@@ -193,5 +193,77 @@ describeWithEnv(
       const { error: getAfter } = await c.GET('/pipelines/{id}', { params: { path: { id } } })
       expect(getAfter).toBeDefined()
     }, 240_000)
+
+    it('simulate_webhook_sync → events land in Postgres', async () => {
+      const c = api()
+      const stripeMockUrl = process.env.STRIPE_MOCK_URL
+      const createdAfter = Math.floor(Date.now() / 1000)
+
+      // Create a Stripe product so there's a known event to sync
+      const productRes = await fetch(
+        `${stripeMockUrl ?? 'https://api.stripe.com'}/v1/products`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${STRIPE_API_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: 'name=SimulateWebhookSyncTest',
+        }
+      )
+      expect(productRes.ok).toBe(true)
+      const product = (await productRes.json()) as { id: string }
+      console.log(`\n  Created product: ${product.id}`)
+
+      // Create pipeline
+      const { data: created, error: createErr } = await c.POST('/pipelines', {
+        body: {
+          source: {
+            type: 'stripe',
+            stripe: {
+              api_key: STRIPE_API_KEY,
+              api_version: BUNDLED_API_VERSION,
+              ...(stripeMockUrl ? { base_url: stripeMockUrl } : {}),
+            },
+          },
+          destination: {
+            type: 'postgres',
+            postgres: { url: POSTGRES_CONTAINER_URL, schema },
+          },
+          streams: [{ name: 'products' }],
+        },
+        params: { query: { skip_check: true } },
+      })
+      expect(createErr).toBeUndefined()
+      const id = created!.id
+      console.log(`  Pipeline: ${id}`)
+
+      // Setup destination tables
+      const setupRes = await fetch(`${SERVICE_URL}/pipelines/${id}/setup?only=destination`, {
+        method: 'POST',
+      })
+      expect(setupRes.status).toBe(200)
+      await setupRes.text()
+
+      // Run simulate_webhook_sync — fetches events since before product creation
+      const syncRes = await fetch(
+        `${SERVICE_URL}/pipelines/${id}/simulate_webhook_sync?created_after=${createdAfter}`,
+        { method: 'POST' }
+      )
+      expect(syncRes.status).toBe(200)
+      const syncBody = await syncRes.text()
+      expect(syncBody).toContain('"type":"eof"')
+
+      // Assert the product row landed in Postgres
+      const { rows } = await pool.query(
+        `SELECT id FROM "${schema}"."products" WHERE id = $1`,
+        [product.id]
+      )
+      expect(rows).toHaveLength(1)
+      console.log(`  Product ${product.id} found in Postgres ✓`)
+
+      // Cleanup
+      await c.DELETE('/pipelines/{id}', { params: { path: { id } } })
+    }, 120_000)
   }
 )
