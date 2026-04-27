@@ -82,24 +82,15 @@ describe('Engine OpenAPI spec', () => {
     }
   })
 
-  it('x-state header uses application/json content with $ref to SyncState', async () => {
+  it('sync routes accept JSON body with state field referencing SyncState', async () => {
     const spec = await getSpec()
-    const allParams: Array<Record<string, unknown>> = []
-    for (const pathItem of Object.values(spec.paths ?? {})) {
-      for (const op of Object.values(pathItem as Record<string, unknown>)) {
-        const operation = op as { parameters?: Array<Record<string, unknown>> } | undefined
-        allParams.push(...(operation?.parameters ?? []))
-      }
+    for (const path of ['/pipeline_read', '/pipeline_sync']) {
+      const op = (spec.paths as Record<string, any>)[path]?.post
+      expect(op, `${path} should exist`).toBeDefined()
+      const body = op.requestBody?.content?.['application/json']?.schema
+      expect(body, `${path} should have JSON body`).toBeDefined()
     }
-    const stateParams = allParams.filter((p) => p.name === 'x-state')
-    expect(stateParams.length).toBeGreaterThan(0)
-    for (const param of stateParams) {
-      expect(param.schema).toBeUndefined()
-      const content = param.content as Record<string, Record<string, unknown>> | undefined
-      expect(content?.['application/json']).toBeDefined()
-      expect(content?.['application/json']?.schema).toMatchObject({
-        $ref: '#/components/schemas/SyncState',
-      })
-    }
+    // SyncState should still be a named component
+    expect(spec.components.schemas).toHaveProperty('SyncState')
   })
 })

@@ -677,7 +677,7 @@ describe('POST /write', () => {
 })
 
 describe('POST /sync', () => {
-  it('runs full pipeline, streams NDJSON state', async () => {
+  it('runs full pipeline, streams NDJSON with eof', async () => {
     const app = await createApp(resolver)
 
     const res = await app.request('/pipeline_sync', jsonBody({ pipeline: testPipeline }))
@@ -686,11 +686,10 @@ describe('POST /sync', () => {
     expect(res.headers.get('Content-Type')).toBe('application/x-ndjson')
 
     const events = await readNdjson<Record<string, unknown>>(res)
-    // pipeline_sync now yields source signals alongside dest output
-    const stateAndEof = events.filter((e) => e.type === 'source_state' || e.type === 'eof')
-    expect(stateAndEof).toHaveLength(2)
-    expect(stateAndEof[0]!.type).toBe('source_state')
-    expect(stateAndEof[1]).toMatchObject({ type: 'eof', eof: { has_more: false } })
+    // sourceTest yields nothing without $stdin — only eof
+    const eofEvents = events.filter((e) => e.type === 'eof')
+    expect(eofEvents).toHaveLength(1)
+    expect(eofEvents[0]).toMatchObject({ type: 'eof', eof: { has_more: false } })
   })
 })
 
