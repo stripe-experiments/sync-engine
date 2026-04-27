@@ -537,18 +537,18 @@ describe('upsertMany standalone', () => {
 })
 
 describe('schema-driven CHECK constraints', () => {
-  function catalogWith(allowedAccountIds: string[]): ConfiguredCatalog {
+  function catalogWith(enumValues: string[], column = '_account_id'): ConfiguredCatalog {
     return {
       streams: [
         {
           stream: {
             name: 'charges',
-            primary_key: [['id'], ['_account_id']],
+            primary_key: [['id'], [column]],
             json_schema: {
               type: 'object',
               properties: {
                 id: { type: 'string' },
-                _account_id: { type: 'string', enum: allowedAccountIds },
+                [column]: { type: 'string', enum: enumValues },
               },
             },
           },
@@ -559,19 +559,19 @@ describe('schema-driven CHECK constraints', () => {
     }
   }
 
-  async function constraintDefs(): Promise<string[]> {
+  async function constraintDefs(table = 'charges'): Promise<string[]> {
     const { rows } = await pool.query(
       `SELECT pg_get_constraintdef(c.oid) AS def
        FROM pg_constraint c
        JOIN pg_class t ON t.oid = c.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'c'`,
-      [SCHEMA, 'charges']
+      [SCHEMA, table]
     )
     return rows.map((r) => r.def as string)
   }
 
-  it('enforces multi-account allow-list and rejects mismatched re-setups', async () => {
+  it('enforces enum allow-list and rejects mismatched re-setups', async () => {
     await drain(
       destination.setup!({
         config: makeConfig(),
@@ -604,7 +604,7 @@ describe('schema-driven CHECK constraints', () => {
     await expect(
       drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
     ).rejects.toThrow(
-      /allowed_account_ids changed.*charges.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
+      /enum values changed.*charges.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
     )
 
     // After dropping the constraint manually, the next setup installs the new one.

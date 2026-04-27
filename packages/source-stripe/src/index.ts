@@ -61,8 +61,8 @@ function deepFreeze<T>(obj: T): T {
   return Object.freeze(obj)
 }
 
-function resolveAllowedAccountIds(accountId: string, config: Config): string[] {
-  return [...new Set([accountId, ...(config.additional_allowed_account_ids ?? [])])]
+function resolveAllowedAccountIds(accountId: string, _config: Config): string[] {
+  return [accountId]
 }
 
 // MARK: - Spec

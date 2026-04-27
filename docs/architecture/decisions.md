@@ -134,7 +134,7 @@ that destinations can rely on without per-resource branching.
    exemption.
 2. **Postgres column shape** (`destination-postgres/src/schemaProjection.ts`):
    `_updated_at` is a hardcoded non-generated `timestamptz NOT NULL
-   DEFAULT now()` column at the top of every table. This shape is kept
+DEFAULT now()` column at the top of every table. This shape is kept
    for backward compat: existing deployments need no column migration.
    `jsonSchemaToColumns` skips `_updated_at` so it's never also emitted
    as a generated column on top of the hardcoded one. The
@@ -171,17 +171,17 @@ that destinations can rely on without per-resource branching.
   consume the catalog (introspection, OpenAPI generation, custom
   destinations) see the field and can decide their own projection.
 
-## DDR-010: `_account_id` enforcement in destinations
+## DDR-010: JSON Schema enum enforcement in destinations
 
-**Decision:** The pipeline-wide allow-list of account IDs rides on every stream's JSON Schema as `properties._account_id.enum`. Destinations translate it into a native write-time constraint. Scoped to `_account_id` only — not a generic `const`/`enum` mechanism.
+**Decision:** Any column with an `enum` array in a stream's JSON Schema gets a write-time constraint in the destination. Sources stamp the enum (e.g. `_account_id.enum: ["acct_123"]`) and destinations translate it into a native constraint — one per column.
 
-**Rationale:** Defense-in-depth — a bug must not let one account's `_raw_data` land in another's table. Reusing the JSON Schema channel keeps the existing schema-projection pipeline as the only DDL writer (no parallel "catalog metadata" surface), and `discoverCache` stays account-agnostic since the enum is stamped per call.
+**Rationale:** Defense-in-depth — the JSON Schema channel keeps the existing schema-projection pipeline as the only DDL writer (no parallel "catalog metadata" surface). The mechanism is generic: any enum-bearing property gets enforced, not just `_account_id`.
 
 **Mapping:**
 
-- **Postgres:** `ADD CONSTRAINT chk_<table>__account_id CHECK ((_raw_data->>'_account_id') IS NOT NULL AND (_raw_data->>'_account_id') IN (…)) NOT VALID`, wrapped in a `DO` block with `EXCEPTION WHEN duplicate_object OR undefined_table`. `NOT VALID` skips the existing-row scan so adopting the constraint never blocks a deploy. Values are restricted to `^acct_[A-Za-z0-9_]+$` before SQL interpolation.
-- **Google Sheets:** `setup()` writes a JSON-encoded `__allowed_account_ids__` row to the Overview sheet; `write()` validates each record's `_account_id` against the read-back set.
+- **Postgres:** `ADD CONSTRAINT chk_<table>_<column> CHECK ((_raw_data->>'<column>') IS NOT NULL AND (_raw_data->>'<column>') IN (…)) NOT VALID`, wrapped in a `DO` block with `EXCEPTION WHEN duplicate_object OR undefined_table`. `NOT VALID` skips the existing-row scan so adopting the constraint never blocks a deploy. Values use standard SQL single-quote escaping.
+- **Google Sheets:** `setup()` writes per-column `__enum_<column>__` marker rows to the Overview sheet; `write()` validates each record's enum-constrained columns against the read-back set.
 
 **Mismatch is fail-loud.** `ADD CONSTRAINT` would silently no-op via `duplicate_object`, so both destinations diff the catalog enum against the existing constraint / Overview row at the top of `setup()` and throw a guiding error (naming both lists and the manual mitigation) when they differ. Same-list re-runs stay idempotent.
 
-**Source side:** Stripe's `discover()` trusts `config.account_id` when populated (otherwise one `GET /v1/account`) and stamps `[account_id, ...config.additional_allowed_account_ids]` onto every stream via `stampAccountIdEnum`. The cache holds an account-neutral catalog. A stale `config.account_id` silently propagates — orchestrator keeps it in sync with the API key (deliberate latency tradeoff, see PR #339).
+**Source side:** Stripe's `discover()` trusts `config.account_id` when populated (otherwise one `GET /v1/account`) and stamps `[account_id]` onto every stream via `stampAccountIdEnum`. The cache holds an account-neutral catalog.

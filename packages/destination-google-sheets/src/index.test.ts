@@ -11,7 +11,7 @@ import {
 import {
   applyBatch,
   MAX_CELLS_PER_SPREADSHEET,
-  readAllowedValues,
+  readEnumConstraints,
   readSheet,
   type StreamBatchOps,
 } from './writer.js'
@@ -1854,8 +1854,8 @@ describe('_updated_at column (source-owned, passthrough)', () => {
   })
 })
 
-describe('pipeline-wide allowed account IDs', () => {
-  function catalogWith(allowedAccountIds: string[]): ConfiguredCatalog {
+describe('enum constraints on any column', () => {
+  function catalogWith(enumValues: string[], column = '_account_id'): ConfiguredCatalog {
     return {
       streams: [
         {
@@ -1867,7 +1867,7 @@ describe('pipeline-wide allowed account IDs', () => {
               type: 'object',
               properties: {
                 id: { type: 'string' },
-                _account_id: { type: 'string', enum: allowedAccountIds },
+                [column]: { type: 'string', enum: enumValues },
               },
             },
           },
@@ -1878,7 +1878,7 @@ describe('pipeline-wide allowed account IDs', () => {
     }
   }
 
-  it('setup writes the allow-list to Overview; write rejects mismatches', async () => {
+  it('setup writes enum constraints to Overview; write rejects mismatches', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
     const catalog = catalogWith(['acct_123', 'acct_456'])
@@ -1888,8 +1888,8 @@ describe('pipeline-wide allowed account IDs', () => {
     const spreadsheetId = getSpreadsheetIds()[0]
 
     expect(await readSheet(sheets, spreadsheetId, 'Overview')).toContainEqual([
-      'Allowed account IDs',
-      JSON.stringify(['acct_123', 'acct_456']),
+      'Allowed values for _account_id',
+      'acct_123,acct_456',
     ])
 
     const out = await collect(
@@ -1912,15 +1912,15 @@ describe('pipeline-wide allowed account IDs', () => {
     ).toMatch(/_account_id.*acct_999/)
   })
 
-  it('round-trips allowed values that are not safe comma-separated text', async () => {
+  it('round-trips enum values via Overview sheet', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
-    const catalog = catalogWith(['acct,comma', ' spaced ', ''])
+    const catalog = catalogWith(['val_a', 'val_b', 'val_c'], 'status')
     for await (const msg of dest.setup!({ config: cfg(), catalog })) {
       void msg
     }
 
-    const allowed = await readAllowedValues(sheets, getSpreadsheetIds()[0])
-    expect([...(allowed ?? [])]).toEqual(['acct,comma', ' spaced ', ''])
+    const constraints = await readEnumConstraints(sheets, getSpreadsheetIds()[0])
+    expect([...(constraints.get('status') ?? [])]).toEqual(['val_a', 'val_b', 'val_c'])
   })
 })

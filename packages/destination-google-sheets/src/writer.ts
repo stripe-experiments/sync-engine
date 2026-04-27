@@ -290,7 +290,13 @@ function parseUpdatedRows(updatedRange: string): { startRow: number; endRow: num
   }
 }
 
-const ALLOWED_ACCOUNT_IDS_MARKER = '__allowed_account_ids__'
+/** Marker prefix for enum constraint rows in the Overview sheet. */
+const ENUM_MARKER_PREFIX = '__enum_'
+const ENUM_MARKER_SUFFIX = '__'
+
+function enumMarker(columnName: string): string {
+  return `${ENUM_MARKER_PREFIX}${columnName}${ENUM_MARKER_SUFFIX}`
+}
 
 function isSheetNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false
@@ -310,7 +316,7 @@ export async function ensureIntroSheet(
   spreadsheetId: string,
   meta: SpreadsheetMeta,
   streamNames: string[],
-  allowedAccountIds?: string[]
+  enumConstraints?: Map<string, string[]>
 ): Promise<void> {
   const TITLE = 'Overview'
   const hasOverview = meta.sheets.some((s) => s.title === TITLE)
@@ -366,12 +372,11 @@ export async function ensureIntroSheet(
     ['⚠️  Do not edit data in the synced tabs. Changes will be overwritten on the next sync.'],
   ]
 
-  if (allowedAccountIds) {
-    rows.push(
-      [''],
-      [ALLOWED_ACCOUNT_IDS_MARKER],
-      ['Allowed account IDs', JSON.stringify(allowedAccountIds)]
-    )
+  if (enumConstraints && enumConstraints.size > 0) {
+    rows.push([''])
+    for (const [col, values] of enumConstraints) {
+      rows.push([enumMarker(col)], [`Allowed values for ${col}`, values.join(',')])
+    }
   }
 
   await withRetry(() =>
@@ -385,14 +390,15 @@ export async function ensureIntroSheet(
 }
 
 /**
- * Read the pipeline-wide `_account_id` allow-list from the Overview sheet.
- * Returns `undefined` when no allow-list has been written.
+ * Read all enum allow-lists from the Overview sheet.
+ * Returns a Map<columnName, Set<allowedValues>>. Empty map when none written.
  */
-export async function readAllowedValues(
+export async function readEnumConstraints(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string
-): Promise<Set<string> | undefined> {
-  // Treat "Overview tab not present yet" as an empty allow-list. Any other
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>()
+  // Treat "Overview tab not present yet" as no constraints. Any other
   // error (auth, network, quota) must propagate so callers can fail loud.
   const res = await sheets.spreadsheets.values
     .get({ spreadsheetId, range: `'Overview'!A:B` })
@@ -401,19 +407,25 @@ export async function readAllowedValues(
       throw err
     })
   const values = (res?.data.values ?? []) as unknown[][]
-  const markerIdx = values.findIndex((r) => r?.[0] === ALLOWED_ACCOUNT_IDS_MARKER)
-  if (markerIdx < 0) return undefined
-  const row = values[markerIdx + 1] ?? []
-  const joined = typeof row[1] === 'string' ? row[1] : ''
-  try {
-    const parsed = JSON.parse(joined) as unknown
-    if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string') && parsed.length > 0) {
-      return new Set(parsed as string[])
-    }
-  } catch {
-    // ignore malformed payload
+  for (let i = 0; i < values.length; i++) {
+    const cell = values[i]?.[0]
+    if (
+      typeof cell !== 'string' ||
+      !cell.startsWith(ENUM_MARKER_PREFIX) ||
+      !cell.endsWith(ENUM_MARKER_SUFFIX)
+    )
+      continue
+    const col = cell.slice(ENUM_MARKER_PREFIX.length, -ENUM_MARKER_SUFFIX.length)
+    if (!col) continue
+    const row = values[i + 1] ?? []
+    const joined = typeof row[1] === 'string' ? row[1] : ''
+    const vals = joined
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+    if (vals.length > 0) out.set(col, new Set(vals))
   }
-  return undefined
+  return out
 }
 
 /**

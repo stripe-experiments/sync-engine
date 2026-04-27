@@ -30,7 +30,7 @@ import {
   createSpreadsheet,
   findSheetId,
   protectSheets,
-  readAllowedValues,
+  readEnumConstraints,
   readHeaderRow,
   type BatchReadRequest,
   type StreamBatchOps,
@@ -195,32 +195,44 @@ export function createDestination(
       const streamNames = catalog.streams.map((s) => s.stream.name)
       const metaAfterEnsure = await getSpreadsheetMeta(sheets, spreadsheetId)
 
-      // Allow-list rides on every stream's `_account_id.enum` (DDR-010);
-      // the source stamps the same enum on every stream, so the first
-      // one is representative.
+      // Collect all enum constraints from stream schemas. The source stamps
+      // the same enums on every stream, so the first one is representative.
+      const enumConstraints = new Map<string, string[]>()
       const firstSchema = catalog.streams[0]?.stream.json_schema
-      const properties = firstSchema?.properties as Record<string, unknown> | undefined
-      const accountIdProp = properties?.['_account_id'] as { enum?: string[] } | undefined
-      const allowedAccountIds = accountIdProp?.enum
-
-      // Fail loud on a changed allow-list (DDR-010); silent overwrites would mask misconfig.
-      const existing = allowedAccountIds?.length
-        ? await readAllowedValues(sheets, spreadsheetId)
-        : undefined
-      const next = new Set(allowedAccountIds ?? [])
-      if (
-        existing?.size &&
-        (existing.size !== next.size || ![...existing].every((v) => next.has(v)))
-      ) {
-        const fmt = (s: Set<string>) => [...s].sort().join(', ')
-        throw new Error(
-          `Google Sheets destination: allowed_account_ids changed for spreadsheet ${spreadsheetId}. ` +
-            `Existing Overview row allows [${fmt(existing)}]; new catalog wants [${fmt(next)}]. ` +
-            `Edit the __allowed_account_ids__ row in Overview (or remove it) before re-running setup.`
-        )
+      const properties = firstSchema?.properties as Record<string, { enum?: string[] }> | undefined
+      if (properties) {
+        for (const [col, prop] of Object.entries(properties)) {
+          if (Array.isArray(prop?.enum) && prop.enum.length > 0) {
+            enumConstraints.set(col, prop.enum)
+          }
+        }
       }
 
-      await ensureIntroSheet(sheets, spreadsheetId, metaAfterEnsure, streamNames, allowedAccountIds)
+      // Fail loud on changed enum lists; silent overwrites would mask misconfig.
+      if (enumConstraints.size > 0) {
+        const existing = await readEnumConstraints(sheets, spreadsheetId)
+        for (const [col, newVals] of enumConstraints) {
+          const existingVals = existing.get(col)
+          if (!existingVals) continue
+          const nextSet = new Set(newVals)
+          if (existingVals.size === nextSet.size && [...existingVals].every((v) => nextSet.has(v)))
+            continue
+          const fmt = (s: Set<string> | string[]) => [...s].sort().join(', ')
+          throw new Error(
+            `Google Sheets destination: enum values changed for "${col}" in spreadsheet ${spreadsheetId}. ` +
+              `Existing Overview row allows [${fmt(existingVals)}]; new catalog wants [${fmt(newVals)}]. ` +
+              `Edit the ${col} enum row in Overview (or remove it) before re-running setup.`
+          )
+        }
+      }
+
+      await ensureIntroSheet(
+        sheets,
+        spreadsheetId,
+        metaAfterEnsure,
+        streamNames,
+        enumConstraints.size > 0 ? enumConstraints : undefined
+      )
 
       await protectSheets(sheets, spreadsheetId, metaAfterEnsure, sheetIds)
 
@@ -276,10 +288,10 @@ export function createDestination(
         ? config.spreadsheet_id
         : await createSpreadsheet(sheets, config.spreadsheet_title)
 
-      // For Google Sheets we still read the allow-list from the Overview sheet
-      // (it was written during setup). The JSON Schema enum is the source of truth
-      // but we keep the existing read-back validation for defense-in-depth.
-      const allowedAccountIds = await readAllowedValues(sheets, spreadsheetId)
+      // Read enum constraints from the Overview sheet (written during setup).
+      // The JSON Schema enum is the source of truth but we keep the existing
+      // read-back validation for defense-in-depth.
+      const enumConstraints = await readEnumConstraints(sheets, spreadsheetId)
 
       // Per-stream state: column headers plus buffered appends/updates/deletes.
       const streamHeaders = new Map<string, string[]>()
@@ -717,15 +729,14 @@ export function createDestination(
               )
             }
 
-            if (allowedAccountIds) {
+            for (const [col, allowed] of enumConstraints) {
               const value =
-                Object.prototype.hasOwnProperty.call(cleanData, '_account_id') &&
-                cleanData._account_id !== undefined
-                  ? String(cleanData._account_id ?? '')
+                Object.prototype.hasOwnProperty.call(cleanData, col) && cleanData[col] !== undefined
+                  ? String(cleanData[col] ?? '')
                   : undefined
-              if (value === undefined || !allowedAccountIds.has(value)) {
+              if (value === undefined || !allowed.has(value)) {
                 throw new Error(
-                  `Sheets rejected ${stream}._account_id=${JSON.stringify(value)} (not in ${[...allowedAccountIds].join(',')})`
+                  `Sheets rejected ${stream}.${col}=${JSON.stringify(value)} (not in ${[...allowed].join(',')})`
                 )
               }
             }

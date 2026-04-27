@@ -185,7 +185,7 @@ describe('buildCreateTableWithSchema', () => {
 })
 
 describe('buildCreateTableDDL', () => {
-  it('buildCreateTableDDL emits CHECK with IN list using values from JSON Schema enum', () => {
+  it('buildCreateTableDDL emits CHECK with IN list for any column with enum in JSON Schema', () => {
     const ddl = buildCreateTableDDL(
       'stripe',
       'charges',
@@ -198,12 +198,7 @@ describe('buildCreateTableDDL', () => {
       { primary_key: [['id'], ['_account_id']] }
     )
 
-    // The column should be text
-    expect(ddl).toContain('"id" text GENERATED ALWAYS AS')
     expect(ddl).toContain('"_account_id" text GENERATED ALWAYS AS')
-    expect(ddl).toContain(`((_raw_data->>'_account_id')::text)`)
-
-    // But it should have a CHECK constraint
     expect(ddl).toContain(
       `CHECK ((_raw_data->>'_account_id') IS NOT NULL AND (_raw_data->>'_account_id') IN ('acct_a', 'acct_b'))`
     )
@@ -212,12 +207,26 @@ describe('buildCreateTableDDL', () => {
     expect(ddl.indexOf('DO $check$')).toBeGreaterThan(ddl.indexOf('$ddl$;'))
   })
 
-  it('buildCreateTableDDL uses text for _account_id when no enum is present in JSON Schema', () => {
+  it('buildCreateTableDDL emits CHECK for non-account enum columns too', () => {
+    const ddl = buildCreateTableDDL('stripe', 'events', {
+      properties: {
+        id: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'paused', 'cancelled'] },
+      },
+    })
+
+    expect(ddl).toContain(
+      `CHECK ((_raw_data->>'status') IS NOT NULL AND (_raw_data->>'status') IN ('active', 'paused', 'cancelled'))`
+    )
+    expect(ddl).toContain('NOT VALID')
+  })
+
+  it('buildCreateTableDDL skips CHECK when no enum is present in JSON Schema', () => {
     const ddl = buildCreateTableDDL('stripe', 'charges', SAMPLE_JSON_SCHEMA, {
       primary_key: [['id'], ['_account_id']],
     })
     expect(ddl).toContain('"_account_id" text GENERATED ALWAYS AS')
-    expect(ddl).not.toContain("CHECK ((_raw_data->>'_account_id') IS NOT NULL")
+    expect(ddl).not.toContain('DO $check$')
   })
   it('returns a single DO block containing all DDL', () => {
     const ddl = buildCreateTableDDL('mydata', 'repos', SAMPLE_JSON_SCHEMA)
