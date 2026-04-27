@@ -200,17 +200,14 @@ describeWithEnv(
       const createdAfter = Math.floor(Date.now() / 1000)
 
       // Create a Stripe product so there's a known event to sync
-      const productRes = await fetch(
-        `${stripeMockUrl ?? 'https://api.stripe.com'}/v1/products`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${STRIPE_API_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: 'name=SimulateWebhookSyncTest',
-        }
-      )
+      const productRes = await fetch(`${stripeMockUrl ?? 'https://api.stripe.com'}/v1/products`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${STRIPE_API_KEY}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'name=SimulateWebhookSyncTest',
+      })
       expect(productRes.ok).toBe(true)
       const product = (await productRes.json()) as { id: string }
       console.log(`\n  Created product: ${product.id}`)
@@ -255,10 +252,9 @@ describeWithEnv(
       expect(syncBody).toContain('"type":"eof"')
 
       // Assert the product row landed in Postgres
-      const { rows } = await pool.query(
-        `SELECT id FROM "${schema}"."products" WHERE id = $1`,
-        [product.id]
-      )
+      const { rows } = await pool.query(`SELECT id FROM "${schema}"."products" WHERE id = $1`, [
+        product.id,
+      ])
       expect(rows).toHaveLength(1)
       console.log(`  Product ${product.id} found in Postgres ✓`)
 

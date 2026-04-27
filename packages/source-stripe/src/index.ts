@@ -301,14 +301,7 @@ export function createStripeSource(
                 )
               } else {
                 const event = stripeEventSchema.parse(input)
-                yield* processStripeEvent(
-                  event,
-                  config,
-                  catalog,
-                  registry,
-                  streamNames,
-                  accountId
-                )
+                yield* processStripeEvent(event, config, catalog, registry, streamNames, accountId)
               }
             }
             return

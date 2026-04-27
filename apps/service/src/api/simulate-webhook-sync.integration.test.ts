@@ -82,7 +82,9 @@ describe('simulate_webhook_sync', () => {
     const createdAfter = Math.floor(Date.now() / 1000)
 
     // 1. Create a Stripe product so there's a known event to sync
-    const product = await stripe.products.create({ name: `simulate-webhook-sync-test-${Date.now()}` })
+    const product = await stripe.products.create({
+      name: `simulate-webhook-sync-test-${Date.now()}`,
+    })
     console.log(`\n  Created product: ${product.id}`)
 
     // 2. Create pipeline (skip connector check — we just need the config stored)
