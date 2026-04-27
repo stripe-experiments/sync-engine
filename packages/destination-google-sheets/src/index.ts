@@ -22,6 +22,7 @@ import {
   batchReadSheets,
   buildRowMapFromPkColumns,
   buildRowMapFromRows,
+  type EnumValidationRule,
   ensureIntroSheet,
   deleteSpreadsheet,
   ensureSheet,
@@ -30,9 +31,11 @@ import {
   createSpreadsheet,
   findSheetId,
   protectSheets,
-  readEnumConstraints,
+  readEnumValidations,
   readHeaderRow,
+  setEnumValidations,
   type BatchReadRequest,
+  type StreamEnumValidationRules,
   type StreamBatchOps,
 } from './writer.js'
 
@@ -120,6 +123,40 @@ function extendHeaders(
   return { headers, changed }
 }
 
+function extractDesiredEnumRules(catalog: {
+  streams: Array<{ stream: { name: string; json_schema?: Record<string, unknown> } }>
+}): StreamEnumValidationRules {
+  const out: StreamEnumValidationRules = new Map()
+  for (const { stream } of catalog.streams) {
+    const properties = stream.json_schema?.properties as
+      | Record<string, { enum?: string[] }>
+      | undefined
+    if (!properties) continue
+    const streamRules = new Map<string, EnumValidationRule>()
+    for (const [columnName, property] of Object.entries(properties)) {
+      if (!Array.isArray(property?.enum) || property.enum.length === 0) continue
+      streamRules.set(columnName, { allowedValues: [...property.enum] })
+    }
+    if (streamRules.size > 0) out.set(stream.name, streamRules)
+  }
+  return out
+}
+
+function extractRequiredFields(catalog: {
+  streams: Array<{ stream: { name: string; json_schema?: Record<string, unknown> } }>
+}): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  for (const { stream } of catalog.streams) {
+    const required = stream.json_schema?.required
+    if (!Array.isArray(required) || required.length === 0) continue
+    out.set(
+      stream.name,
+      new Set(required.filter((value): value is string => typeof value === 'string'))
+    )
+  }
+  return out
+}
+
 // MARK: - Destination
 
 /** Runs flushAll, yielding heartbeat logs while it runs; returns any flush error via `yield*`. */
@@ -194,45 +231,40 @@ export function createDestination(
 
       const streamNames = catalog.streams.map((s) => s.stream.name)
       const metaAfterEnsure = await getSpreadsheetMeta(sheets, spreadsheetId)
+      const desiredEnumRules = extractDesiredEnumRules(catalog)
 
-      // Collect all enum constraints from stream schemas. The source stamps
-      // the same enums on every stream, so the first one is representative.
-      const enumConstraints = new Map<string, string[]>()
-      const firstSchema = catalog.streams[0]?.stream.json_schema
-      const properties = firstSchema?.properties as Record<string, { enum?: string[] }> | undefined
-      if (properties) {
-        for (const [col, prop] of Object.entries(properties)) {
-          if (Array.isArray(prop?.enum) && prop.enum.length > 0) {
-            enumConstraints.set(col, prop.enum)
-          }
-        }
-      }
-
-      // Fail loud on changed enum lists; silent overwrites would mask misconfig.
-      if (enumConstraints.size > 0) {
-        const existing = await readEnumConstraints(sheets, spreadsheetId)
-        for (const [col, newVals] of enumConstraints) {
-          const existingVals = existing.get(col)
-          if (!existingVals) continue
-          const nextSet = new Set(newVals)
-          if (existingVals.size === nextSet.size && [...existingVals].every((v) => nextSet.has(v)))
+      // Fail loud on changed enum lists — silent overwrites would mask misconfig.
+      // Read existing validations before writing so we can detect mismatches.
+      const existingSheetNames = new Set(metaAfterEnsure.sheets.map((s) => s.title))
+      const existingValidations = await readEnumValidations(
+        sheets,
+        spreadsheetId,
+        streamHeaders.filter(({ streamName }) => existingSheetNames.has(streamName))
+      )
+      for (const [streamName, desiredStreamRules] of desiredEnumRules) {
+        const existingStreamRules = existingValidations.get(streamName)
+        if (!existingStreamRules) continue
+        for (const [col, desired] of desiredStreamRules) {
+          const existing = existingStreamRules.get(col)
+          if (!existing) continue
+          const desiredSet = new Set(desired.allowedValues)
+          const existingSet = new Set(existing.allowedValues)
+          if (
+            desiredSet.size === existingSet.size &&
+            [...desiredSet].every((v) => existingSet.has(v))
+          )
             continue
-          const fmt = (s: Set<string> | string[]) => [...s].sort().join(', ')
+          const fmt = (vals: string[]) => [...vals].sort().join(', ')
           throw new Error(
-            `Google Sheets destination: enum values changed for "${col}" in spreadsheet ${spreadsheetId}. ` +
-              `Existing Overview row allows [${fmt(existingVals)}]; new catalog wants [${fmt(newVals)}]. ` +
-              `Edit the ${col} enum row in Overview (or remove it) before re-running setup.`
+            `Google Sheets destination: enum values changed for "${col}" on sheet "${streamName}" in spreadsheet ${spreadsheetId}. ` +
+              `Existing validation allows [${fmt(existing.allowedValues)}]; new catalog wants [${fmt(desired.allowedValues)}]. ` +
+              `Remove the data validation on the ${col} column before re-running setup.`
           )
         }
       }
 
-      await ensureIntroSheet(
-        sheets,
-        spreadsheetId,
-        metaAfterEnsure,
-        streamNames,
-        enumConstraints.size > 0 ? enumConstraints : undefined
-      )
+      await setEnumValidations(sheets, spreadsheetId, sheetIdMap, streamHeaders, desiredEnumRules)
+      await ensureIntroSheet(sheets, spreadsheetId, metaAfterEnsure, streamNames)
 
       await protectSheets(sheets, spreadsheetId, metaAfterEnsure, sheetIds)
 
@@ -288,10 +320,19 @@ export function createDestination(
         ? config.spreadsheet_id
         : await createSpreadsheet(sheets, config.spreadsheet_title)
 
-      // Read enum constraints from the Overview sheet (written during setup).
-      // The JSON Schema enum is the source of truth but we keep the existing
-      // read-back validation for defense-in-depth.
-      const enumConstraints = await readEnumConstraints(sheets, spreadsheetId)
+      const streamHeadersFromCatalog = catalog.streams.map(({ stream }) => {
+        const properties = stream.json_schema?.properties as Record<string, unknown> | undefined
+        return { streamName: stream.name, headers: properties ? Object.keys(properties) : [] }
+      })
+      const existingSheetNames = new Set(
+        (await getSpreadsheetMeta(sheets, spreadsheetId)).sheets.map((sheet) => sheet.title)
+      )
+      const enumValidations = await readEnumValidations(
+        sheets,
+        spreadsheetId,
+        streamHeadersFromCatalog.filter(({ streamName }) => existingSheetNames.has(streamName))
+      )
+      const requiredFields = extractRequiredFields(catalog)
 
       // Per-stream state: column headers plus buffered appends/updates/deletes.
       const streamHeaders = new Map<string, string[]>()
@@ -729,14 +770,23 @@ export function createDestination(
               )
             }
 
-            for (const [col, allowed] of enumConstraints) {
+            const streamEnumRules = enumValidations.get(stream)
+            for (const [col, rule] of streamEnumRules ?? []) {
               const value =
                 Object.prototype.hasOwnProperty.call(cleanData, col) && cleanData[col] !== undefined
                   ? String(cleanData[col] ?? '')
                   : undefined
-              if (value === undefined || !allowed.has(value)) {
+              if (value === undefined) {
+                if (requiredFields.get(stream)?.has(col)) {
+                  throw new Error(
+                    `Sheets rejected ${stream}.${col}=undefined (required enum; allowed ${rule.allowedValues.join(',')})`
+                  )
+                }
+                continue
+              }
+              if (!rule.allowedValues.includes(value)) {
                 throw new Error(
-                  `Sheets rejected ${stream}.${col}=${JSON.stringify(value)} (not in ${[...allowed].join(',')})`
+                  `Sheets rejected ${stream}.${col}=${JSON.stringify(value)} (not in ${rule.allowedValues.join(',')})`
                 )
               }
             }

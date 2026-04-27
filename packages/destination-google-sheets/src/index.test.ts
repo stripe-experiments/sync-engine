@@ -11,7 +11,7 @@ import {
 import {
   applyBatch,
   MAX_CELLS_PER_SPREADSHEET,
-  readEnumConstraints,
+  readEnumValidations,
   readSheet,
   type StreamBatchOps,
 } from './writer.js'
@@ -1855,12 +1855,17 @@ describe('_updated_at column (source-owned, passthrough)', () => {
 })
 
 describe('enum constraints on any column', () => {
-  function catalogWith(enumValues: string[], column = '_account_id'): ConfiguredCatalog {
+  function catalogWith(
+    enumValues: string[],
+    column = '_account_id',
+    options: { streamName?: string; required?: boolean } = {}
+  ): ConfiguredCatalog {
+    const required = options.required ? [column] : undefined
     return {
       streams: [
         {
           stream: {
-            name: 'charges',
+            name: options.streamName ?? 'charges',
             primary_key: [['id']],
             newer_than_field: '_updated_at',
             json_schema: {
@@ -1869,6 +1874,7 @@ describe('enum constraints on any column', () => {
                 id: { type: 'string' },
                 [column]: { type: 'string', enum: enumValues },
               },
+              ...(required ? { required: ['id', ...required] } : {}),
             },
           },
           sync_mode: 'full_refresh',
@@ -1878,7 +1884,14 @@ describe('enum constraints on any column', () => {
     }
   }
 
-  it('setup writes enum constraints to Overview; write rejects mismatches', async () => {
+  function streamHeaders(catalog: ConfiguredCatalog) {
+    return catalog.streams.map(({ stream }) => ({
+      streamName: stream.name,
+      headers: Object.keys((stream.json_schema?.properties as Record<string, unknown>) ?? {}),
+    }))
+  }
+
+  it('setup writes enum constraints to sheet validation; write rejects mismatches', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
     const catalog = catalogWith(['acct_123', 'acct_456'])
@@ -1887,9 +1900,10 @@ describe('enum constraints on any column', () => {
     }
     const spreadsheetId = getSpreadsheetIds()[0]
 
-    expect(await readSheet(sheets, spreadsheetId, 'Overview')).toContainEqual([
-      'Allowed values for _account_id',
-      'acct_123,acct_456',
+    const validations = await readEnumValidations(sheets, spreadsheetId, streamHeaders(catalog))
+    expect(validations.get('charges')?.get('_account_id')?.allowedValues).toEqual([
+      'acct_123',
+      'acct_456',
     ])
 
     const out = await collect(
@@ -1912,7 +1926,7 @@ describe('enum constraints on any column', () => {
     ).toMatch(/_account_id.*acct_999/)
   })
 
-  it('round-trips enum values via Overview sheet', async () => {
+  it('round-trips enum values via sheet validation', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
     const catalog = catalogWith(['val_a', 'val_b', 'val_c'], 'status')
@@ -1920,7 +1934,114 @@ describe('enum constraints on any column', () => {
       void msg
     }
 
-    const constraints = await readEnumConstraints(sheets, getSpreadsheetIds()[0])
-    expect([...(constraints.get('status') ?? [])]).toEqual(['val_a', 'val_b', 'val_c'])
+    const validations = await readEnumValidations(
+      sheets,
+      getSpreadsheetIds()[0],
+      streamHeaders(catalog)
+    )
+    expect(validations.get('charges')?.get('status')?.allowedValues).toEqual([
+      'val_a',
+      'val_b',
+      'val_c',
+    ])
+  })
+
+  it('scopes enum validation per stream', async () => {
+    const { sheets, getSpreadsheetIds, getData } = createMemorySheets()
+    const dest = createDestination(sheets)
+    const catalog: ConfiguredCatalog = {
+      streams: [
+        ...catalogWith(['paid', 'void'], 'status', { streamName: 'charges' }).streams,
+        {
+          stream: {
+            name: 'invoices',
+            primary_key: [['id']],
+            newer_than_field: '_updated_at',
+            json_schema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                amount: { type: 'integer' },
+              },
+            },
+          },
+          sync_mode: 'full_refresh',
+          destination_sync_mode: 'append',
+        },
+      ],
+    }
+
+    for await (const msg of dest.setup!({ config: cfg(), catalog })) {
+      void msg
+    }
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    const out = await collect(
+      dest.write(
+        { config: cfg({ spreadsheet_id: spreadsheetId }), catalog },
+        toAsyncIter([
+          record('charges', { id: 'ch_1', status: 'paid' }),
+          record('invoices', { id: 'in_1', amount: 42 }),
+        ])
+      )
+    )
+
+    expect(
+      out.find((m) => m.type === 'connection_status' && m.connection_status.status === 'failed')
+    ).toBeUndefined()
+    expect(stripUpdatedAt(getData(spreadsheetId, 'invoices'))[1]).toEqual(['in_1', '42'])
+  })
+
+  it('rejects setup when existing validation disagrees with catalog', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    // First setup with one set of values
+    const catalog1 = catalogWith(['acct_a', 'acct_b'])
+    for await (const msg of dest.setup!({ config: cfg(), catalog: catalog1 })) {
+      void msg
+    }
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    // Same values, different order — should be idempotent
+    const catalog1b = catalogWith(['acct_b', 'acct_a'])
+    for await (const msg of dest.setup!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog: catalog1b,
+    })) {
+      void msg
+    }
+
+    // Different values — should throw
+    const catalog2 = catalogWith(['acct_a'])
+    await expect(async () => {
+      for await (const msg of dest.setup!({
+        config: cfg({ spreadsheet_id: spreadsheetId }),
+        catalog: catalog2,
+      })) {
+        void msg
+      }
+    }).rejects.toThrow(/enum values changed.*_account_id.*acct_a, acct_b.*acct_a/s)
+  })
+
+  it('allows optional enum fields to be omitted', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+    const catalog = catalogWith(['draft', 'open'], 'status')
+    for await (const msg of dest.setup!({ config: cfg(), catalog })) {
+      void msg
+    }
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    const out = await collect(
+      dest.write(
+        { config: cfg({ spreadsheet_id: spreadsheetId }), catalog },
+        toAsyncIter([record('charges', { id: 'ch_1' })])
+      )
+    )
+
+    expect(
+      out.find((m) => m.type === 'connection_status' && m.connection_status.status === 'failed')
+    ).toBeUndefined()
   })
 })
