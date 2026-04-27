@@ -317,14 +317,14 @@ describe('GET /docs', () => {
 })
 
 describe('engine request id header', () => {
-  it('adds sync-engine-reueest-id to responses and generates a new value per request', async () => {
+  it('adds sync-engine-request-id to responses and generates a new value per request', async () => {
     const app = await createApp(resolver)
 
     const res1 = await app.request('/health')
     const res2 = await app.request('/health')
 
-    const id1 = res1.headers.get('sync-engine-reueest-id')
-    const id2 = res2.headers.get('sync-engine-reueest-id')
+    const id1 = res1.headers.get('sync-engine-request-id')
+    const id2 = res2.headers.get('sync-engine-request-id')
 
     expect(id1).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -414,7 +414,7 @@ describe('engine request id header', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(res.headers.get('sync-engine-reueest-id')).toMatch(
+    expect(res.headers.get('sync-engine-request-id')).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     )
     const events = await readNdjson<Message>(res)
