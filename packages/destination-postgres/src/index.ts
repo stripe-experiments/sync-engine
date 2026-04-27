@@ -2,6 +2,9 @@ import pg from 'pg'
 import type { PoolConfig } from 'pg'
 import type { Destination } from '@stripe/sync-protocol'
 import {
+  ident,
+  identList,
+  qualifiedTable,
   sql,
   sslConfigFromConnectionString,
   stripSslParams,
@@ -54,13 +57,47 @@ export async function buildPoolConfig(config: Config): Promise<PoolConfig> {
   throw new Error('Either url/connection_string or aws config is required')
 }
 
-// MARK: - upsertMany
+// MARK: - writeMany / upsertMany / deleteMany
 
 export interface UpsertManyResult {
   created_count: number
   updated_count: number
+  skipped_count: number
+}
+
+export interface DeleteManyResult {
   deleted_count: number
   skipped_count: number
+}
+
+export interface WriteManyResult extends UpsertManyResult, DeleteManyResult {}
+
+/**
+ * Apply a mixed batch of live records and tombstones to a Postgres table.
+ * Records with `deleted: true` are routed to {@link deleteMany} (hard delete);
+ * everything else goes through {@link upsertMany}.
+ */
+export async function writeMany(
+  pool: pg.Pool,
+  schema: string,
+  table: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  entries: Record<string, any>[],
+  primaryKeyColumns: string[] = ['id'],
+  newerThanField: string
+): Promise<WriteManyResult> {
+  const tombstones = entries.filter((e) => e.deleted === true)
+  const liveRecords = entries.filter((e) => e.deleted !== true)
+
+  const u = await upsertMany(pool, schema, table, liveRecords, primaryKeyColumns, newerThanField)
+  const d = await deleteMany(pool, schema, table, tombstones, primaryKeyColumns)
+
+  return {
+    created_count: u.created_count,
+    updated_count: u.updated_count,
+    deleted_count: d.deleted_count,
+    skipped_count: u.skipped_count + d.skipped_count,
+  }
 }
 
 /**
@@ -77,7 +114,11 @@ export async function upsertMany(
   newerThanField: string
 ): Promise<UpsertManyResult> {
   if (!entries.length)
-    return { created_count: 0, updated_count: 0, deleted_count: 0, skipped_count: 0 }
+    return {
+      created_count: 0,
+      updated_count: 0,
+      skipped_count: 0,
+    }
 
   const records = entries.map((e) => {
     const ts = e[newerThanField] as unknown
@@ -89,12 +130,54 @@ export async function upsertMany(
     return { _raw_data: e, _updated_at: new Date(ts * 1000).toISOString() }
   })
 
-  return await upsertWithStats(
-    pool,
-    records,
-    { schema, table, primaryKeyColumns, newerThanColumn: newerThanField },
-    `"_raw_data"->>'deleted' = 'true'`
-  )
+  return await upsertWithStats(pool, records, {
+    schema,
+    table,
+    primaryKeyColumns,
+    newerThanColumn: newerThanField,
+  })
+}
+
+/**
+ * Hard-delete rows by primary key. No `newer_than_field` guard: deletion is
+ * terminal state — once a object is deleted it can't be undeleted
+ */
+export async function deleteMany(
+  pool: pg.Pool,
+  schema: string,
+  table: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  entries: Record<string, any>[],
+  primaryKeyColumns: string[] = ['id']
+): Promise<DeleteManyResult> {
+  if (!entries.length)
+    return {
+      deleted_count: 0,
+      skipped_count: 0,
+    }
+
+  const params: unknown[] = []
+  const valueRows = entries.map((e) => {
+    const cells = primaryKeyColumns.map((pk) => {
+      params.push(String(e[pk]))
+      return `$${params.length}::text`
+    })
+    return `(${cells.join(', ')})`
+  })
+
+  const tbl = qualifiedTable(schema, table)
+  const pkJoin = primaryKeyColumns.map((c) => `t.${ident(c)} = d.${ident(c)}`).join(' AND ')
+  const stmt = `DELETE FROM ${tbl} t
+USING (VALUES ${valueRows.join(', ')}) AS d(${identList(primaryKeyColumns)})
+WHERE ${pkJoin}`
+
+  const result = await pool.query(stmt, params)
+  const total = entries.length
+  const deleted = result.rowCount ?? 0
+  return {
+    deleted_count: deleted,
+    skipped_count: total - deleted,
+  }
 }
 
 // MARK: - Named exports
@@ -354,7 +437,7 @@ const destination = {
         'dest write: flush start'
       )
       try {
-        const stats = await upsertMany(pool, config.schema, streamName, buffer, pk, newerThan)
+        const stats = await writeMany(pool, config.schema, streamName, buffer, pk, newerThan)
         log.debug(
           {
             stream: streamName,

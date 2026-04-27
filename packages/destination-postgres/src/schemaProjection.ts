@@ -79,6 +79,8 @@ export function jsonSchemaToColumns(jsonSchema: Record<string, unknown>): Column
     if (name === 'id') continue
     // `_updated_at` is hardcoded below; upsertMany writes it (DDR-009).
     if (name === '_updated_at') continue
+    // `deleted` is a signal consumed for deleting the row.
+    if (name === 'deleted') continue
 
     const isExpandableRef = prop['x-expandable-reference'] === true
     const pgType = isExpandableRef ? 'text' : jsonSchemaTypeToPg(prop)
