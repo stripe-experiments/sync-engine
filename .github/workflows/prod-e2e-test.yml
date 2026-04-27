@@ -106,7 +106,7 @@ jobs:
             "$@" 2>&1 | sed "s/^/[$prefix] /"
             return ${PIPESTATUS[0]}
           }
-          run_prefixed monitor ./scripts/monitor-sync-progress.sh &
+          run_prefixed monitor ./scripts/verify-backfill.sh &
           MONITOR_PID=$!
           run_prefixed live-sync ./scripts/verify-live-sync.sh
           LIVE_STATUS=$?

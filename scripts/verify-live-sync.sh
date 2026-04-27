@@ -4,8 +4,9 @@ set -euo pipefail
 # Verify live sync: create, update, and delete a Stripe product and assert
 # that each change propagates to the Stripe database within a few seconds.
 #
-# Required env: DB_STRING, STRIPE_API_BASE
+# Required env: STRIPE_API_KEY, DB_STRING, STRIPE_API_BASE
 
+: "${STRIPE_API_KEY:?STRIPE_API_KEY is required}"
 : "${DB_STRING:?DB_STRING is required}"
 STRIPE_FLAGS="--api-base ${STRIPE_API_BASE:?STRIPE_API_BASE is required}"
 
