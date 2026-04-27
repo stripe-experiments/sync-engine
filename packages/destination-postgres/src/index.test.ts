@@ -628,7 +628,63 @@ describe('deleteMany / writeMany', () => {
     const testPool = new pg.Pool({ connectionString })
     try {
       const result = await deleteMany(testPool, SCHEMA, 'customers', [], ['id'])
-      expect(result).toEqual({ deleted_count: 0, skipped_count: 0 })
+      expect(result).toEqual({ deleted_count: 0 })
+    } finally {
+      await testPool.end()
+    }
+  })
+
+  it('deletes only the matching tenant row for composite (id, _account_id) PK', async () => {
+    const testPool = new pg.Pool({ connectionString })
+    try {
+      const compositeCatalog: ConfiguredCatalog = {
+        streams: [
+          {
+            stream: {
+              name: 'customers',
+              primary_key: [['id'], ['_account_id']],
+              newer_than_field: '_updated_at',
+              json_schema: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  _account_id: { type: 'string' },
+                },
+              },
+            },
+            sync_mode: 'full_refresh',
+            destination_sync_mode: 'overwrite',
+          },
+        ],
+      }
+      await pool.query(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`)
+      await drain(destination.setup!({ config: makeConfig(), catalog: compositeCatalog }))
+      const ts = Math.floor(Date.now() / 1000)
+      await upsertMany(
+        testPool,
+        SCHEMA,
+        'customers',
+        [
+          { id: 'cus_1', name: 'Alice (A)', _account_id: 'acct_AAA', _updated_at: ts },
+          { id: 'cus_1', name: 'Alice (B)', _account_id: 'acct_BBB', _updated_at: ts },
+        ],
+        ['id', '_account_id'],
+        '_updated_at'
+      )
+
+      const result = await deleteMany(
+        testPool,
+        SCHEMA,
+        'customers',
+        [{ id: 'cus_1', _account_id: 'acct_AAA' }],
+        ['id', '_account_id']
+      )
+      expect(result.deleted_count).toBe(1)
+
+      const { rows } = await pool.query(
+        `SELECT _account_id FROM "${SCHEMA}".customers ORDER BY _account_id`
+      )
+      expect(rows).toEqual([{ _account_id: 'acct_BBB' }])
     } finally {
       await testPool.end()
     }

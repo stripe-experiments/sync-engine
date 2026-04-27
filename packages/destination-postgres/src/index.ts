@@ -67,7 +67,6 @@ export interface UpsertManyResult {
 
 export interface DeleteManyResult {
   deleted_count: number
-  skipped_count: number
 }
 
 export interface WriteManyResult extends UpsertManyResult, DeleteManyResult {}
@@ -76,6 +75,9 @@ export interface WriteManyResult extends UpsertManyResult, DeleteManyResult {}
  * Apply a mixed batch of live records and tombstones to a Postgres table.
  * Records with `deleted: true` are routed to {@link deleteMany} (hard delete);
  * everything else goes through {@link upsertMany}.
+ *
+ * Existing soft-deleted rows from prior deployments are intentionally not
+ * cleaned up — no production user is on the soft-delete code path.
  */
 export async function writeMany(
   pool: pg.Pool,
@@ -92,12 +94,7 @@ export async function writeMany(
   const u = await upsertMany(pool, schema, table, liveRecords, primaryKeyColumns, newerThanField)
   const d = await deleteMany(pool, schema, table, tombstones, primaryKeyColumns)
 
-  return {
-    created_count: u.created_count,
-    updated_count: u.updated_count,
-    deleted_count: d.deleted_count,
-    skipped_count: u.skipped_count + d.skipped_count,
-  }
+  return { ...u, deleted_count: d.deleted_count }
 }
 
 /**
@@ -140,7 +137,7 @@ export async function upsertMany(
 
 /**
  * Hard-delete rows by primary key. No `newer_than_field` guard: deletion is
- * terminal state — once a object is deleted it can't be undeleted
+ * terminal — once an object is deleted it cannot be undeleted.
  */
 export async function deleteMany(
   pool: pg.Pool,
@@ -150,11 +147,7 @@ export async function deleteMany(
   entries: Record<string, any>[],
   primaryKeyColumns: string[] = ['id']
 ): Promise<DeleteManyResult> {
-  if (!entries.length)
-    return {
-      deleted_count: 0,
-      skipped_count: 0,
-    }
+  if (!entries.length) return { deleted_count: 0 }
 
   const params: unknown[] = []
   const valueRows = entries.map((e) => {
@@ -172,12 +165,7 @@ USING (VALUES ${valueRows.join(', ')}) AS d(${identList(primaryKeyColumns)})
 WHERE ${pkJoin}`
 
   const result = await pool.query(stmt, params)
-  const total = entries.length
-  const deleted = result.rowCount ?? 0
-  return {
-    deleted_count: deleted,
-    skipped_count: total - deleted,
-  }
+  return { deleted_count: result.rowCount ?? 0 }
 }
 
 // MARK: - Named exports
