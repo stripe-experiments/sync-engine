@@ -31,6 +31,25 @@ describe('catalogFromOpenApi stream list', () => {
     expect(names).toMatchSnapshot()
   })
 
+  it('every stream in the catalog has supports_realtime_sync = true', async () => {
+    const { spec, apiVersion } = await resolved
+    const parsed = parser.parse(spec, {
+      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+    })
+    const allowedTables = new Set(parsed.tables.map((t) => t.tableName))
+    const registry = buildResourceRegistry(
+      spec,
+      'sk_test_fake',
+      apiVersion,
+      undefined,
+      allowedTables
+    )
+    const catalog = catalogFromOpenApi(parsed.tables, registry)
+    for (const stream of catalog.streams) {
+      expect(stream.metadata?.supports_realtime_sync).toBe(true)
+    }
+  })
+
   it('all listable tables (no webhook filter)', async () => {
     const { spec, apiVersion } = await resolved
     const registry = buildResourceRegistry(spec, 'sk_test_fake', apiVersion)

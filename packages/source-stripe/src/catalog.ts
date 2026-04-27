@@ -8,6 +8,10 @@ import { parsedTableToJsonSchema } from '@stripe/sync-openapi'
  * `_account_id` and `_updated_at` (staleness, see DDR-009) are injected into properties.
  * The returned catalog is account-agnostic — call {@link stampAccountIdEnum} to
  * add the per-pipeline allow-list before handing it to destinations.
+ *
+ * The registry is expected to be pre-filtered to only webhook-capable tables
+ * (via `allowedTables` in `buildResourceRegistry`), so every stream in the
+ * returned catalog supports realtime sync.
  */
 export function catalogFromOpenApi(
   tables: ParsedResourceTable[],
@@ -24,7 +28,10 @@ export function catalogFromOpenApi(
         name: cfg.tableName,
         primary_key: [['id'], ['_account_id']],
         newer_than_field: '_updated_at',
-        metadata: { resource_name: name },
+        metadata: {
+          resource_name: name,
+          supports_realtime_sync: true,
+        },
       }
 
       if (table) {
