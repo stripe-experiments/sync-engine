@@ -4,8 +4,6 @@
 - Explicit success / failure for various methods like setup / teardown. Switch to http 200/400/500 standard for error code
 - More robust serialization & deserliazation support in general. lots of bugs caused by those basic pieces missing still.
 
-
-
 ---
 
 Short-term actionable items. Move to a dated plan in `docs/plans/` when scoped.

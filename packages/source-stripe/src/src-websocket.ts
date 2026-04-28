@@ -215,7 +215,10 @@ export async function createStripeWebSocketClient(
       ws.on('message', async (data: WebSocket.Data) => {
         try {
           const message = JSON.parse(data.toString()) as StripeWebhookEvent
-          log.info({ webhookId: message.webhook_id, eventType: message.type }, 'websocket event received')
+          log.info(
+            { webhookId: message.webhook_id, eventType: message.type },
+            'websocket event received'
+          )
 
           // Send acknowledgment IMMEDIATELY (before processing)
           const ack: EventAck = {

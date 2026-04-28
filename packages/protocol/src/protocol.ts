@@ -380,7 +380,10 @@ export const ProgressPayload = z
         records_per_second: z.number().describe('Overall throughput for the entire run.'),
         states_per_second: z.number().describe('State checkpoints per second.'),
         total_record_count: z.number().int().describe('Total records across all streams.'),
-        total_state_count: z.number().int().describe('Total source_state messages across all streams.'),
+        total_state_count: z
+          .number()
+          .int()
+          .describe('Total source_state messages across all streams.'),
       })
       .describe('Computed aggregates.'),
     streams: z

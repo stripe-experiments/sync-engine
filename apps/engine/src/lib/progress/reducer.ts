@@ -14,7 +14,13 @@ export function createInitialProgress(streamNames?: string[]): ProgressPayload {
     elapsed_ms: 0,
     global_state_count: 0,
     connection_status: undefined,
-    derived: { status: 'started', records_per_second: 0, states_per_second: 0, total_record_count: 0, total_state_count: 0 },
+    derived: {
+      status: 'started',
+      records_per_second: 0,
+      states_per_second: 0,
+      total_record_count: 0,
+      total_state_count: 0,
+    },
     streams,
   }
 }
@@ -59,7 +65,8 @@ function computeDerived(progress: ProgressPayload, elapsedMs: number): ProgressP
   return {
     status: deriveStatus(progress),
     records_per_second: elapsedSec > 0 ? totalRecords / elapsedSec : 0,
-    states_per_second: elapsedSec > 0 ? (progress.global_state_count + totalStates) / elapsedSec : 0,
+    states_per_second:
+      elapsedSec > 0 ? (progress.global_state_count + totalStates) / elapsedSec : 0,
     total_record_count: totalRecords,
     total_state_count: totalStates,
   }
