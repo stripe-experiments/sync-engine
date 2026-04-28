@@ -43,7 +43,7 @@ import {
   stripSslParams,
   withPgConnectProxy,
 } from '@stripe/sync-util-postgres'
-import { syncRequestContext, logApiStream, createConnectionAbort } from './helpers.js'
+import { syncRequestContext, logApiStream, createConnectionAbort, withKeepalive } from './helpers.js'
 import {
   ENGINE_REQUEST_ID_HEADER,
   getEngineRequestId,
@@ -485,17 +485,11 @@ export async function createApp(resolver: ConnectorResolver) {
       input
     )
 
-    const heartbeat = setInterval(() => {
-      log.info({ ...context, elapsed_ms: Date.now() - startedAt }, 'pipeline_sync heartbeat')
-    }, 1_000)
-
-    const cleaned = (async function* () {
-      try {
-        yield* output
-      } finally {
-        clearInterval(heartbeat)
-      }
-    })()
+    const cleaned = withKeepalive(output, {
+      intervalMs: 30_000,
+      startedAt,
+      context,
+    })
 
     return ndjsonResponse(logApiStream('Engine API /pipeline_sync', cleaned, context, startedAt), {
       signal: ac.signal,

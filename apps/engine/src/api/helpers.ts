@@ -1,9 +1,52 @@
-import type { ConnectionStatusMessage, LogMessage, EofPayload } from '@stripe/sync-protocol'
+import type { ConnectionStatusMessage, LogMessage, EofPayload, Message } from '@stripe/sync-protocol'
 import { createEngineMessageFactory } from '@stripe/sync-protocol'
 
 const engineMsg = createEngineMessageFactory()
 import { bindLogContext, type RoutedLogEntry } from '@stripe/sync-logger'
 import { log } from '../logger.js'
+
+/**
+ * Wraps an async iterable and injects keepalive log messages when the upstream
+ * is idle for longer than `intervalMs`. This prevents HTTP client body-read
+ * timeouts (e.g. undici's default 300s bodyTimeout) from killing long-running
+ * sync streams when the destination (Postgres) is slow.
+ */
+export async function* withKeepalive<T extends Message>(
+  source: AsyncIterable<T>,
+  opts: { intervalMs: number; startedAt: number; context: Record<string, unknown> }
+): AsyncIterable<T | LogMessage> {
+  const iterator = source[Symbol.asyncIterator]()
+  try {
+    while (true) {
+      const nextP = iterator.next()
+      // Race the iterator against a keepalive timer (clear timer on either outcome)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const result = await Promise.race([
+        nextP.then((r) => {
+          clearTimeout(timer)
+          return { kind: 'next' as const, result: r }
+        }),
+        new Promise<{ kind: 'keepalive' }>((resolve) => {
+          timer = setTimeout(() => resolve({ kind: 'keepalive' }), opts.intervalMs)
+        }),
+      ])
+      if (result.kind === 'keepalive') {
+        const elapsedMs = Date.now() - opts.startedAt
+        log.info({ ...opts.context, elapsed_ms: elapsedMs }, 'pipeline_sync heartbeat')
+        yield engineMsg.log({ level: 'debug', message: `keepalive (${(elapsedMs / 1000).toFixed(0)}s)` })
+        // Now await the actual next item (no timeout — the keepalive already kept the wire alive)
+        const actual = await nextP
+        if (actual.done) break
+        yield actual.value
+      } else {
+        if (result.result.done) break
+        yield result.result.value
+      }
+    }
+  } finally {
+    await iterator.return?.()
+  }
+}
 
 export function syncRequestContext(pipeline: {
   source: { type: string }
