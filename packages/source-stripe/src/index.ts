@@ -11,7 +11,7 @@ import { createSourceMessageFactory, withAbortOnReturn } from '@stripe/sync-prot
 import defaultSpec from './spec.js'
 import type { Config } from './spec.js'
 import type { StripeEvent } from './spec.js'
-import { buildResourceRegistry } from './resourceRegistry.js'
+import { buildResourceRegistry, EXCLUDED_TABLES } from './resourceRegistry.js'
 import { catalogFromOpenApi, stampAccountIdEnum } from './catalog.js'
 import {
   BUNDLED_API_VERSION,
@@ -165,16 +165,20 @@ export function createStripeSource(
 
       const resolved = await resolveOpenApiSpec({ apiVersion }, makeApiFetch())
       const parser = new SpecParser()
+      const syncableTables = parser.discoverSyncableTables(resolved.spec, {
+        aliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+        excluded: EXCLUDED_TABLES,
+      })
       const parsed = parser.parse(resolved.spec, {
         resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+        allowedTables: Array.from(syncableTables),
       })
-      const webhookTables = new Set(parsed.tables.map((t) => t.tableName))
       const registry = buildResourceRegistry(
         resolved.spec,
         config.api_key,
         resolved.apiVersion,
         config.base_url,
-        webhookTables
+        syncableTables
       )
       const catalog = catalogFromOpenApi(parsed.tables, registry)
       const frozenCatalog = deepFreeze(catalog)

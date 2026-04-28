@@ -21,10 +21,71 @@ const RESERVED_COLUMNS = new Set([
 
 export { OPENAPI_RESOURCE_TABLE_ALIASES }
 
+/**
+ * Resolve a Stripe x-resourceId to a canonical table name.
+ * Pure utility — depends only on aliases, not the spec.
+ */
+export function resolveTableName(
+  resourceId: string,
+  aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+): string {
+  const alias = aliases[resourceId]
+  if (alias) return alias
+  const normalized = resourceId.toLowerCase().replace(/[.]/g, '_')
+  return normalized.endsWith('s') ? normalized : `${normalized}s`
+}
+
+/** A list endpoint at a top-level path (`/v1/customers`). */
+export type ListEndpoint = {
+  tableName: string
+  resourceId: string
+  apiPath: string
+  supportsCreatedFilter: boolean
+  supportsLimit: boolean
+  supportsStartingAfter: boolean
+  supportsEndingBefore: boolean
+}
+
+/** A nested list endpoint at a parent-scoped path (`/v1/customers/{id}/cards`). */
+export type NestedEndpoint = {
+  tableName: string
+  resourceId: string
+  apiPath: string
+  parentTableName: string
+  parentParamName: string
+  supportsPagination: boolean
+}
+
 type ColumnAccumulator = {
   type: ScalarType
   nullable: boolean
   expandableReference: boolean
+}
+
+/** One normalized record per discovered list-shaped GET endpoint. */
+type RawListPath = {
+  apiPath: string
+  isNested: boolean
+  resourceId: string
+  schemaName: string
+  parameters: ReadonlyArray<{ name?: string; in?: string; required?: boolean }>
+}
+
+const PAGINATION_PARAMS = new Set(['limit', 'starting_after', 'ending_before', 'created', 'expand'])
+
+function hasParam(
+  parameters: ReadonlyArray<{ name?: string; in?: string }>,
+  name: string
+): boolean {
+  return parameters.some((p) => p.name === name && p.in === 'query')
+}
+
+function hasNonPaginationRequiredQueryParam(
+  parameters: ReadonlyArray<{ name?: string; in?: string; required?: boolean }>
+): boolean {
+  return parameters.some(
+    (p) => p.required === true && p.in === 'query' && !PAGINATION_PARAMS.has(p.name ?? '')
+  )
 }
 
 export class SpecParser {
@@ -55,7 +116,7 @@ export class SpecParser {
         continue
       }
 
-      const tableName = this.resolveTableName(resourceId, aliases)
+      const tableName = resolveTableName(resourceId, aliases)
       if (!allowedTables.has(tableName)) {
         continue
       }
@@ -138,53 +199,143 @@ export class SpecParser {
   }
 
   /**
-   * Scan the spec's `paths` for GET endpoints that return Stripe list objects,
-   * and resolve each listed resource's x-resourceId into a table name.
-   * Only includes resources that also have webhook create/update/delete events.
+   * The canonical list of tables that can be synced from this spec.
+   *
+   * A resource is syncable when it (a) has a list endpoint, (b) emits create/
+   * update/delete webhook events, and (c) is not in `excluded`. Both schema
+   * parsing and runtime registry construction must agree on this set or the
+   * catalog will diverge from the registry.
+   */
+  discoverSyncableTables(
+    spec: OpenApiSpec,
+    options: {
+      aliases?: Record<string, string>
+      excluded?: ReadonlySet<string>
+    } = {}
+  ): Set<string> {
+    const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.aliases ?? {}) }
+    const excluded = options.excluded ?? new Set<string>()
+    const listableIds = this.discoverListableResourceIds(spec, { includeNested: true })
+    const webhookIds = this.discoverWebhookUpdatableResourceIds(spec)
+    const tables = new Set<string>()
+    for (const resourceId of listableIds) {
+      if (!webhookIds.has(resourceId)) continue
+      const tableName = resolveTableName(resourceId, aliases)
+      if (!excluded.has(tableName)) tables.add(tableName)
+    }
+    return tables
+  }
+
+  /**
+   * Discover top-level list endpoints (e.g. `/v1/customers`) and extract their
+   * runtime metadata (apiPath, capability flags). Excludes endpoints requiring
+   * non-pagination query parameters at runtime.
+   */
+  discoverListEndpoints(
+    spec: OpenApiSpec,
+    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+  ): Map<string, ListEndpoint> {
+    const endpoints = new Map<string, ListEndpoint>()
+    for (const raw of this.iterListPaths(spec)) {
+      if (raw.isNested) continue
+      const tableName = resolveTableName(raw.resourceId, aliases)
+      if (endpoints.has(tableName)) continue
+      if (hasNonPaginationRequiredQueryParam(raw.parameters)) continue
+
+      endpoints.set(tableName, {
+        tableName,
+        resourceId: raw.resourceId,
+        apiPath: raw.apiPath,
+        supportsCreatedFilter: hasParam(raw.parameters, 'created'),
+        supportsLimit: hasParam(raw.parameters, 'limit'),
+        supportsStartingAfter: hasParam(raw.parameters, 'starting_after'),
+        supportsEndingBefore: hasParam(raw.parameters, 'ending_before'),
+      })
+    }
+    return endpoints
+  }
+
+  /**
+   * Discover nested list endpoints (e.g. `/v1/customers/{id}/cards`) and link
+   * each to its parent resource. Endpoints whose parent path isn't in
+   * `topLevelEndpoints` are skipped.
+   */
+  discoverNestedEndpoints(
+    spec: OpenApiSpec,
+    topLevelEndpoints: Map<string, ListEndpoint>,
+    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+  ): NestedEndpoint[] {
+    const topLevelByPath = new Map<string, ListEndpoint>()
+    for (const endpoint of topLevelEndpoints.values()) {
+      topLevelByPath.set(endpoint.apiPath, endpoint)
+    }
+
+    const nested: NestedEndpoint[] = []
+    for (const raw of this.iterListPaths(spec)) {
+      if (!raw.isNested) continue
+      const paramMatch = raw.apiPath.match(/\{([^}]+)\}/)
+      if (!paramMatch) continue
+      const parentPath = raw.apiPath.slice(0, raw.apiPath.indexOf('/{'))
+      const parent = topLevelByPath.get(parentPath)
+      if (!parent) continue
+
+      nested.push({
+        tableName: resolveTableName(raw.resourceId, aliases),
+        resourceId: raw.resourceId,
+        apiPath: raw.apiPath,
+        parentTableName: parent.tableName,
+        parentParamName: paramMatch[1]!,
+        supportsPagination: hasParam(raw.parameters, 'limit'),
+      })
+    }
+    return nested
+  }
+
+  /**
+   * Resolve the canonical table list for schema parsing.
+   * Delegates to {@link discoverSyncableTables} so the parser and runtime
+   * registry agree on what is syncable.
    */
   private discoverAllowedTables(
     spec: OpenApiSpec,
     aliases: Record<string, string>,
     excluded: Set<string>
   ): Set<string> {
-    const listableIds = this.discoverListableResourceIds(spec, {
-      includeNested: true,
-    })
-    const webhookIds = this.discoverWebhookUpdatableResourceIds(spec)
-    const tables = new Set<string>()
-    for (const resourceId of listableIds) {
-      if (!webhookIds.has(resourceId)) continue
-      const tableName = this.resolveTableName(resourceId, aliases)
-      if (!excluded.has(tableName)) {
-        tables.add(tableName)
-      }
-    }
-    return tables
+    return this.discoverSyncableTables(spec, { aliases, excluded })
   }
 
   /**
-   * Extract x-resourceId values for every schema that is returned by a list
-   * endpoint. Supports both v1 (object: "list") and v2 (next_page_url) formats.
+   * Extract x-resourceId values for every schema returned by a list endpoint.
+   * Supports both v1 (object: "list") and v2 (next_page_url) formats.
    */
   discoverListableResourceIds(
     spec: OpenApiSpec,
     options: { includeNested: boolean } = { includeNested: false }
   ): Set<string> {
     const resourceIds = new Set<string>()
-    const paths = spec.paths
-    if (!paths) {
-      return resourceIds
+    for (const raw of this.iterListPaths(spec)) {
+      if (!options.includeNested && raw.isNested) continue
+      resourceIds.add(raw.resourceId)
     }
+    return resourceIds
+  }
+
+  /**
+   * Walk `spec.paths` and yield one normalized record per GET endpoint whose
+   * 200 response matches the Stripe list shape (`{ data: [...], object: "list" }`
+   * or v2 `{ data: [...], next_page_url }`). Shared by every path-discovery
+   * method on this class so they can't disagree.
+   */
+  private *iterListPaths(spec: OpenApiSpec): Generator<RawListPath> {
+    const paths = spec.paths
+    if (!paths) return
 
     for (const [apiPath, pathItem] of Object.entries(paths)) {
-      if (!options.includeNested && apiPath.includes('{')) continue
-
       const getOp = pathItem.get
       if (!getOp?.responses) continue
 
       const responseSchema = getOp.responses['200']?.content?.['application/json']?.schema
       if (!responseSchema) continue
-
       if (!this.isListResponseSchema(responseSchema)) continue
 
       const dataProp = responseSchema.properties?.data
@@ -199,12 +350,16 @@ export class SpecParser {
       if (!schema || '$ref' in schema) continue
 
       const resourceId = schema['x-resourceId']
-      if (resourceId && typeof resourceId === 'string') {
-        resourceIds.add(resourceId)
+      if (!resourceId || typeof resourceId !== 'string') continue
+
+      yield {
+        apiPath,
+        isNested: apiPath.includes('{'),
+        resourceId,
+        schemaName,
+        parameters: getOp.parameters ?? [],
       }
     }
-
-    return resourceIds
   }
 
   /**
@@ -261,16 +416,6 @@ export class SpecParser {
     if (schema.properties?.next_page_url) return true
 
     return false
-  }
-
-  private resolveTableName(resourceId: string, aliases: Record<string, string>): string {
-    const alias = aliases[resourceId]
-    if (alias) {
-      return alias
-    }
-
-    const normalized = resourceId.toLowerCase().replace(/[.]/g, '_')
-    return normalized.endsWith('s') ? normalized : `${normalized}s`
   }
 
   private parseColumns(

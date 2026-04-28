@@ -1,8 +1,7 @@
 import type { ResourceConfig } from './types.js'
 import type { ListFn, ListParams, OpenApiSpec, NestedEndpoint } from '@stripe/sync-openapi'
 import {
-  discoverListEndpoints,
-  discoverNestedEndpoints,
+  SpecParser,
   buildListFn,
   buildRetrieveFn,
   isV2Path,
@@ -103,8 +102,9 @@ export function buildResourceRegistry(
   allowedTables?: Set<string>,
   signal?: AbortSignal
 ): Record<string, ResourceConfig> {
-  const endpoints = discoverListEndpoints(spec)
-  const nestedEndpoints = discoverNestedEndpoints(spec, endpoints)
+  const parser = new SpecParser()
+  const endpoints = parser.discoverListEndpoints(spec)
+  const nestedEndpoints = parser.discoverNestedEndpoints(spec, endpoints)
   const registry: Record<string, ResourceConfig> = {}
   const seenNested = new Set<string>()
 

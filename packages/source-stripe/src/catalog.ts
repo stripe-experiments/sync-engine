@@ -9,9 +9,11 @@ import { parsedTableToJsonSchema } from '@stripe/sync-openapi'
  * The returned catalog is account-agnostic — call {@link stampAccountIdEnum} to
  * add the per-pipeline allow-list before handing it to destinations.
  *
- * The registry is expected to be pre-filtered to only webhook-capable tables
- * (via `allowedTables` in `buildResourceRegistry`), so every stream in the
- * returned catalog supports realtime sync.
+ * Throws if the registry contains a syncable entry whose schema is missing from
+ * `tables`. This is a structural invariant: `discover()` must use the same
+ * canonical table list (see `discoverSyncableTables`) for both the parser and
+ * the registry, otherwise the catalog would emit a stream without a
+ * `json_schema`, which destinations would silently turn into an empty table.
  */
 export function catalogFromOpenApi(
   tables: ParsedResourceTable[],
@@ -24,7 +26,24 @@ export function catalogFromOpenApi(
     .sort(([, a], [, b]) => a.order - b.order)
     .map(([name, cfg]) => {
       const table = tableMap.get(cfg.tableName)
-      const stream: Stream = {
+      if (!table) {
+        throw new Error(
+          `catalogFromOpenApi: registry contains "${cfg.tableName}" but no parsed schema was provided. ` +
+            `The registry and parsed tables must be derived from the same canonical syncable-table list.`
+        )
+      }
+
+      const jsonSchema = parsedTableToJsonSchema(table)
+      const properties = (jsonSchema.properties ?? {}) as Record<string, unknown>
+      properties._account_id = { type: 'string' }
+      properties._updated_at = { type: 'integer' }
+      jsonSchema.properties = properties
+      const required = Array.isArray(jsonSchema.required) ? [...jsonSchema.required] : []
+      if (!required.includes('_account_id')) required.push('_account_id')
+      if (!required.includes('_updated_at')) required.push('_updated_at')
+      jsonSchema.required = required
+
+      return {
         name: cfg.tableName,
         primary_key: [['id'], ['_account_id']],
         newer_than_field: '_updated_at',
@@ -32,27 +51,8 @@ export function catalogFromOpenApi(
           resource_name: name,
           supports_realtime_sync: true,
         },
+        json_schema: jsonSchema,
       }
-
-      if (table) {
-        const jsonSchema = parsedTableToJsonSchema(table)
-        const properties = (jsonSchema.properties ?? {}) as Record<string, unknown>
-        properties._account_id = { type: 'string' }
-        jsonSchema.properties = properties
-        properties._updated_at = { type: 'integer' }
-        const required = Array.isArray(jsonSchema.required) ? [...jsonSchema.required] : []
-        if (!required.includes('_account_id')) {
-          required.push('_account_id')
-        }
-        if (!required.includes('_updated_at')) {
-          required.push('_updated_at')
-        }
-        jsonSchema.required = required
-
-        stream.json_schema = jsonSchema
-      }
-
-      return stream
     })
 
   return { streams }

@@ -62,4 +62,30 @@ describe('catalogFromOpenApi stream list', () => {
 
     expect(names).toMatchSnapshot()
   })
+
+  it('every stream has json_schema (no ghost tables)', async () => {
+    const { spec, apiVersion } = await resolved
+    const parsed = parser.parse(spec, {
+      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+    })
+    const allowedTables = new Set(parsed.tables.map((t) => t.tableName))
+    const registry = buildResourceRegistry(
+      spec,
+      'sk_test_fake',
+      apiVersion,
+      undefined,
+      allowedTables
+    )
+    const catalog = catalogFromOpenApi(parsed.tables, registry)
+    for (const stream of catalog.streams) {
+      expect(stream.json_schema, `stream ${stream.name} is missing json_schema`).toBeDefined()
+      expect(stream.json_schema?.properties).toBeDefined()
+    }
+  })
+
+  it('throws when registry has a syncable table not present in parsed schemas', async () => {
+    const { spec, apiVersion } = await resolved
+    const registry = buildResourceRegistry(spec, 'sk_test_fake', apiVersion)
+    expect(() => catalogFromOpenApi([], registry)).toThrow(/no parsed schema was provided/)
+  })
 })
