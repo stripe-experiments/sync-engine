@@ -751,9 +751,9 @@ export async function createProgram() {
           description: 'Ignore persisted sync state and start fresh',
         },
         loop: {
-          type: 'boolean',
-          default: false,
-          description: 'Continue calling sync_batch until has_more is false',
+          type: 'string',
+          default: '1',
+          description: 'Number of iterations (0 = loop until has_more is false)',
         },
         raw: {
           type: 'boolean',
@@ -784,7 +784,7 @@ export async function createProgram() {
         }
 
         const raw = args.raw === true
-        const loop = args.loop === true
+        const maxIterations = parseInt(args.loop ?? '1')
         const { formatProgress } = await import('@stripe/sync-logger/progress')
         let prevProgress: import('@stripe/sync-protocol').ProgressPayload | undefined
         let isFirstIteration = true
@@ -827,12 +827,13 @@ export async function createProgram() {
           if (raw) {
             process.stdout.write(JSON.stringify(eof) + '\n')
           } else {
-            if (loop) process.stderr.write(`--- iteration ${iteration} ---\n`)
+            if (maxIterations !== 1) process.stderr.write(`--- iteration ${iteration} ---\n`)
             process.stderr.write(formatProgress(eof.run_progress, prevProgress) + '\n')
             prevProgress = eof.run_progress
           }
 
-          if (!loop || !eof.has_more) {
+          const reachedLimit = maxIterations > 0 && iteration >= maxIterations
+          if (reachedLimit || !eof.has_more) {
             if (!raw) process.stderr.write(`Final status: ${eof.status}\n`)
             break
           }
