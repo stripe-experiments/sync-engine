@@ -235,9 +235,10 @@ export class SpecParser {
     const excluded = options.excluded ?? new Set<string>()
     const listableIds = this.discoverListableResourceIds(spec, { includeNested: true })
     const webhookIds = this.discoverWebhookUpdatableResourceIds(spec)
+    const hasWebhookMetadata = webhookIds.size > 0
     const tables = new Set<string>()
     for (const resourceId of listableIds) {
-      if (!webhookIds.has(resourceId)) continue
+      if (hasWebhookMetadata && !webhookIds.has(resourceId)) continue
       const tableName = resolveTableName(resourceId, aliases)
       if (!excluded.has(tableName)) tables.add(tableName)
     }
