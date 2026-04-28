@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RemainingRange } from './index.js'
-import { reconcileRanges, withRateLimit } from './src-list-api.js'
+import { isSkippableError, reconcileRanges, withRateLimit } from './src-list-api.js'
+import { StripeApiRequestError } from '@stripe/sync-openapi'
 import type { ListFn } from '@stripe/sync-openapi'
 
 describe('reconcileRanges', () => {
@@ -111,6 +112,35 @@ describe('reconcileRanges', () => {
       { gte: '2018', lt: '2024' }
     )
     expect(result).toEqual([])
+  })
+})
+
+describe('isSkippableError', () => {
+  function makeError(message: string) {
+    return new StripeApiRequestError(400, { error: { message } }, 'GET', '/v2/core/accounts')
+  }
+
+  it('skips v2_core_accounts when Accounts v2 is not enabled for a platform', () => {
+    const err = makeError(
+      'Accounts v2 is not enabled for your platform. If you\'re interested in using this API with your integration, please visit https://dashboard.stripe.com/acct_1DfwS2ClCIKljWvs/settings/connect/platform-setup. [GET /v2/core/accounts (400)] {request-id=req_v2HaQWYCiDgV6xQZ7, stripe-should-retry=false}'
+    )
+    expect(isSkippableError(err)).toBe(true)
+  })
+
+  it('skips v2_core_accounts when Accounts v2 is not enabled for a livemode merchant', () => {
+    const err = makeError(
+      'Accounts v2 is not enabled for your livemode merchant acct_1NIFdXLd02PKGbD5. Please visit https://docs.stripe.com/connect/use-accounts-as-customers to enable Accounts v2. [GET /v2/core/accounts (400)] {request-id=req_v2yowYQ7yMNDkuvFi, stripe-should-retry=false}'
+    )
+    expect(isSkippableError(err)).toBe(true)
+  })
+
+  it('does not skip unrecognized errors', () => {
+    const err = makeError('Something went wrong')
+    expect(isSkippableError(err)).toBe(false)
+  })
+
+  it('does not skip non-StripeApiRequestError errors', () => {
+    expect(isSkippableError(new Error('Accounts v2 is not enabled'))).toBe(false)
   })
 })
 

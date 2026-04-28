@@ -159,7 +159,7 @@ const SKIPPABLE_ERROR_MESSAGES = [
   'Your account is not set up to use Identity',
 ]
 
-function isSkippableError(err: unknown): boolean {
+export function isSkippableError(err: unknown): boolean {
   if (!(err instanceof StripeApiRequestError)) return false
   const body = err.body as { error?: { message?: string } } | undefined
   const message = (body?.error?.message ?? '').toLowerCase()
