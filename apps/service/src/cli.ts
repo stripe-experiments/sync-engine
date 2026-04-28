@@ -729,9 +729,13 @@ export async function createProgram() {
       meta: { name: 'sync_batch', description: 'Run sync for a pipeline (batch, returns JSON)' },
       args: {
         id: { type: 'positional', required: true, description: 'Pipeline ID' },
+        'time-limit': {
+          type: 'string',
+          description: 'Stop after N seconds per request',
+        },
         'state-limit': {
           type: 'string',
-          description: 'Stop after N source_state messages',
+          description: 'Stop after N source_state messages per request',
         },
         'run-id': {
           type: 'string',
@@ -745,6 +749,16 @@ export async function createProgram() {
           type: 'boolean',
           default: false,
           description: 'Ignore persisted sync state and start fresh',
+        },
+        loop: {
+          type: 'boolean',
+          default: false,
+          description: 'Continue calling sync_batch until has_more is false',
+        },
+        raw: {
+          type: 'boolean',
+          default: false,
+          description: 'Output raw JSON to stdout (no progress rendering)',
         },
       },
       async run({ args }) {
@@ -761,13 +775,7 @@ export async function createProgram() {
           }
         }
 
-        const params = new URLSearchParams()
-        if (args['state-limit']) params.set('state_limit', args['state-limit'])
-        if (args['run-id']) params.set('run_id', args['run-id'])
-        if (args['reset-state']) params.set('reset_state', 'true')
-        const qs = params.toString() ? `?${params}` : ''
-
-        const body = {
+        const bodyBase = {
           ...(parseStreamsArg(args.streams) ? { streams: parseStreamsArg(args.streams) } : {}),
           ...(connectorOverrides?.source ? { source: connectorOverrides.source } : {}),
           ...(connectorOverrides?.destination
@@ -775,31 +783,62 @@ export async function createProgram() {
             : {}),
         }
 
-        const res = await handler(
-          new Request(`http://localhost/pipelines/${args.id}/sync_batch${qs}`, {
-            method: 'POST',
-            ...(Object.keys(body).length > 0
-              ? {
-                  headers: { 'content-type': 'application/json' },
-                  body: JSON.stringify(body),
-                }
-              : {}),
-          })
-        )
+        const raw = args.raw === true
+        const loop = args.loop === true
+        const { formatProgress } = await import('@stripe/sync-logger/progress')
+        let prevProgress: import('@stripe/sync-protocol').ProgressPayload | undefined
+        let isFirstIteration = true
+        let iteration = 0
 
-        if (!res.ok) {
-          const text = await res.text()
-          try {
-            const json = JSON.parse(text)
-            process.stderr.write(`Error ${res.status}: ${JSON.stringify(json, null, 2)}\n`)
-          } catch {
-            process.stderr.write(`Error ${res.status}: ${text}\n`)
+        while (true) {
+          iteration++
+          const params = new URLSearchParams()
+          if (args['time-limit']) params.set('time_limit', args['time-limit'])
+          if (args['state-limit']) params.set('state_limit', args['state-limit'])
+          if (args['run-id']) params.set('run_id', args['run-id'])
+          if (args['reset-state'] && isFirstIteration) params.set('reset_state', 'true')
+          const qs = params.toString() ? `?${params}` : ''
+
+          const res = await handler(
+            new Request(`http://localhost/pipelines/${args.id}/sync_batch${qs}`, {
+              method: 'POST',
+              ...(Object.keys(bodyBase).length > 0
+                ? {
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(bodyBase),
+                  }
+                : {}),
+            })
+          )
+
+          if (!res.ok) {
+            const text = await res.text()
+            try {
+              const json = JSON.parse(text)
+              process.stderr.write(`Error ${res.status}: ${JSON.stringify(json, null, 2)}\n`)
+            } catch {
+              process.stderr.write(`Error ${res.status}: ${text}\n`)
+            }
+            process.exit(1)
           }
-          process.exit(1)
-        }
 
-        const eof = await res.json()
-        process.stdout.write(JSON.stringify(eof, null, 2) + '\n')
+          const eof = (await res.json()) as import('@stripe/sync-protocol').EofPayload
+
+          if (raw) {
+            process.stdout.write(JSON.stringify(eof) + '\n')
+          } else {
+            if (loop) process.stderr.write(`--- iteration ${iteration} ---\n`)
+            process.stderr.write(formatProgress(eof.run_progress, prevProgress) + '\n')
+            prevProgress = eof.run_progress
+          }
+
+          if (!loop || !eof.has_more) {
+            if (!raw) process.stderr.write(`Final status: ${eof.status}\n`)
+            break
+          }
+
+          isFirstIteration = false
+        }
       },
     }) as CommandDef
 
