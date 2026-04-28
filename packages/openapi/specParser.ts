@@ -383,18 +383,23 @@ export class SpecParser {
 
   /**
    * Resource IDs that have at least one CRUD webhook event.
-   * Prefers the `x-stripeEvent` extension (precise schema $ref). Falls back
-   * to `paths['/v1/webhook_endpoints'].post...enabled_events` enum + heuristic
-   * matching against `listableIds` when `x-stripeEvent` is absent (older/public specs).
+   * Merges three signals so v1 and v2 specs both work:
+   *  - `x-stripeEvent` schemas with `properties.object.$ref` (v1 events)
+   *  - `x-stripeEvent.type` prefix matched against listable ids (v2 events)
+   *  - `paths['/v1/webhook_endpoints'].post...enabled_events` enum (older/public specs)
    */
   discoverWebhookUpdatableResourceIds(
     spec: OpenApiSpec,
     listableIds?: ReadonlySet<string>
   ): Set<string> {
-    const fromExtension = this.discoverWebhookUpdatableFromExtension(spec)
-    if (fromExtension.size > 0) return fromExtension
     const ids = listableIds ?? this.discoverListableResourceIds(spec, { includeNested: true })
-    return this.discoverWebhookUpdatableFromEnabledEvents(spec, ids)
+    const eventTypes = new Set<string>([
+      ...this.collectStripeEventTypes(spec),
+      ...this.collectEnabledEventTypes(spec),
+    ])
+    const fromTypes = this.matchEventTypesToResourceIds(eventTypes, ids)
+    const fromRef = this.discoverWebhookUpdatableFromExtension(spec)
+    return new Set<string>([...fromTypes, ...fromRef])
   }
 
   private discoverWebhookUpdatableFromExtension(spec: OpenApiSpec): Set<string> {
@@ -428,51 +433,67 @@ export class SpecParser {
     return resourceIds
   }
 
-  private discoverWebhookUpdatableFromEnabledEvents(
-    spec: OpenApiSpec,
-    listableIds: ReadonlySet<string>
-  ): Set<string> {
-    const prefixes = this.extractEnabledEventCrudPrefixes(spec)
-    const resourceIds = new Set<string>()
-    if (prefixes.size === 0) return resourceIds
-
-    for (const resourceId of listableIds) {
-      if (prefixes.has(resourceId)) {
-        resourceIds.add(resourceId)
-        continue
-      }
-      const suffix = `.${resourceId}`
-      for (const prefix of prefixes) {
-        if (prefix.endsWith(suffix)) {
-          resourceIds.add(resourceId)
-          break
-        }
-      }
+  private collectStripeEventTypes(spec: OpenApiSpec): Set<string> {
+    const types = new Set<string>()
+    const schemas = spec.components?.schemas
+    if (!schemas) return types
+    for (const schema of Object.values(schemas)) {
+      if (!schema || '$ref' in schema) continue
+      const stripeEvent = schema['x-stripeEvent']
+      if (!stripeEvent || typeof stripeEvent !== 'object') continue
+      const eventType = stripeEvent.type
+      if (eventType && typeof eventType === 'string') types.add(eventType)
     }
-    return resourceIds
+    return types
   }
 
-  private extractEnabledEventCrudPrefixes(spec: OpenApiSpec): Set<string> {
-    const prefixes = new Set<string>()
+  private collectEnabledEventTypes(spec: OpenApiSpec): Set<string> {
+    const types = new Set<string>()
     const op = spec.paths?.['/v1/webhook_endpoints']?.post as
       | { requestBody?: { content?: Record<string, { schema?: OpenApiSchemaOrReference }> } }
       | undefined
     const schema = op?.requestBody?.content?.['application/x-www-form-urlencoded']?.schema
-    if (!schema || '$ref' in schema) return prefixes
+    if (!schema || '$ref' in schema) return types
     const enabledEvents = schema.properties?.enabled_events
-    if (!enabledEvents || '$ref' in enabledEvents) return prefixes
+    if (!enabledEvents || '$ref' in enabledEvents) return types
     const items = enabledEvents.items
-    if (!items || Array.isArray(items) || '$ref' in items) return prefixes
+    if (!items || Array.isArray(items) || '$ref' in items) return types
     const enumValues = items.enum
-    if (!Array.isArray(enumValues)) return prefixes
-
+    if (!Array.isArray(enumValues)) return types
     for (const value of enumValues) {
-      if (typeof value !== 'string') continue
-      const suffix = CRUD_SUFFIXES.find((s) => value.endsWith(s))
-      if (!suffix) continue
-      prefixes.add(value.slice(0, value.length - suffix.length))
+      if (typeof value === 'string') types.add(value)
     }
-    return prefixes
+    return types
+  }
+
+  /** Match event types like `customer.created` or `v2.core.account.updated` against listable resource ids. */
+  private matchEventTypesToResourceIds(
+    eventTypes: ReadonlySet<string>,
+    listableIds: ReadonlySet<string>
+  ): Set<string> {
+    const out = new Set<string>()
+    if (eventTypes.size === 0) return out
+    const candidatePrefixes = new Set<string>()
+    for (const type of eventTypes) {
+      const cleaned = type.replace(/\[[^\]]*\]/g, '')
+      const lastDot = cleaned.lastIndexOf('.')
+      if (lastDot <= 0) continue
+      candidatePrefixes.add(cleaned.slice(0, lastDot))
+    }
+    for (const resourceId of listableIds) {
+      if (candidatePrefixes.has(resourceId)) {
+        out.add(resourceId)
+        continue
+      }
+      const suffix = `.${resourceId}`
+      for (const prefix of candidatePrefixes) {
+        if (prefix.endsWith(suffix)) {
+          out.add(resourceId)
+          break
+        }
+      }
+    }
+    return out
   }
 
   /**
