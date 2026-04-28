@@ -1,39 +1,24 @@
 import type { CatalogPayload, Stream } from '@stripe/sync-protocol'
 import type { ResourceConfig } from './types.js'
-import type { ParsedResourceTable } from '@stripe/sync-openapi'
 import { parsedTableToJsonSchema } from '@stripe/sync-openapi'
 
 /**
- * Derive a CatalogPayload by merging OpenAPI-parsed tables with registry metadata.
- * `_account_id` and `_updated_at` (staleness, see DDR-009) are injected into properties.
- * The returned catalog is account-agnostic — call {@link stampAccountIdEnum} to
- * add the per-pipeline allow-list before handing it to destinations.
- *
- * Throws if the registry contains a syncable entry whose schema is missing from
- * `tables`. This is a structural invariant: `discover()` must use the same
- * canonical table list (see `discoverSyncableTables`) for both the parser and
- * the registry, otherwise the catalog would emit a stream without a
- * `json_schema`, which destinations would silently turn into an empty table.
+ * Derive a CatalogPayload from the registry. Each syncable ResourceConfig must
+ * carry a `parsedTable`; throws if one is missing (ghost-table guard).
  */
-export function catalogFromOpenApi(
-  tables: ParsedResourceTable[],
-  registry: Record<string, ResourceConfig>
-): CatalogPayload {
-  const tableMap = new Map(tables.map((t) => [t.tableName, t]))
-
+export function catalogFromOpenApi(registry: Record<string, ResourceConfig>): CatalogPayload {
   const streams: Stream[] = Object.entries(registry)
     .filter(([, cfg]) => cfg.sync !== false)
     .sort(([, a], [, b]) => a.order - b.order)
     .map(([name, cfg]) => {
-      const table = tableMap.get(cfg.tableName)
-      if (!table) {
+      if (!cfg.parsedTable) {
         throw new Error(
-          `catalogFromOpenApi: registry contains "${cfg.tableName}" but no parsed schema was provided. ` +
-            `The registry and parsed tables must be derived from the same canonical syncable-table list.`
+          `catalogFromOpenApi: registry entry "${cfg.tableName}" has no parsedTable. ` +
+            `Pass parsedTables to buildResourceRegistry so every entry carries its schema.`
         )
       }
 
-      const jsonSchema = parsedTableToJsonSchema(table)
+      const jsonSchema = parsedTableToJsonSchema(cfg.parsedTable)
       const properties = (jsonSchema.properties ?? {}) as Record<string, unknown>
       properties._account_id = { type: 'string' }
       properties._updated_at = { type: 'integer' }

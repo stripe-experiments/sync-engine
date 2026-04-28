@@ -1,4 +1,4 @@
-import type { ListFn, RetrieveFn } from '@stripe/sync-openapi'
+import type { ListFn, RetrieveFn, ParsedResourceTable } from '@stripe/sync-openapi'
 import type { RevalidateEntityName } from './resourceRegistry.js'
 
 /**
@@ -32,6 +32,8 @@ export type BaseResourceConfig = {
 export type ResourceConfig = BaseResourceConfig & {
   listFn?: ListFn
   retrieveFn?: RetrieveFn
+  /** Parsed OpenAPI schema for this resource (used to build catalog json_schema) */
+  parsedTable?: ParsedResourceTable
   /** Whether the list API supports the `limit` parameter */
   supportsLimit?: boolean
   /** Whether the list API supports forward cursor pagination for repeated page fetches. */

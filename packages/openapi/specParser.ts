@@ -199,12 +199,30 @@ export class SpecParser {
   }
 
   /**
+   * Parse the spec restricted to syncable tables only.
+   * Combines discoverSyncableTables + parse into a single call.
+   */
+  parseSyncable(
+    spec: OpenApiSpec,
+    options: {
+      aliases?: Record<string, string>
+      excluded?: ReadonlySet<string>
+    } = {}
+  ): ParsedOpenApiSpec {
+    const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.aliases ?? {}) }
+    const syncableTables = this.discoverSyncableTables(spec, {
+      aliases,
+      excluded: options.excluded,
+    })
+    return this.parse(spec, {
+      resourceAliases: aliases,
+      allowedTables: Array.from(syncableTables),
+    })
+  }
+
+  /**
    * The canonical list of tables that can be synced from this spec.
-   *
-   * A resource is syncable when it (a) has a list endpoint, (b) emits create/
-   * update/delete webhook events, and (c) is not in `excluded`. Both schema
-   * parsing and runtime registry construction must agree on this set or the
-   * catalog will diverge from the registry.
+   * Syncable = listable + webhook-updatable + not excluded.
    */
   discoverSyncableTables(
     spec: OpenApiSpec,

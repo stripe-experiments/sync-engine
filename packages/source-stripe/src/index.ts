@@ -13,12 +13,7 @@ import type { Config } from './spec.js'
 import type { StripeEvent } from './spec.js'
 import { buildResourceRegistry, EXCLUDED_TABLES } from './resourceRegistry.js'
 import { catalogFromOpenApi, stampAccountIdEnum } from './catalog.js'
-import {
-  BUNDLED_API_VERSION,
-  resolveOpenApiSpec,
-  SpecParser,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-} from '@stripe/sync-openapi'
+import { BUNDLED_API_VERSION, resolveOpenApiSpec, SpecParser } from '@stripe/sync-openapi'
 import { processStripeEvent } from './process-event.js'
 import { processWebhookInput, createInputQueue, startWebhookServer } from './src-webhook.js'
 import { listApiBackfill, errorToConnectionStatus } from './src-list-api.js'
@@ -165,22 +160,18 @@ export function createStripeSource(
 
       const resolved = await resolveOpenApiSpec({ apiVersion }, makeApiFetch())
       const parser = new SpecParser()
-      const syncableTables = parser.discoverSyncableTables(resolved.spec, {
-        aliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-        excluded: EXCLUDED_TABLES,
-      })
-      const parsed = parser.parse(resolved.spec, {
-        resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-        allowedTables: Array.from(syncableTables),
-      })
+      const parsed = parser.parseSyncable(resolved.spec, { excluded: EXCLUDED_TABLES })
+      const syncableTables = new Set(parsed.tables.map((t) => t.tableName))
       const registry = buildResourceRegistry(
         resolved.spec,
         config.api_key,
         resolved.apiVersion,
         config.base_url,
-        syncableTables
+        syncableTables,
+        undefined,
+        parsed.tables
       )
-      const catalog = catalogFromOpenApi(parsed.tables, registry)
+      const catalog = catalogFromOpenApi(registry)
       const frozenCatalog = deepFreeze(catalog)
       discoverCache.set(apiVersion, frozenCatalog)
       yield {
