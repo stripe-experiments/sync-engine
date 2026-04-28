@@ -1,12 +1,24 @@
-import type { ParsedResourceTable, ScalarType } from './types.js'
+import type { JsonShape, ParsedResourceTable, ScalarType } from './types.js'
 
-const SCALAR_TYPE_TO_JSON_SCHEMA: Record<ScalarType, { type: string; format?: string }> = {
+const SCALAR_TYPE_TO_JSON_SCHEMA: Record<
+  Exclude<ScalarType, 'json'>,
+  { type: string; format?: string }
+> = {
   text: { type: 'string' },
   boolean: { type: 'boolean' },
   bigint: { type: 'integer' },
   numeric: { type: 'number' },
-  json: { type: 'object' },
   timestamptz: { type: 'string', format: 'date-time' },
+}
+
+function withNullable(schema: Record<string, unknown>, nullable: boolean): Record<string, unknown> {
+  return nullable ? { oneOf: [schema, { type: 'null' }] } : schema
+}
+
+function jsonShapeToJsonSchema(shape: JsonShape | undefined): Record<string, unknown> {
+  if (shape === 'array') return { type: 'array' }
+  if (shape === 'object' || shape === undefined) return { type: 'object' }
+  return {}
 }
 
 export function parsedTableToJsonSchema(table: ParsedResourceTable): Record<string, unknown> {
@@ -16,11 +28,20 @@ export function parsedTableToJsonSchema(table: ParsedResourceTable): Record<stri
   const required: string[] = ['id']
 
   for (const col of table.columns) {
-    const mapped = SCALAR_TYPE_TO_JSON_SCHEMA[col.type] ?? { type: 'string' }
-    if (col.nullable) {
-      properties[col.name] = { oneOf: [mapped, { type: 'null' }] }
-    } else {
-      properties[col.name] = mapped
+    const mapped: Record<string, unknown> = col.expandableReference
+      ? {
+          type: 'string',
+          'x-expandable-reference': true,
+          ...(col.expansionResourceIds?.length
+            ? { 'x-expansion-resources': col.expansionResourceIds }
+            : {}),
+        }
+      : col.type === 'json'
+        ? jsonShapeToJsonSchema(col.jsonShape)
+        : SCALAR_TYPE_TO_JSON_SCHEMA[col.type]
+
+    properties[col.name] = withNullable(mapped, col.nullable)
+    if (!col.nullable) {
       required.push(col.name)
     }
   }

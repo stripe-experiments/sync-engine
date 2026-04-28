@@ -22,6 +22,22 @@ const RESOURCE_DELETE_EVENTS: ReadonlySet<string> = new Set([
   'customer.tax_id.deleted',
 ])
 
+const ENTITLEMENT_STREAM = normalizeStripeObjectName('entitlements.active_entitlement')
+const SUBSCRIPTION_STREAM = normalizeStripeObjectName('subscription')
+const SUBSCRIPTION_ITEM_STREAM = normalizeStripeObjectName('subscription_item')
+
+function lookupResourceConfig(
+  registry: Record<string, ResourceConfig>,
+  streamName: string
+): ResourceConfig | undefined {
+  return registry[streamName]
+}
+
+function chooseStreamName(streamNames: Set<string>, canonicalName: string): string | undefined {
+  if (streamNames.has(canonicalName)) return canonicalName
+  return undefined
+}
+
 function isDeleteEvent(event: StripeEvent): boolean {
   if (
     'deleted' in event.data.object &&
@@ -58,7 +74,7 @@ export function fromStripeEvent(
   if (!dataObject?.object) return null
 
   const objectType = normalizeStripeObjectName(dataObject.object)
-  const config = registry[objectType]
+  const config = lookupResourceConfig(registry, objectType)
   if (!config) return null
 
   // Skip objects without an id (preview/draft objects like invoice.upcoming)
@@ -118,7 +134,8 @@ export async function* processStripeEvent(
   // 2. Entitlements special case — the summary object type doesn't map to a
   //    registry entry, so we must handle it before the registry lookup.
   if (event.type === 'entitlements.active_entitlement_summary.updated') {
-    if (!streamNames.has('active_entitlements')) return
+    const entitlementStream = chooseStreamName(streamNames, ENTITLEMENT_STREAM)
+    if (!entitlementStream) return
     const summary = dataObject as {
       customer: string
       entitlements: {
@@ -134,7 +151,7 @@ export async function* processStripeEvent(
     }
     for (const e of summary.entitlements.data) {
       yield msg.record({
-        stream: 'active_entitlements',
+        stream: entitlementStream,
         emitted_at: new Date().toISOString(),
         data: {
           id: e.id,
@@ -143,7 +160,7 @@ export async function* processStripeEvent(
           customer: summary.customer,
           livemode: e.livemode,
           lookup_key: e.lookup_key,
-          [newerThanField('active_entitlements')]:
+          [newerThanField(entitlementStream)]:
             typeof e.updated === 'number' ? e.updated : event.created,
           ...(accountId ? { _account_id: accountId } : {}),
         },
@@ -151,7 +168,7 @@ export async function* processStripeEvent(
     }
     yield msg.source_state({
       state_type: 'stream',
-      stream: 'active_entitlements',
+      stream: entitlementStream,
       data: { eventId: event.id, eventCreated: event.created },
     })
     return
@@ -159,7 +176,7 @@ export async function* processStripeEvent(
 
   // 3. Filter by registry and catalog
   const objectType = normalizeStripeObjectName(dataObject.object)
-  const resourceConfig = registry[objectType]
+  const resourceConfig = lookupResourceConfig(registry, objectType)
   if (!resourceConfig) return
   if (!dataObject.id) return // skip preview/draft objects
   if (!streamNames.has(resourceConfig.tableName)) return
@@ -209,13 +226,15 @@ export async function* processStripeEvent(
   })
 
   // 7. Yield subscription items if applicable.
-  if (objectType === 'subscriptions' && (data as { items?: { data?: unknown[] } }).items?.data) {
+  if (objectType === SUBSCRIPTION_STREAM && (data as { items?: { data?: unknown[] } }).items?.data) {
+    const subscriptionItemStream = chooseStreamName(streamNames, SUBSCRIPTION_ITEM_STREAM)
+    if (!subscriptionItemStream) return
     const subscriptionItemsNewerThanField =
-      catalog.streams.find((cs) => cs.stream.name === 'subscription_items')?.stream
+      catalog.streams.find((cs) => cs.stream.name === subscriptionItemStream)?.stream
         .newer_than_field ?? newerThanField(resourceConfig.tableName)
     for (const item of (data as { items: { data: Record<string, unknown>[] } }).items.data) {
       yield msg.record({
-        stream: 'subscription_items',
+        stream: subscriptionItemStream,
         data: {
           ...item,
           [subscriptionItemsNewerThanField]: _updated_at,

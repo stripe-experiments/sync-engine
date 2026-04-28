@@ -172,7 +172,7 @@ function isSkippableError(err: unknown): boolean {
 
 /**
  * Reconcile `remaining` ranges when the incoming `time_range` differs from
- * the previously `accounted_range`. Rules:
+ * the previously `accounted_range`. Behavior:
  *   1. Drop ranges fully outside the new time_range
  *   2. Trim ranges that partially overlap the new boundaries
  *   3. Add new ranges for uncovered territory
@@ -232,12 +232,12 @@ function findConfigByTableName(
   return Object.values(registry).find((cfg) => cfg.tableName === tableName)
 }
 
-// MARK: - Detect and discard legacy state
+// MARK: - State validation
 
-function isLegacyState(data: unknown): boolean {
-  if (data == null || typeof data !== 'object') return false
-  const obj = data as Record<string, unknown>
-  return 'backfill' in obj || 'segments' in obj || 'status' in obj || 'page_cursor' in obj
+function assertStreamState(data: StreamState, streamName: string): void {
+  if (!Array.isArray(data.remaining)) {
+    throw new Error(`Invalid state for stream "${streamName}": expected remaining ranges`)
+  }
 }
 
 // MARK: - Page fetching for streamingSubdivide
@@ -466,11 +466,11 @@ async function* iterateStream(opts: {
     event: 'stream_state_check',
     stream: streamName,
     has_state: !!opts.streamState,
-    is_legacy: opts.streamState ? isLegacyState(opts.streamState) : null,
     state_keys: opts.streamState ? Object.keys(opts.streamState as Record<string, unknown>) : null,
   })
 
-  if (opts.streamState && !isLegacyState(opts.streamState)) {
+  if (opts.streamState) {
+    assertStreamState(opts.streamState, streamName)
     const existingAccounted = opts.streamState.accounted_range
     if (
       existingAccounted &&
@@ -498,9 +498,6 @@ async function* iterateStream(opts: {
     }
     if (remaining.length === 0) return
   } else {
-    if (opts.streamState && isLegacyState(opts.streamState)) {
-      log.warn(`${streamName}: discarding legacy state, starting fresh`)
-    }
     remaining = [{ gte: timeRange.gte, lt: timeRange.lt, cursor: null }]
   }
 

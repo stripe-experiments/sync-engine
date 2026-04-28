@@ -7,8 +7,8 @@ describe('discoverListEndpoints', () => {
   it('maps table names to their API paths', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
 
-    expect(endpoints.get('customers')).toEqual({
-      tableName: 'customers',
+    expect(endpoints.get('customer')).toEqual({
+      tableName: 'customer',
       resourceId: 'customer',
       apiPath: '/v1/customers',
       supportsCreatedFilter: true,
@@ -16,8 +16,8 @@ describe('discoverListEndpoints', () => {
       supportsStartingAfter: true,
       supportsEndingBefore: true,
     })
-    expect(endpoints.get('checkout_sessions')).toEqual({
-      tableName: 'checkout_sessions',
+    expect(endpoints.get('checkout_session')).toEqual({
+      tableName: 'checkout_session',
       resourceId: 'checkout.session',
       apiPath: '/v1/checkout/sessions',
       supportsCreatedFilter: true,
@@ -25,8 +25,8 @@ describe('discoverListEndpoints', () => {
       supportsStartingAfter: true,
       supportsEndingBefore: true,
     })
-    expect(endpoints.get('early_fraud_warnings')).toEqual({
-      tableName: 'early_fraud_warnings',
+    expect(endpoints.get('radar_early_fraud_warning')).toEqual({
+      tableName: 'radar_early_fraud_warning',
       resourceId: 'radar.early_fraud_warning',
       apiPath: '/v1/radar/early_fraud_warnings',
       supportsCreatedFilter: true,
@@ -39,8 +39,8 @@ describe('discoverListEndpoints', () => {
   it('discovers v2 list endpoints using next_page_url format', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
 
-    expect(endpoints.get('v2_core_accounts')).toEqual({
-      tableName: 'v2_core_accounts',
+    expect(endpoints.get('v2_core_account')).toEqual({
+      tableName: 'v2_core_account',
       resourceId: 'v2.core.account',
       apiPath: '/v2/core/accounts',
       supportsCreatedFilter: false,
@@ -48,8 +48,8 @@ describe('discoverListEndpoints', () => {
       supportsStartingAfter: false,
       supportsEndingBefore: false,
     })
-    expect(endpoints.get('v2_core_event_destinations')).toEqual({
-      tableName: 'v2_core_event_destinations',
+    expect(endpoints.get('v2_core_event_destination')).toEqual({
+      tableName: 'v2_core_event_destination',
       resourceId: 'v2.core.event_destination',
       apiPath: '/v2/core/event_destinations',
       supportsCreatedFilter: false,
@@ -97,20 +97,20 @@ describe('discoverListEndpoints', () => {
   it('skips endpoints with deprecated: true on the operation', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
     const tables = Array.from(endpoints.keys())
-    expect(tables).not.toContain('deprecated_widgets')
+    expect(tables).not.toContain('deprecated_widget')
   })
 
   it('skips endpoints with [Deprecated] in the description', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
     const tables = Array.from(endpoints.keys())
-    expect(tables).not.toContain('exchange_rates')
+    expect(tables).not.toContain('exchange_rate')
   })
 
   it('skips endpoints that appear in the generated global deprecated paths set', () => {
     const endpoints = discoverListEndpoints(minimalStripeOpenApiSpec)
     const tables = Array.from(endpoints.keys())
-    expect(tables).not.toContain('recipients')
-    expect(tables).toContain('customers')
+    expect(tables).not.toContain('recipient')
+    expect(tables).toContain('customer')
   })
 
   it('returns empty map when spec has no paths', () => {

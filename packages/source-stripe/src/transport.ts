@@ -99,26 +99,26 @@ function matchesIpv4Cidr(hostname: string, cidr: string): boolean {
   return (hostValue & mask) === (rangeValue & mask)
 }
 
-function matchesNoProxyRule(hostname: string, rawRule: string): boolean {
-  const rule = rawRule.trim().toLowerCase()
-  if (!rule) {
+function matchesNoProxyEntry(hostname: string, rawEntry: string): boolean {
+  const entry = rawEntry.trim().toLowerCase()
+  if (!entry) {
     return false
   }
-  if (rule === '*') {
+  if (entry === '*') {
     return true
   }
-  if (rule.includes('/')) {
-    return matchesIpv4Cidr(hostname, rule)
+  if (entry.includes('/')) {
+    return matchesIpv4Cidr(hostname, entry)
   }
 
-  const normalizedRule = rule.startsWith('*.') ? rule.slice(1) : rule
-  const exactRule = normalizedRule.startsWith('.') ? normalizedRule.slice(1) : normalizedRule
-  if (hostname === exactRule) {
+  const normalizedEntry = entry.startsWith('*.') ? entry.slice(1) : entry
+  const exactEntry = normalizedEntry.startsWith('.') ? normalizedEntry.slice(1) : normalizedEntry
+  if (hostname === exactEntry) {
     return true
   }
 
-  const suffixRule = normalizedRule.startsWith('.') ? normalizedRule : `.${normalizedRule}`
-  return hostname.endsWith(suffixRule)
+  const suffixEntry = normalizedEntry.startsWith('.') ? normalizedEntry : `.${normalizedEntry}`
+  return hostname.endsWith(suffixEntry)
 }
 
 export function shouldBypassProxy(target: ProxyTarget, env: TransportEnv = process.env): boolean {
@@ -140,7 +140,7 @@ export function shouldBypassProxy(target: ProxyTarget, env: TransportEnv = proce
     return false
   }
 
-  return noProxy.split(',').some((rule) => matchesNoProxyRule(hostname, rule))
+  return noProxy.split(',').some((entry) => matchesNoProxyEntry(hostname, entry))
 }
 
 export function getProxyUrlForTarget(

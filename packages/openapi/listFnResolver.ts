@@ -44,8 +44,7 @@ export type NestedEndpoint = {
 export function resolveTableName(resourceId: string, aliases: Record<string, string>): string {
   const alias = aliases[resourceId]
   if (alias) return alias
-  const normalized = resourceId.toLowerCase().replace(/[.]/g, '_')
-  return normalized.endsWith('s') ? normalized : `${normalized}s`
+  return resourceId.toLowerCase().replace(/[.]/g, '_')
 }
 
 /**

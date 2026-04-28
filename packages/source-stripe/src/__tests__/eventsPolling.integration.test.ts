@@ -6,7 +6,6 @@ import type {
   SourceStateMessage,
 } from '@stripe/sync-protocol'
 import source from '../index.js'
-import type { StreamState } from '../index.js'
 
 const STRIPE_MOCK_URL = process.env.STRIPE_MOCK_URL ?? 'http://localhost:12111'
 
@@ -47,9 +46,10 @@ describe('events polling (integration — stripe-mock)', () => {
   }
 
   it('fetches and processes events from stripe-mock', async () => {
-    // State: all streams complete with events_cursor in the past
-    const state: Record<string, StreamState> = {
-      customers: { page_cursor: null, status: 'complete', events_cursor: 0 },
+    // State: all streams complete with events cursor in the past.
+    const state = {
+      streams: { customers: { remaining: [] } },
+      global: { events_cursor: 0 },
     }
 
     const messages = await collect(source.read({ config, catalog, state }))
@@ -74,16 +74,17 @@ describe('events polling (integration — stripe-mock)', () => {
   })
 
   it('preserves status: complete in all state messages during polling', async () => {
-    const state: Record<string, StreamState> = {
-      customers: { page_cursor: null, status: 'complete', events_cursor: 0 },
+    const state = {
+      streams: { customers: { remaining: [] } },
+      global: { events_cursor: 0 },
     }
 
     const messages = await collect(source.read({ config, catalog, state }))
     const states = messages.filter((m): m is SourceStateMessage => m.type === 'source_state')
 
-    // Every state message should preserve status: complete
+    // Polling only updates the global events cursor.
     for (const s of states) {
-      expect((s.data as { status: string }).status).toBe('complete')
+      expect(s.source_state.state_type).toBe('global')
     }
   })
 })

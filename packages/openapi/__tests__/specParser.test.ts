@@ -4,71 +4,50 @@ import { minimalStripeOpenApiSpec } from './fixtures/minimalSpec'
 import type { OpenApiSpec } from '../../types'
 
 describe('SpecParser', () => {
-  it('parses aliased resources into deterministic tables and column types', () => {
+  it('parses resources into deterministic singular tables and column types', () => {
     const parser = new SpecParser()
     const parsed = parser.parse(minimalStripeOpenApiSpec, {
-      allowedTables: ['checkout_sessions', 'customers', 'early_fraud_warnings'],
+      allowedTables: ['checkout_session', 'customer', 'radar_early_fraud_warning'],
     })
 
     expect(parsed.tables.map((table) => table.tableName)).toEqual([
-      'checkout_sessions',
-      'customers',
-      'early_fraud_warnings',
+      'checkout_session',
+      'customer',
+      'radar_early_fraud_warning',
     ])
 
-    const customers = parsed.tables.find((table) => table.tableName === 'customers')
-    expect(customers?.columns).toEqual([
-      { name: 'created', type: 'bigint', nullable: false },
-      { name: 'deleted', type: 'boolean', nullable: false },
-      { name: 'object', type: 'text', nullable: false },
+    const customer = parsed.tables.find((table) => table.tableName === 'customer')
+    expect(customer?.columns).toEqual([
+      { name: 'created', type: 'bigint', nullable: true },
+      { name: 'deleted', type: 'boolean', nullable: true },
+      { name: 'object', type: 'text', nullable: true },
     ])
 
-    const checkoutSessions = parsed.tables.find((table) => table.tableName === 'checkout_sessions')
+    const checkoutSessions = parsed.tables.find((table) => table.tableName === 'checkout_session')
     expect(checkoutSessions?.columns).toContainEqual({
       name: 'amount_total',
       type: 'bigint',
-      nullable: false,
+      nullable: true,
     })
   })
 
-  it('injects compatibility columns for runtime-critical tables', () => {
+  it('does not synthesize compatibility tables when schemas are absent', () => {
     const parser = new SpecParser()
     const parsed = parser.parse(
       {
         ...minimalStripeOpenApiSpec,
         components: { schemas: {} },
       },
-      { allowedTables: ['active_entitlements', 'subscription_items'] }
+      { allowedTables: ['entitlements_active_entitlement', 'subscription_item'] }
     )
 
-    const activeEntitlements = parsed.tables.find(
-      (table) => table.tableName === 'active_entitlements'
-    )
-    expect(activeEntitlements?.columns).toContainEqual({
-      name: 'customer',
-      type: 'text',
-      nullable: true,
-    })
-
-    const subscriptionItems = parsed.tables.find(
-      (table) => table.tableName === 'subscription_items'
-    )
-    expect(subscriptionItems?.columns).toContainEqual({
-      name: 'deleted',
-      type: 'boolean',
-      nullable: true,
-    })
-    expect(subscriptionItems?.columns).toContainEqual({
-      name: 'subscription',
-      type: 'text',
-      nullable: true,
-    })
+    expect(parsed.tables).toEqual([])
   })
 
   it('is deterministic regardless of schema key order', () => {
     const parser = new SpecParser()
     const normal = parser.parse(minimalStripeOpenApiSpec, {
-      allowedTables: ['customers', 'plans', 'prices'],
+      allowedTables: ['customer', 'plan', 'price'],
     })
 
     const reversedSchemas = Object.fromEntries(
@@ -81,7 +60,7 @@ describe('SpecParser', () => {
           schemas: reversedSchemas,
         },
       },
-      { allowedTables: ['customers', 'plans', 'prices'] }
+      { allowedTables: ['customer', 'plan', 'price'] }
     )
 
     expect(reversed).toEqual(normal)
@@ -117,15 +96,16 @@ describe('SpecParser', () => {
           },
         },
       },
-      { allowedTables: ['charges'] }
+      { allowedTables: ['charge'] }
     )
 
-    const charges = parsed.tables.find((table) => table.tableName === 'charges')
-    expect(charges?.columns).toContainEqual({
+    const charge = parsed.tables.find((table) => table.tableName === 'charge')
+    expect(charge?.columns).toContainEqual({
       name: 'customer',
-      type: 'json',
-      nullable: false,
+      type: 'text',
+      nullable: true,
       expandableReference: true,
+      expansionResourceIds: ['customer'],
     })
   })
 
@@ -330,24 +310,27 @@ describe('SpecParser', () => {
     })
   })
 
-  describe('auto-discovery via paths (no allowedTables)', () => {
-    it('creates tables only for resources with list endpoints', () => {
+  describe('default projection', () => {
+    it('projects every schema with x-resourceId when allowedTables is omitted', () => {
       const parser = new SpecParser()
       const parsed = parser.parse(minimalStripeOpenApiSpec)
 
       const tableNames = parsed.tables.map((t) => t.tableName)
       expect(tableNames).toEqual([
-        'active_entitlements',
-        'checkout_sessions',
-        'customers',
-        'early_fraud_warnings',
-        'features',
-        'plans',
-        'prices',
-        'products',
-        'subscription_items',
-        'v2_core_accounts',
-        'v2_core_event_destinations',
+        'checkout_session',
+        'customer',
+        'deprecated_widget',
+        'entitlements_active_entitlement',
+        'entitlements_feature',
+        'exchange_rate',
+        'plan',
+        'price',
+        'product',
+        'radar_early_fraud_warning',
+        'recipient',
+        'subscription_item',
+        'v2_core_account',
+        'v2_core_event_destination',
       ])
     })
 
@@ -410,18 +393,19 @@ describe('SpecParser', () => {
 
       const parsed = parser.parse(spec)
       const tableNames = parsed.tables.map((table) => table.tableName)
-      expect(tableNames).toContain('persons')
+      expect(tableNames).toContain('person')
     })
 
-    it('excludes generated global deprecated paths from auto-discovered tables', () => {
+    it('does not use path deprecation to filter pure schema projection', () => {
       const parser = new SpecParser()
       const parsed = parser.parse(minimalStripeOpenApiSpec)
       const tableNames = parsed.tables.map((t) => t.tableName)
-      expect(tableNames).not.toContain('recipients')
-      expect(tableNames).toContain('customers')
+      expect(tableNames).toContain('deprecated_widget')
+      expect(tableNames).toContain('exchange_rate')
+      expect(tableNames).toContain('customer')
     })
 
-    it('excludes schemas that have no list endpoint', () => {
+    it('uses allowedTables as an explicit projection filter', () => {
       const parser = new SpecParser()
       const specWithLimitedPaths: OpenApiSpec = {
         ...minimalStripeOpenApiSpec,
@@ -433,12 +417,14 @@ describe('SpecParser', () => {
       const parsed = parser.parse(specWithLimitedPaths)
 
       const tableNames = parsed.tables.map((t) => t.tableName)
-      expect(tableNames).toEqual(['customers', 'products'])
-      expect(tableNames).not.toContain('plans')
-      expect(tableNames).not.toContain('subscription_items')
+      expect(tableNames).toContain('plan')
+      expect(tableNames).toContain('subscription_item')
+
+      const filtered = parser.parse(specWithLimitedPaths, { allowedTables: ['customer', 'product'] })
+      expect(filtered.tables.map((t) => t.tableName)).toEqual(['customer', 'product'])
     })
 
-    it('excludes resources that have a list endpoint but no webhook events', () => {
+    it('does not use webhook event coverage to filter pure schema projection', () => {
       const parser = new SpecParser()
       // Build a spec where 'product' has a list endpoint but its webhook events are removed
       const schemasWithoutProductEvents = Object.fromEntries(
@@ -452,19 +438,19 @@ describe('SpecParser', () => {
       }
       const parsed = parser.parse(spec)
       const tableNames = parsed.tables.map((t) => t.tableName)
-      expect(tableNames).not.toContain('products')
-      expect(tableNames).toContain('customers')
+      expect(tableNames).toContain('product')
+      expect(tableNames).toContain('customer')
     })
 
-    it('resolves table name aliases from x-resourceId during discovery', () => {
+    it('normalizes namespaced x-resourceId values during discovery', () => {
       const parser = new SpecParser()
       const parsed = parser.parse(minimalStripeOpenApiSpec)
 
-      const earlyFraud = parsed.tables.find((t) => t.tableName === 'early_fraud_warnings')
+      const earlyFraud = parsed.tables.find((t) => t.tableName === 'radar_early_fraud_warning')
       expect(earlyFraud).toBeDefined()
       expect(earlyFraud?.resourceId).toBe('radar.early_fraud_warning')
 
-      const checkout = parsed.tables.find((t) => t.tableName === 'checkout_sessions')
+      const checkout = parsed.tables.find((t) => t.tableName === 'checkout_session')
       expect(checkout).toBeDefined()
       expect(checkout?.resourceId).toBe('checkout.session')
     })

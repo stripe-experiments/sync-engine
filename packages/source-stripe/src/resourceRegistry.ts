@@ -8,6 +8,7 @@ import {
   isV2Path,
   resolveTableName,
   OPENAPI_RESOURCE_TABLE_ALIASES,
+  SpecParser,
 } from '@stripe/sync-openapi'
 import { tracedFetch } from './transport.js'
 import { withHttpRetry } from './retry.js'
@@ -53,31 +54,30 @@ function buildSpecAwareListFn(
  * These correspond to the resources that were previously hardcoded with sync: true.
  */
 export const DEFAULT_SYNC_OBJECTS: readonly string[] = [
-  'products',
-  'coupons',
-  'prices',
-  'plans',
-  'customers',
-  'subscriptions',
-  'subscription_schedules',
-  'invoices',
-  'charges',
-  'setup_intents',
-  'payment_methods',
-  'payment_intents',
-  'tax_ids',
-  'credit_notes',
-  'disputes',
-  'early_fraud_warnings',
-  'refunds',
-  'checkout_sessions',
+  'product',
+  'coupon',
+  'price',
+  'plan',
+  'customer',
+  'subscription',
+  'subscription_schedule',
+  'invoice',
+  'charge',
+  'setup_intent',
+  'payment_method',
+  'payment_intent',
+  'tax_id',
+  'credit_note',
+  'dispute',
+  'radar_early_fraud_warning',
+  'refund',
+  'checkout_session',
 ]
 
 export const REVALIDATE_ENTITIES = [
   ...DEFAULT_SYNC_OBJECTS,
   'radar.early_fraud_warning',
-  'subscription_schedule',
-  'entitlements',
+  'entitlements.active_entitlement',
 ] as const
 export type RevalidateEntityName = (typeof REVALIDATE_ENTITIES)[number]
 
@@ -92,8 +92,28 @@ export type RevalidateEntityName = (typeof REVALIDATE_ENTITIES)[number]
 export const EXCLUDED_TABLES = new Set([
   // /v1/billing/credit_balance_transactions — requires `customer` query param
   // despite the spec marking it as optional. Always returns 400 without it.
-  'billing_credit_balance_transactions',
+  'billing_credit_balance_transaction',
 ])
+
+export function discoverSyncableTables(
+  spec: OpenApiSpec,
+  aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+): Set<string> {
+  const parser = new SpecParser()
+  const listableIds = parser.discoverListableResourceIds(spec, { includeNested: true })
+  const webhookIds = parser.discoverWebhookUpdatableResourceIds(spec)
+  const tables = new Set<string>()
+
+  for (const resourceId of listableIds) {
+    if (!webhookIds.has(resourceId)) continue
+    const tableName = resolveTableName(resourceId, aliases)
+    if (!EXCLUDED_TABLES.has(tableName)) {
+      tables.add(tableName)
+    }
+  }
+
+  return tables
+}
 
 export function buildResourceRegistry(
   spec: OpenApiSpec,
@@ -187,11 +207,10 @@ export function buildResourceRegistry(
 }
 
 export const STRIPE_OBJECT_TO_SYNC_OBJECT_ALIASES: Record<string, string> = {
-  'checkout.session': 'checkout_sessions',
-  'radar.early_fraud_warning': 'early_fraud_warnings',
-  'entitlements.active_entitlement': 'active_entitlements',
-  'entitlements.feature': 'active_entitlements',
-  subscription_schedule: 'subscription_schedules',
+  'checkout.session': 'checkout_session',
+  'radar.early_fraud_warning': 'radar_early_fraud_warning',
+  'entitlements.active_entitlement': 'entitlements_active_entitlement',
+  'entitlements.feature': 'entitlements_feature',
 }
 
 export function normalizeStripeObjectName(stripeObjectName: string): string {
@@ -202,25 +221,25 @@ export function normalizeStripeObjectName(stripeObjectName: string): string {
 }
 
 export const PREFIX_RESOURCE_MAP: Record<string, string> = {
-  cus_: 'customers',
-  gcus_: 'customers',
-  in_: 'invoices',
-  price_: 'prices',
-  prod_: 'products',
-  sub_: 'subscriptions',
-  seti_: 'setup_intents',
-  pm_: 'payment_methods',
-  dp_: 'disputes',
-  du_: 'disputes',
-  ch_: 'charges',
-  pi_: 'payment_intents',
-  txi_: 'tax_ids',
-  cn_: 'credit_notes',
-  issfr_: 'early_fraud_warnings',
-  prv_: 'reviews',
-  re_: 'refunds',
-  feat_: 'active_entitlements',
-  cs_: 'checkout_sessions',
+  cus_: 'customer',
+  gcus_: 'customer',
+  in_: 'invoice',
+  price_: 'price',
+  prod_: 'product',
+  sub_: 'subscription',
+  seti_: 'setup_intent',
+  pm_: 'payment_method',
+  dp_: 'dispute',
+  du_: 'dispute',
+  ch_: 'charge',
+  pi_: 'payment_intent',
+  txi_: 'tax_id',
+  cn_: 'credit_note',
+  issfr_: 'radar_early_fraud_warning',
+  prv_: 'review',
+  re_: 'refund',
+  feat_: 'entitlements_active_entitlement',
+  cs_: 'checkout_session',
 }
 
 const SORTED_PREFIXES = Object.keys(PREFIX_RESOURCE_MAP).sort((a, b) => b.length - a.length)

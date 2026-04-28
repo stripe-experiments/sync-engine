@@ -11,8 +11,8 @@ import { createSourceMessageFactory, withAbortOnReturn } from '@stripe/sync-prot
 import defaultSpec from './spec.js'
 import type { Config } from './spec.js'
 import type { StripeEvent } from './spec.js'
-import { buildResourceRegistry } from './resourceRegistry.js'
-import { catalogFromOpenApi, stampAccountIdEnum } from './catalog.js'
+import { buildResourceRegistry, discoverSyncableTables } from './resourceRegistry.js'
+import { catalogFromOpenApi } from './catalog.js'
 import {
   BUNDLED_API_VERSION,
   resolveOpenApiSpec,
@@ -59,10 +59,6 @@ function deepFreeze<T>(obj: T): T {
     deepFreeze((obj as Record<PropertyKey, unknown>)[key])
   }
   return Object.freeze(obj)
-}
-
-function resolveAllowedAccountIds(accountId: string, _config: Config): string[] {
-  return [accountId]
 }
 
 // MARK: - Spec
@@ -140,46 +136,37 @@ export function createStripeSource(
       }
     },
 
-    // Discover stamps the catalog with the per-pipeline `_account_id`
-    // allow-list so destinations can derive write-time tenancy constraints.
-    // We trust `config.account_id` when set (populated by `setup()`); only
-    // fall back to a live `GET /v1/account` when it's missing, otherwise
-    // pipeline_sync would pay an HTTP roundtrip on every read+write cycle.
     async *discover({ config }): AsyncGenerator<DiscoverOutput> {
       const apiVersion = config.api_version ?? BUNDLED_API_VERSION
-      let accountId = config.account_id
-      if (!accountId) {
-        const client = makeClient({ ...config, api_version: apiVersion })
-        accountId = (await client.getAccount({ maxRetries: 0 })).id
-      }
-      const allowedAccountIds = resolveAllowedAccountIds(accountId, config)
-
       const cached = discoverCache.get(apiVersion)
       if (cached) {
         yield {
           type: 'catalog' as const,
-          catalog: stampAccountIdEnum(cached, allowedAccountIds),
+          catalog: cached,
         }
         return
       }
 
       const resolved = await resolveOpenApiSpec({ apiVersion }, makeApiFetch())
+      const syncableTables = discoverSyncableTables(resolved.spec, OPENAPI_RESOURCE_TABLE_ALIASES)
       const registry = buildResourceRegistry(
         resolved.spec,
         config.api_key,
         resolved.apiVersion,
-        config.base_url
+        config.base_url,
+        syncableTables
       )
       const parser = new SpecParser()
       const parsed = parser.parse(resolved.spec, {
         resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
+        allowedTables: [...syncableTables],
       })
       const catalog = catalogFromOpenApi(parsed.tables, registry)
       const frozenCatalog = deepFreeze(catalog)
       discoverCache.set(apiVersion, frozenCatalog)
       yield {
         type: 'catalog' as const,
-        catalog: stampAccountIdEnum(frozenCatalog, allowedAccountIds),
+        catalog: frozenCatalog,
       }
     },
 
@@ -438,7 +425,12 @@ export default createStripeSource()
 // MARK: - Re-exports
 
 export { subdivideRanges } from '@stripe/sync-protocol'
-export { buildResourceRegistry, DEFAULT_SYNC_OBJECTS, EXCLUDED_TABLES } from './resourceRegistry.js'
+export {
+  buildResourceRegistry,
+  discoverSyncableTables,
+  DEFAULT_SYNC_OBJECTS,
+  EXCLUDED_TABLES,
+} from './resourceRegistry.js'
 export { catalogFromOpenApi } from './catalog.js'
 export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from '@stripe/sync-openapi'
 export type { ParsedResourceTable, ParsedOpenApiSpec } from '@stripe/sync-openapi'

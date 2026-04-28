@@ -211,23 +211,23 @@ describe('StripeSource', () => {
   describe('discover()', () => {
     it('returns a CatalogMessage with known streams', async () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
-        invoices: makeConfig({ order: 2, tableName: 'invoices' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
+        invoice: makeConfig({ order: 2, tableName: 'invoice' }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
       const cat = (await collectFirst(source.discover({ config }), 'catalog')).catalog
 
       expect(cat.streams).toHaveLength(2)
-      expect(cat.streams.map((s) => s.name)).toEqual(['customers', 'invoices'])
+      expect(cat.streams.map((s) => s.name)).toEqual(['customer', 'invoice'])
       expect(
         (cat.streams[0].json_schema?.properties as Record<string, unknown>)._account_id
-      ).toEqual({ type: 'string', enum: ['acct_test_fake123'] })
+      ).toBeUndefined()
     })
 
     it('excludes resources with sync: false', async () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
         internal: makeConfig({ order: 2, tableName: 'internal', sync: false }),
       }
 
@@ -235,7 +235,7 @@ describe('StripeSource', () => {
       const cat = (await collectFirst(source.discover({ config }), 'catalog')).catalog
 
       expect(cat.streams).toHaveLength(1)
-      expect(cat.streams[0].name).toBe('customers')
+      expect(cat.streams[0].name).toBe('customer')
     })
 
     it('returns empty streams for empty registry', async () => {
@@ -559,7 +559,7 @@ describe('StripeSource', () => {
   describe('fromStripeEvent() — live mode scenarios', () => {
     it('webhook mode emits one RecordMessage + one SourceStateMessage per event', () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
       }
 
       const event = makeEvent({
@@ -573,7 +573,7 @@ describe('StripeSource', () => {
 
       expect(result).not.toBeNull()
       expect(result!.record.type).toBe('record')
-      expect(result!.record.record.stream).toBe('customers')
+      expect(result!.record.record.stream).toBe('customer')
       expect(result!.record.record.data).toMatchObject({
         id: 'cus_1',
         object: 'customer',
@@ -582,7 +582,7 @@ describe('StripeSource', () => {
       expect(result!.record.record.emitted_at).toBeTypeOf('string')
 
       expect(result!.state.type).toBe('source_state')
-      expect(result!.state.source_state.stream).toBe('customers')
+      expect(result!.state.source_state.stream).toBe('customer')
       expect(result!.state.source_state.data).toEqual({
         eventId: 'evt_1abc',
         eventCreated: 1700000000,
@@ -591,7 +591,7 @@ describe('StripeSource', () => {
 
     it('returns null for unsupported object type', () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
       }
 
       const event = makeEvent({
@@ -604,7 +604,7 @@ describe('StripeSource', () => {
 
     it('returns null for objects without id (preview/draft)', () => {
       const registry: Record<string, ResourceConfig> = {
-        invoices: makeConfig({ order: 1, tableName: 'invoices' }),
+        invoice: makeConfig({ order: 1, tableName: 'invoice' }),
       }
 
       const event = makeEvent({
@@ -618,7 +618,7 @@ describe('StripeSource', () => {
 
     it('passes through deleted flag from event data', () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
       }
 
       const event = makeEvent({
@@ -638,7 +638,7 @@ describe('StripeSource', () => {
 
     it('returns null when event data.object has no object field', () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customer' }),
       }
 
       const event = makeEvent({
@@ -654,7 +654,7 @@ describe('StripeSource', () => {
       // The same StripeEvent structure is received regardless of transport.
       // This test verifies fromStripeEvent works for any StripeEvent input.
       const registry: Record<string, ResourceConfig> = {
-        invoices: makeConfig({ order: 1, tableName: 'invoices' }),
+        invoice: makeConfig({ order: 1, tableName: 'invoice' }),
       }
 
       const event = makeEvent({
@@ -667,7 +667,7 @@ describe('StripeSource', () => {
       const result = fromStripeEvent(event, registry, '_updated_at')
 
       expect(result).not.toBeNull()
-      expect(result!.record.record.stream).toBe('invoices')
+      expect(result!.record.record.stream).toBe('invoice')
       expect(result!.record.record.data).toMatchObject({ id: 'inv_1', amount_paid: 1000 })
       expect(result!.state.source_state.data).toEqual({
         eventId: 'evt_ws_1',
@@ -1067,7 +1067,7 @@ describe('StripeSource', () => {
       vi.mocked(buildResourceRegistry).mockReturnValue(skipRegistry as any)
     })
 
-    it('skips streams with auth_error state (permanent)', async () => {
+    it('errors on invalid stream state without remaining ranges', async () => {
       skipListFn.mockResolvedValueOnce({ data: [{ id: 'cus_1' }], has_more: false })
 
       const messages = await collect(
@@ -1076,22 +1076,27 @@ describe('StripeSource', () => {
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
           state: {
             streams: {
-              customers: { page_cursor: null, status: 'auth_error' },
+              customers: { invalid: true },
             },
             global: {},
           },
         })
       )
 
-      // Legacy error-shaped state is discarded — backfill starts fresh.
-      // (warning now logged via pino, not as a protocol message)
-      expect(skipListFn).toHaveBeenCalled()
-      expect(
-        messages.some((m) => m.type === 'stream_status' && m.stream_status.status === 'start')
-      ).toBe(true)
+      expect(skipListFn).not.toHaveBeenCalled()
+      expect(messages).toMatchObject([
+        {
+          type: 'stream_status',
+          stream_status: {
+            stream: 'customers',
+            status: 'error',
+            error: expect.stringContaining('Invalid state'),
+          },
+        },
+      ])
     })
 
-    it('skips streams with system_error state (permanent)', async () => {
+    it('errors on invalid stream state without a remaining array', async () => {
       skipListFn.mockResolvedValueOnce({ data: [{ id: 'cus_1' }], has_more: false })
 
       const messages = await collect(
@@ -1100,20 +1105,21 @@ describe('StripeSource', () => {
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
           state: {
             streams: {
-              customers: { page_cursor: null, status: 'system_error' },
+              customers: { invalid: true },
             },
             global: {},
           },
         })
       )
 
-      expect(skipListFn).toHaveBeenCalled()
-      expect(
-        messages.some((m) => m.type === 'stream_status' && m.stream_status.status === 'start')
-      ).toBe(true)
+      expect(skipListFn).not.toHaveBeenCalled()
+      expect(messages[0]).toMatchObject({
+        type: 'stream_status',
+        stream_status: { stream: 'customers', status: 'error' },
+      })
     })
 
-    it('skips streams with config_error state (permanent)', async () => {
+    it('does not call the list API when stream state is invalid', async () => {
       skipListFn.mockResolvedValueOnce({ data: [{ id: 'cus_1' }], has_more: false })
 
       const messages = await collect(
@@ -1122,20 +1128,21 @@ describe('StripeSource', () => {
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
           state: {
             streams: {
-              customers: { page_cursor: null, status: 'config_error' },
+              customers: { invalid: true },
             },
             global: {},
           },
         })
       )
 
-      expect(skipListFn).toHaveBeenCalled()
-      expect(
-        messages.some((m) => m.type === 'stream_status' && m.stream_status.status === 'start')
-      ).toBe(true)
+      expect(skipListFn).not.toHaveBeenCalled()
+      expect(messages[0]).toMatchObject({
+        type: 'stream_status',
+        stream_status: { stream: 'customers', status: 'error' },
+      })
     })
 
-    it('retries streams with transient_error state (same as pending)', async () => {
+    it('emits stream_status error for invalid stream state', async () => {
       skipListFn.mockResolvedValueOnce({
         data: [{ id: 'cus_1', name: 'Alice' }],
         has_more: false,
@@ -1147,23 +1154,18 @@ describe('StripeSource', () => {
           catalog: catalog({ name: 'customers', primary_key: [['id']] }),
           state: {
             streams: {
-              customers: { page_cursor: null, status: 'transient_error' },
+              customers: { invalid: true },
             },
             global: {},
           },
         })
       )
 
-      expect(skipListFn).toHaveBeenCalled()
-      expect(messages.some((m) => m.type === 'record')).toBe(true)
-      expect(
-        messages.some(
-          (m) =>
-            m.type === 'stream_status' &&
-            m.stream_status.stream === 'customers' &&
-            m.stream_status.status === 'complete'
-        )
-      ).toBe(true)
+      expect(skipListFn).not.toHaveBeenCalled()
+      expect(messages[0]).toMatchObject({
+        type: 'stream_status',
+        stream_status: { stream: 'customers', status: 'error' },
+      })
     })
 
     it('preserves backfill progress in error state for later resume', async () => {
@@ -1213,6 +1215,11 @@ describe('StripeSource', () => {
     // Shared registry for these tests
     const listFn = vi.fn()
     const registry: Record<string, ResourceConfig> = {
+      customer: makeConfig({
+        order: 1,
+        tableName: 'customers',
+        listFn: listFn as ResourceConfig['listFn'],
+      }),
       customers: makeConfig({
         order: 1,
         tableName: 'customers',
@@ -1372,7 +1379,7 @@ describe('StripeSource', () => {
     it('backfill + prior webhook state: resumes pagination from cursor', async () => {
       // Simulates: webhook events were processed (state has eventId),
       // then backfill is invoked with that state to fill historical data.
-      // The backfill reads page_cursor from state, ignoring webhook-specific fields.
+      // The backfill resumes from the remaining range cursor.
       listFn.mockResolvedValueOnce({
         data: [{ id: 'cus_3', name: 'Charlie' }],
         has_more: false,
@@ -1435,7 +1442,7 @@ describe('StripeSource', () => {
   describe('read(input) — enriched webhook processing', () => {
     it('delete event yields record with deleted: true', async () => {
       const registry: Record<string, ResourceConfig> = {
-        customers: makeConfig({ order: 1, tableName: 'customers' }),
+        customer: makeConfig({ order: 1, tableName: 'customers' }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1466,7 +1473,7 @@ describe('StripeSource', () => {
 
     it('delete event detected by event type (not just deleted flag)', async () => {
       const registry: Record<string, ResourceConfig> = {
-        products: makeConfig({ order: 1, tableName: 'products' }),
+        product: makeConfig({ order: 1, tableName: 'products' }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1491,7 +1498,7 @@ describe('StripeSource', () => {
 
     it('subscription event yields subscription_items from nested items.data', async () => {
       const registry: Record<string, ResourceConfig> = {
-        subscriptions: makeConfig({ order: 1, tableName: 'subscriptions' }),
+        subscription: makeConfig({ order: 1, tableName: 'subscription' }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1513,32 +1520,38 @@ describe('StripeSource', () => {
       })
 
       const messages = await collect(
-        source.read({ config, catalog: catalog({ name: 'subscriptions' }) }, toIter(event))
+        source.read(
+          { config, catalog: catalog({ name: 'subscription' }, { name: 'subscription_item' }) },
+          toIter(event)
+        )
       )
 
       // 1 subscription record + 2 subscription_item records + 1 state
       expect(messages).toHaveLength(4)
       expect(messages[0]).toMatchObject({
         type: 'record',
-        record: { stream: 'subscriptions', data: { id: 'sub_1' } },
+        record: { stream: 'subscription', data: { id: 'sub_1' } },
       })
       expect(messages[1]).toMatchObject({
         type: 'record',
-        record: { stream: 'subscription_items', data: { id: 'si_1', price: 'price_1' } },
+        record: { stream: 'subscription_item', data: { id: 'si_1', price: 'price_1' } },
       })
       expect(messages[2]).toMatchObject({
         type: 'record',
-        record: { stream: 'subscription_items', data: { id: 'si_2', price: 'price_2' } },
+        record: { stream: 'subscription_item', data: { id: 'si_2', price: 'price_2' } },
       })
       expect(messages[3]).toMatchObject({
         type: 'source_state',
-        source_state: { stream: 'subscriptions', data: { eventId: 'evt_sub_1' } },
+        source_state: { stream: 'subscription', data: { eventId: 'evt_sub_1' } },
       })
     })
 
     it('entitlement summary event yields individual entitlement records', async () => {
       const registry: Record<string, ResourceConfig> = {
-        active_entitlements: makeConfig({ order: 1, tableName: 'active_entitlements' }),
+        entitlements_active_entitlement: makeConfig({
+          order: 1,
+          tableName: 'entitlements_active_entitlement',
+        }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1572,7 +1585,10 @@ describe('StripeSource', () => {
       })
 
       const messages = await collect(
-        source.read({ config, catalog: catalog({ name: 'active_entitlements' }) }, toIter(event))
+        source.read(
+          { config, catalog: catalog({ name: 'entitlements_active_entitlement' }) },
+          toIter(event)
+        )
       )
 
       // 2 entitlement records + 1 state
@@ -1580,7 +1596,7 @@ describe('StripeSource', () => {
       expect(messages[0]).toMatchObject({
         type: 'record',
         record: {
-          stream: 'active_entitlements',
+          stream: 'entitlements_active_entitlement',
           data: {
             id: 'ent_1',
             feature: 'feat_premium',
@@ -1592,7 +1608,7 @@ describe('StripeSource', () => {
       expect(messages[1]).toMatchObject({
         type: 'record',
         record: {
-          stream: 'active_entitlements',
+          stream: 'entitlements_active_entitlement',
           data: {
             id: 'ent_2',
             feature: 'feat_basic',
@@ -1603,7 +1619,7 @@ describe('StripeSource', () => {
       })
       expect(messages[2]).toMatchObject({
         type: 'source_state',
-        source_state: { stream: 'active_entitlements', data: { eventId: 'evt_ent_1' } },
+        source_state: { stream: 'entitlements_active_entitlement', data: { eventId: 'evt_ent_1' } },
       })
     })
 
@@ -1616,7 +1632,7 @@ describe('StripeSource', () => {
       })
 
       const registry: Record<string, ResourceConfig> = {
-        subscriptions: makeConfig({
+        subscription: makeConfig({
           order: 1,
           tableName: 'subscriptions',
           retrieveFn: retrieveFn as ResourceConfig['retrieveFn'],
@@ -1651,7 +1667,7 @@ describe('StripeSource', () => {
       const retrieveFn = vi.fn()
 
       const registry: Record<string, ResourceConfig> = {
-        subscriptions: makeConfig({
+        subscription: makeConfig({
           order: 1,
           tableName: 'subscriptions',
           retrieveFn: retrieveFn as ResourceConfig['retrieveFn'],
@@ -1702,9 +1718,9 @@ describe('StripeSource', () => {
       expect(messages).toHaveLength(0)
     })
 
-    it('normalizes aliased object types (checkout.session → checkout_sessions)', async () => {
+    it('normalizes namespaced object types (checkout.session → checkout_session)', async () => {
       const registry: Record<string, ResourceConfig> = {
-        checkout_sessions: makeConfig({ order: 1, tableName: 'checkout_sessions' }),
+        checkout_session: makeConfig({ order: 1, tableName: 'checkout_session' }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1716,13 +1732,13 @@ describe('StripeSource', () => {
       })
 
       const messages = await collect(
-        source.read({ config, catalog: catalog({ name: 'checkout_sessions' }) }, toIter(event))
+        source.read({ config, catalog: catalog({ name: 'checkout_session' }) }, toIter(event))
       )
 
       expect(messages).toHaveLength(2)
       expect(messages[0]).toMatchObject({
         type: 'record',
-        record: { stream: 'checkout_sessions', data: { id: 'cs_1' } },
+        record: { stream: 'checkout_session', data: { id: 'cs_1' } },
       })
     })
 
@@ -1747,6 +1763,11 @@ describe('StripeSource', () => {
 
   describe('read() — WebSocket streaming', () => {
     const registry: Record<string, ResourceConfig> = {
+      customer: makeConfig({
+        order: 1,
+        tableName: 'customers',
+        listFn: (() => Promise.resolve({ data: [], has_more: false })) as ResourceConfig['listFn'],
+      }),
       customers: makeConfig({
         order: 1,
         tableName: 'customers',
@@ -1884,6 +1905,11 @@ describe('StripeSource', () => {
         })
 
       const wsRegistry: Record<string, ResourceConfig> = {
+        customer: makeConfig({
+          order: 1,
+          tableName: 'customers',
+          listFn: listFn as ResourceConfig['listFn'],
+        }),
         customers: makeConfig({
           order: 1,
           tableName: 'customers',

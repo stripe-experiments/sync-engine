@@ -328,8 +328,7 @@ describe('newer_than_field stale write prevention', () => {
 })
 
 describe('_updated_at column write-through', () => {
-  // `_updated_at` is the legacy hardcoded `timestamptz` column; upsertMany
-  // writes the source-stamped unix-seconds value into it (DDR-009).
+  // `_updated_at` is the physical timestamptz column used for stale-write checks.
   const updatedAtCatalog: ConfiguredCatalog = {
     streams: [
       {
@@ -536,7 +535,7 @@ describe('upsertMany standalone', () => {
   })
 })
 
-describe('schema-driven CHECK constraints', () => {
+describe('schema-driven enum columns', () => {
   function catalogWith(enumValues: string[], column = '_account_id'): ConfiguredCatalog {
     return {
       streams: [
@@ -559,30 +558,16 @@ describe('schema-driven CHECK constraints', () => {
     }
   }
 
-  async function constraintDefs(table = 'charges'): Promise<string[]> {
-    const { rows } = await pool.query(
-      `SELECT pg_get_constraintdef(c.oid) AS def
-       FROM pg_constraint c
-       JOIN pg_class t ON t.oid = c.conrelid
-       JOIN pg_namespace n ON n.oid = t.relnamespace
-       WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'c'`,
-      [SCHEMA, table]
-    )
-    return rows.map((r) => r.def as string)
-  }
-
-  it('enforces enum allow-list and rejects mismatched re-setups', async () => {
+  it('treats enum allow-lists as unconstrained text shape', async () => {
     await drain(
       destination.setup!({
         config: makeConfig(),
         catalog: catalogWith(['acct_a', 'acct_b']),
       })
     )
-    await expect(
-      pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
-      )
-    ).rejects.toMatchObject({ code: '23514' })
+    await pool.query(
+      `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
+    )
     await expect(
       pool.query(`INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"missing"}'::jsonb)`)
     ).rejects.toMatchObject({ code: '23502' })
@@ -598,27 +583,10 @@ describe('schema-driven CHECK constraints', () => {
       })
     )
 
-    // Narrower allow-list rejects: the constraint is pinned by name and
-    // ADD CONSTRAINT would no-op via EXCEPTION WHEN duplicate_object, so
-    // we fail loud instead of silently keeping the old predicate.
-    await expect(
-      drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
-    ).rejects.toThrow(
-      /enum values changed.*charges.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
-    )
-
-    // After dropping the constraint manually, the next setup installs the new one.
-    await pool.query(`ALTER TABLE "${SCHEMA}".charges DROP CONSTRAINT "chk_charges__account_id"`)
     await drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
-    const defs = await constraintDefs()
-    expect(defs).toHaveLength(1)
-    expect(defs[0]).toContain(`'acct_a'`)
-    expect(defs[0]).not.toContain(`'acct_b'`)
-    await expect(
-      pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
-      )
-    ).rejects.toMatchObject({ code: '23514' })
+    await pool.query(
+      `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
+    )
   })
 })
 

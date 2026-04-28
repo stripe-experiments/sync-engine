@@ -35,7 +35,7 @@ export async function ensureObjectTable(
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${q(schema)}.${q(tableName)} (
       "_raw_data" jsonb NOT NULL,
-      "_last_synced_at" timestamptz,
+      "_synced_at" timestamptz NOT NULL DEFAULT now(),
       "_updated_at" timestamptz NOT NULL DEFAULT now(),
       "id" text GENERATED ALWAYS AS (("_raw_data"->>'id')::text) STORED,
       "created" bigint GENERATED ALWAYS AS (("_raw_data"->>'created')::bigint) STORED,

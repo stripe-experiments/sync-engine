@@ -1,6 +1,7 @@
 export type OpenApiSchemaObject = {
   type?: string
   format?: string
+  required?: string[]
   nullable?: boolean
   properties?: Record<string, OpenApiSchemaOrReference>
   items?: OpenApiSchemaOrReference
@@ -69,12 +70,15 @@ export type OpenApiSpec = {
 }
 
 export type ScalarType = 'text' | 'boolean' | 'bigint' | 'numeric' | 'json' | 'timestamptz'
+export type JsonShape = 'object' | 'array' | 'any'
 
 export type ParsedColumn = {
   name: string
   type: ScalarType
+  jsonShape?: JsonShape
   nullable: boolean
   expandableReference?: boolean
+  expansionResourceIds?: string[]
 }
 
 export type ParsedResourceTable = {
@@ -97,7 +101,7 @@ export type ParseSpecOptions = {
   resourceAliases?: Record<string, string>
   /**
    * Restrict parsing to these table names.
-   * If omitted, listable resources are discovered from the spec's paths.
+   * If omitted, every schema with x-resourceId is projected.
    */
   allowedTables?: string[]
   /**
