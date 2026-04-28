@@ -10,6 +10,7 @@ import type {
 import { OPENAPI_COMPATIBILITY_COLUMNS, OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings.js'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
+const CRUD_SUFFIXES = ['.created', '.updated', '.deleted'] as const
 
 const RESERVED_COLUMNS = new Set([
   'id',
@@ -234,11 +235,10 @@ export class SpecParser {
     const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.aliases ?? {}) }
     const excluded = options.excluded ?? new Set<string>()
     const listableIds = this.discoverListableResourceIds(spec, { includeNested: true })
-    const webhookIds = this.discoverWebhookUpdatableResourceIds(spec)
-    const hasWebhookMetadata = webhookIds.size > 0
+    const webhookIds = this.discoverWebhookUpdatableResourceIds(spec, listableIds)
     const tables = new Set<string>()
     for (const resourceId of listableIds) {
-      if (hasWebhookMetadata && !webhookIds.has(resourceId)) continue
+      if (!webhookIds.has(resourceId)) continue
       const tableName = resolveTableName(resourceId, aliases)
       if (!excluded.has(tableName)) tables.add(tableName)
     }
@@ -382,17 +382,25 @@ export class SpecParser {
   }
 
   /**
-   * Extract x-resourceId values for every schema that has at least one webhook
-   * event for create, update, or delete operations. Event schemas are identified
-   * by the `x-stripeEvent` extension with a type ending in `.created`, `.updated`,
-   * or `.deleted`. The referenced resource is resolved via `properties.object.$ref`.
+   * Resource IDs that have at least one CRUD webhook event.
+   * Prefers the `x-stripeEvent` extension (precise schema $ref). Falls back
+   * to `paths['/v1/webhook_endpoints'].post...enabled_events` enum + heuristic
+   * matching against `listableIds` when `x-stripeEvent` is absent (older/public specs).
    */
-  discoverWebhookUpdatableResourceIds(spec: OpenApiSpec): Set<string> {
+  discoverWebhookUpdatableResourceIds(
+    spec: OpenApiSpec,
+    listableIds?: ReadonlySet<string>
+  ): Set<string> {
+    const fromExtension = this.discoverWebhookUpdatableFromExtension(spec)
+    if (fromExtension.size > 0) return fromExtension
+    const ids = listableIds ?? this.discoverListableResourceIds(spec, { includeNested: true })
+    return this.discoverWebhookUpdatableFromEnabledEvents(spec, ids)
+  }
+
+  private discoverWebhookUpdatableFromExtension(spec: OpenApiSpec): Set<string> {
     const resourceIds = new Set<string>()
     const schemas = spec.components?.schemas
     if (!schemas) return resourceIds
-
-    const CRUD_SUFFIXES = ['.created', '.updated', '.deleted']
 
     for (const schema of Object.values(schemas)) {
       if (!schema || '$ref' in schema) continue
@@ -418,6 +426,53 @@ export class SpecParser {
     }
 
     return resourceIds
+  }
+
+  private discoverWebhookUpdatableFromEnabledEvents(
+    spec: OpenApiSpec,
+    listableIds: ReadonlySet<string>
+  ): Set<string> {
+    const prefixes = this.extractEnabledEventCrudPrefixes(spec)
+    const resourceIds = new Set<string>()
+    if (prefixes.size === 0) return resourceIds
+
+    for (const resourceId of listableIds) {
+      if (prefixes.has(resourceId)) {
+        resourceIds.add(resourceId)
+        continue
+      }
+      const suffix = `.${resourceId}`
+      for (const prefix of prefixes) {
+        if (prefix.endsWith(suffix)) {
+          resourceIds.add(resourceId)
+          break
+        }
+      }
+    }
+    return resourceIds
+  }
+
+  private extractEnabledEventCrudPrefixes(spec: OpenApiSpec): Set<string> {
+    const prefixes = new Set<string>()
+    const op = spec.paths?.['/v1/webhook_endpoints']?.post as
+      | { requestBody?: { content?: Record<string, { schema?: OpenApiSchemaOrReference }> } }
+      | undefined
+    const schema = op?.requestBody?.content?.['application/x-www-form-urlencoded']?.schema
+    if (!schema || '$ref' in schema) return prefixes
+    const enabledEvents = schema.properties?.enabled_events
+    if (!enabledEvents || '$ref' in enabledEvents) return prefixes
+    const items = enabledEvents.items
+    if (!items || Array.isArray(items) || '$ref' in items) return prefixes
+    const enumValues = items.enum
+    if (!Array.isArray(enumValues)) return prefixes
+
+    for (const value of enumValues) {
+      if (typeof value !== 'string') continue
+      const suffix = CRUD_SUFFIXES.find((s) => value.endsWith(s))
+      if (!suffix) continue
+      prefixes.add(value.slice(0, value.length - suffix.length))
+    }
+    return prefixes
   }
 
   /**
