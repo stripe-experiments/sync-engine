@@ -88,8 +88,8 @@ export async function writeMany(
   primaryKeyColumns: string[] = ['id'],
   newerThanField: string
 ): Promise<WriteManyResult> {
-  const tombstones = entries.filter((e) => e.deleted === true)
-  const liveRecords = entries.filter((e) => e.deleted !== true)
+  const tombstones = entries.filter((e) => e.resourceDeleted === true).map(r => r.data)
+  const liveRecords = entries.filter((e) => e.resourceDeleted !== true).map(r => r.data)
 
   const u = await upsertMany(pool, schema, table, liveRecords, primaryKeyColumns, newerThanField)
   const d = await deleteMany(pool, schema, table, tombstones, primaryKeyColumns)
@@ -477,7 +477,7 @@ const destination = {
       await connectAndRelease(pool, 'write')
       for await (const msg of $stdin) {
         if (msg.type === 'record') {
-          const { stream, data } = msg.record
+          const { stream, data, } = msg.record
 
           if (failedStreams.has(stream)) {
             log.debug({ stream }, 'dest write: skipping record for failed stream')
@@ -489,7 +489,7 @@ const destination = {
           }
 
           const buffer = streamBuffers.get(stream)!
-          buffer.push(data as Record<string, unknown>)
+          buffer.push(msg.record as Record<string, unknown>)
 
           if (buffer.length >= batchSize) {
             const err = await flushStream(stream)
