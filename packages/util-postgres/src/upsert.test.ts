@@ -7,6 +7,7 @@ import { upsert, upsertWithStats } from './upsert.js'
 // ---------------------------------------------------------------------------
 
 let pool: pg.Pool
+let poolStarted = false
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
@@ -14,9 +15,14 @@ beforeAll(async () => {
   }
   pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
   await pool.query('SELECT 1')
+  poolStarted = true
 })
 
 afterAll(async () => {
+  if (!poolStarted) {
+    return
+  }
+
   // Drop tables created during this run
   const { rows } = await pool.query(
     `SELECT tablename FROM pg_tables WHERE tablename LIKE 'test_upsert_%'`

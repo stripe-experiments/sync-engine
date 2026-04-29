@@ -534,7 +534,16 @@ export class SpecParser {
    * If all branches are list envelopes, the entire property should be excluded.
    */
   private isListEnvelopeInComposition(schema: OpenApiSchemaOrReference, spec: OpenApiSpec): boolean {
-    for (const composed of [schema.oneOf, schema.anyOf, schema.allOf]) {
+    if (this.isReference(schema)) {
+      return false
+    }
+
+    const compositions: (OpenApiSchemaOrReference[] | undefined)[] = [
+      schema.oneOf,
+      schema.anyOf,
+      schema.allOf,
+    ]
+    for (const composed of compositions) {
       if (!composed) continue
       const resolved = composed.map((s) => (this.isReference(s) ? this.resolveSchema(s, spec) : s))
       if (resolved.length > 0 && resolved.every((s) => this.isListEnvelopeSchema(s))) {
