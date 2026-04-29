@@ -24,7 +24,7 @@ export { OPENAPI_RESOURCE_TABLE_ALIASES }
 
 /**
  * Resolve a Stripe x-resourceId to a canonical table name.
- * Pure utility — depends only on aliases, not the spec.
+ * Singular, snake_cased, with version namespace dots converted to underscores.
  */
 export function resolveTableName(
   resourceId: string,
@@ -32,8 +32,7 @@ export function resolveTableName(
 ): string {
   const alias = aliases[resourceId]
   if (alias) return alias
-  const normalized = resourceId.toLowerCase().replace(/[.]/g, '_')
-  return normalized.endsWith('s') ? normalized : `${normalized}s`
+  return resourceId.toLowerCase().replace(/[.]/g, '_')
 }
 
 /** A list endpoint at a top-level path (`/v1/customers`). */
