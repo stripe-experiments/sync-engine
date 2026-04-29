@@ -60,13 +60,13 @@ describe('enforceCatalog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1', name: 'Alice' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
     ]
-    const result = await drain(enforceCatalog(catalog([{ name: 'customers' }]))(toAsync(msgs)))
+    const result = await drain(enforceCatalog(catalog([{ name: 'customer' }]))(toAsync(msgs)))
     expect(result).toHaveLength(1)
     expect((result[0] as any).record.data).toEqual({ id: 'cus_1', name: 'Alice' })
   })
@@ -76,7 +76,7 @@ describe('enforceCatalog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'subscriptions',
+          stream: 'subscription',
           data: { id: 'sub_1', status: 'active', customer: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -86,7 +86,7 @@ describe('enforceCatalog()', () => {
       enforceCatalog(
         catalog([
           {
-            name: 'subscriptions',
+            name: 'subscription',
             json_schema: {
               type: 'object',
               properties: { id: { type: 'string' }, status: { type: 'string' } },
@@ -104,7 +104,7 @@ describe('enforceCatalog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'subscriptions',
+          stream: 'subscription',
           data: {
             id: 'sub_1',
             status: 'active',
@@ -120,7 +120,7 @@ describe('enforceCatalog()', () => {
       enforceCatalog(
         catalog([
           {
-            name: 'subscriptions',
+            name: 'subscription',
             json_schema: {
               type: 'object',
               properties: { id: { type: 'string' }, status: { type: 'string' } },
@@ -141,13 +141,13 @@ describe('enforceCatalog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'subscriptions',
+          stream: 'subscription',
           data: { id: 'sub_1', status: 'active', customer: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
     ]
-    const result = await drain(enforceCatalog(catalog([{ name: 'subscriptions' }]))(toAsync(msgs)))
+    const result = await drain(enforceCatalog(catalog([{ name: 'subscription' }]))(toAsync(msgs)))
     expect(result).toHaveLength(1)
     expect((result[0] as any).record.data).toEqual({
       id: 'sub_1',
@@ -167,7 +167,7 @@ describe('enforceCatalog()', () => {
         },
       },
     ]
-    const result = await drain(enforceCatalog(catalog([{ name: 'customers' }]))(toAsync(msgs)))
+    const result = await drain(enforceCatalog(catalog([{ name: 'customer' }]))(toAsync(msgs)))
     expect(result).toHaveLength(0)
     expect(log.error).toHaveBeenCalledOnce()
     expect(log.error).toHaveBeenCalledWith(
@@ -183,7 +183,7 @@ describe('enforceCatalog()', () => {
         source_state: { state_type: 'stream', stream: 'nonexistent', data: { cursor: 'x' } },
       },
     ]
-    const result = await drain(enforceCatalog(catalog([{ name: 'customers' }]))(toAsync(msgs)))
+    const result = await drain(enforceCatalog(catalog([{ name: 'customer' }]))(toAsync(msgs)))
     expect(result).toHaveLength(0)
     expect(log.error).toHaveBeenCalledWith(
       { stream: 'nonexistent' },
@@ -216,11 +216,11 @@ describe('enforceCatalog()', () => {
       },
       {
         type: 'stream_status',
-        stream_status: { stream: 'customers', status: 'complete' },
+        stream_status: { stream: 'customer', status: 'complete' },
       },
     ]
     const result = await drain(
-      enforceCatalog(catalog([{ name: 'customers', fields: ['id'] }]))(toAsync(msgs))
+      enforceCatalog(catalog([{ name: 'customer', fields: ['id'] }]))(toAsync(msgs))
     )
     expect(result).toHaveLength(3)
     expect(result[0]).toMatchObject({ type: 'log' })
@@ -239,14 +239,14 @@ describe('tapLog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: 'abc' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: 'abc' } },
       },
       { type: 'log', log: { level: 'info', message: 'hello' } },
       {
@@ -255,7 +255,7 @@ describe('tapLog()', () => {
       },
       {
         type: 'stream_status',
-        stream_status: { stream: 'customers', status: 'complete' },
+        stream_status: { stream: 'customer', status: 'complete' },
       },
     ]
     const result = await drain(tapLog(toAsync(msgs)))
@@ -269,10 +269,10 @@ describe('tapLog()', () => {
 
   it('logs log messages via logger at the correct level', async () => {
     const msgs: Message[] = [
-      { type: 'log', log: { level: 'warn', message: 'careful', data: { stream: 'customers' } } },
+      { type: 'log', log: { level: 'warn', message: 'careful', data: { stream: 'customer' } } },
     ]
     await drain(tapLog(toAsync(msgs)))
-    expect(log.warn).toHaveBeenCalledWith({ stream: 'customers' }, 'careful')
+    expect(log.warn).toHaveBeenCalledWith({ stream: 'customer' }, 'careful')
   })
 
   it('logs top-level stream_status messages via log.debug', async () => {
@@ -291,14 +291,14 @@ describe('tapLog()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: 'abc' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: 'abc' } },
       },
     ]
     await drain(tapLog(toAsync(msgs)))
@@ -318,14 +318,14 @@ describe('filterType()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: 'abc' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: 'abc' } },
       },
       { type: 'log', log: { level: 'info', message: 'hello' } },
     ]
@@ -339,14 +339,14 @@ describe('filterType()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: 'abc' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: 'abc' } },
       },
       { type: 'log', log: { level: 'info', message: 'hello' } },
       {
@@ -382,7 +382,7 @@ describe('takeLimits()', () => {
     const msgs: Message[] = [
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: '1' } },
       },
     ]
     const result = await drain(takeLimits()(toAsync(msgs)))
@@ -395,7 +395,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -404,14 +404,14 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_2' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       }
       yield {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '2' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: '2' } },
       }
     }
 
@@ -427,7 +427,7 @@ describe('takeLimits()', () => {
         yield {
           type: 'record',
           record: {
-            stream: 'customers',
+            stream: 'customer',
             data: { id: `cus_${++i}` },
             emitted_at: '2024-01-01T00:00:00.000Z',
           },
@@ -450,7 +450,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -459,7 +459,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_2' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -482,7 +482,7 @@ describe('takeLimits()', () => {
         yield {
           type: 'record',
           record: {
-            stream: 'customers',
+            stream: 'customer',
             data: { id: `cus_${++i}` },
             emitted_at: '2024-01-01T00:00:00.000Z',
           },
@@ -507,7 +507,7 @@ describe('takeLimits()', () => {
         yield {
           type: 'record',
           record: {
-            stream: 'customers',
+            stream: 'customer',
             data: { id: `cus_${++i}` },
             emitted_at: '2024-01-01T00:00:00.000Z',
           },
@@ -535,7 +535,7 @@ describe('takeLimits()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -551,7 +551,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -560,7 +560,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_2' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -569,7 +569,7 @@ describe('takeLimits()', () => {
       yield {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_3' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
@@ -642,14 +642,14 @@ describe('limitSource()', () => {
       {
         type: 'record',
         record: {
-          stream: 'customers',
+          stream: 'customer',
           data: { id: 'cus_1' },
           emitted_at: '2024-01-01T00:00:00.000Z',
         },
       },
       {
         type: 'source_state',
-        source_state: { state_type: 'stream', stream: 'customers', data: { cursor: '1' } },
+        source_state: { state_type: 'stream', stream: 'customer', data: { cursor: '1' } },
       },
     ]
     const gate = limitSource(toAsync(msgs))
@@ -674,7 +674,7 @@ describe('limitSource()', () => {
         yield {
           type: 'record',
           record: {
-            stream: 'customers',
+            stream: 'customer',
             data: { id: `cus_${++i}` },
             emitted_at: '2024-01-01T00:00:00.000Z',
           },

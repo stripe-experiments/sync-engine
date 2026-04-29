@@ -114,7 +114,7 @@ const catalog: ConfiguredCatalog = {
   streams: [
     {
       stream: {
-        name: 'customers',
+        name: 'customer',
         primary_key: [['id']],
         newer_than_field: '_updated_at',
         metadata: {},
@@ -159,7 +159,7 @@ describe('destination default export', () => {
         `SELECT table_name FROM information_schema.tables WHERE table_schema = $1`,
         [SCHEMA]
       )
-      expect(rows.map((r) => r.table_name)).toContain('customers')
+      expect(rows.map((r) => r.table_name)).toContain('customer')
     })
   })
 
@@ -183,8 +183,8 @@ describe('destination default export', () => {
 
     it('upserts records and emits log on completion', async () => {
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice' }),
-        makeRecord('customers', { id: 'cus_2', name: 'Bob' }),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice' }),
+        makeRecord('customer', { id: 'cus_2', name: 'Bob' }),
       ])
 
       const outputs = await collectOutputs(
@@ -192,7 +192,7 @@ describe('destination default export', () => {
       )
 
       // Verify records in DB
-      const { rows } = await pool.query(`SELECT id FROM "${SCHEMA}".customers ORDER BY id`)
+      const { rows } = await pool.query(`SELECT id FROM "${SCHEMA}".customer ORDER BY id`)
       expect(rows.map((r) => r.id)).toEqual(['cus_1', 'cus_2'])
 
       // Log messages now go through pino, not the protocol stream
@@ -201,25 +201,25 @@ describe('destination default export', () => {
     it('batches inserts with configurable batch size', async () => {
       const config = { ...makeConfig(), batch_size: 2 }
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1' }),
-        makeRecord('customers', { id: 'cus_2' }),
-        makeRecord('customers', { id: 'cus_3' }),
-        makeRecord('customers', { id: 'cus_4' }),
-        makeRecord('customers', { id: 'cus_5' }),
+        makeRecord('customer', { id: 'cus_1' }),
+        makeRecord('customer', { id: 'cus_2' }),
+        makeRecord('customer', { id: 'cus_3' }),
+        makeRecord('customer', { id: 'cus_4' }),
+        makeRecord('customer', { id: 'cus_5' }),
       ])
 
       await collectOutputs(destination.write({ config, catalog }, messages))
 
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(5)
     })
 
     it('re-emits SourceStateMessage after flushing preceding records', async () => {
       const stateData = { cursor: 'abc123' }
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice' }),
-        makeRecord('customers', { id: 'cus_2', name: 'Bob' }),
-        makeState('customers', stateData),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice' }),
+        makeRecord('customer', { id: 'cus_2', name: 'Bob' }),
+        makeState('customer', stateData),
       ])
 
       const outputs = await collectOutputs(
@@ -230,25 +230,25 @@ describe('destination default export', () => {
       expect(stateOutputs).toHaveLength(1)
       expect(stateOutputs[0]).toEqual({
         type: 'source_state',
-        source_state: { stream: 'customers', data: stateData },
+        source_state: { stream: 'customer', data: stateData },
       })
 
       // Records should be in DB (flushed before state was yielded)
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(2)
     })
 
     it('handles upsert (ON CONFLICT update)', async () => {
-      const messages1 = toAsyncIter([makeRecord('customers', { id: 'cus_1', name: 'Alice' })])
+      const messages1 = toAsyncIter([makeRecord('customer', { id: 'cus_1', name: 'Alice' })])
       await collectOutputs(destination.write({ config: makeConfig(), catalog }, messages1))
 
       const messages2 = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice Updated' }),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice Updated' }),
       ])
       await collectOutputs(destination.write({ config: makeConfig(), catalog }, messages2))
 
       const { rows } = await pool.query(
-        `SELECT _raw_data->>'name' AS name FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+        `SELECT _raw_data->>'name' AS name FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
       )
       expect(rows[0].name).toBe('Alice Updated')
     })
@@ -260,7 +260,7 @@ describe('newer_than_field stale write prevention', () => {
     streams: [
       {
         stream: {
-          name: 'customers',
+          name: 'customer',
           primary_key: [['id']],
           json_schema: {
             type: 'object',
@@ -284,21 +284,21 @@ describe('newer_than_field stale write prevention', () => {
 
   it('skips upsert when incoming record is older than existing', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1 (stale)', updated: 100 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1 (stale)', updated: 100 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch2)
     )
 
     const { rows } = await pool.query(
-      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].updated).toBe('200')
@@ -306,21 +306,21 @@ describe('newer_than_field stale write prevention', () => {
 
   it('allows upsert when incoming record is newer than existing', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', updated: 100 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', updated: 100 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch2)
     )
 
     const { rows } = await pool.query(
-      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].updated).toBe('200')
@@ -328,12 +328,11 @@ describe('newer_than_field stale write prevention', () => {
 })
 
 describe('_updated_at column write-through', () => {
-  // `_updated_at` is the legacy hardcoded `timestamptz` column; upsertMany
-  // writes the source-stamped unix-seconds value into it (DDR-009).
+  // `_updated_at` is source time; `_synced_at` is destination write time.
   const updatedAtCatalog: ConfiguredCatalog = {
     streams: [
       {
-        stream: { name: 'customers', primary_key: [['id']], newer_than_field: '_updated_at' },
+        stream: { name: 'customer', primary_key: [['id']], newer_than_field: '_updated_at' },
         sync_mode: 'full_refresh',
         destination_sync_mode: 'overwrite',
       },
@@ -347,7 +346,7 @@ describe('_updated_at column write-through', () => {
   it('writes source-stamped _updated_at into the timestamptz column', async () => {
     const ts = 1_700_000_000 // 2023-11-14T22:13:20Z
     const batch = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice', _updated_at: ts }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice', _updated_at: ts }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: updatedAtCatalog }, batch)
@@ -356,14 +355,16 @@ describe('_updated_at column write-through', () => {
     const { rows } = await pool.query<{
       raw: string
       column_ts: Date
+      synced_at: Date
     }>(
-      `SELECT _raw_data->>'_updated_at' AS raw, _updated_at AS column_ts
-       FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+      `SELECT _raw_data->>'_updated_at' AS raw, _updated_at AS column_ts, _synced_at AS synced_at
+       FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].raw).toBe(String(ts))
     // Column is timestamptz; verify the unix-seconds → Date conversion
     // landed on the exact second we asked for (no millisecond drift).
     expect(rows[0].column_ts.getTime()).toBe(ts * 1000)
+    expect(rows[0].synced_at).toBeInstanceOf(Date)
   })
 
   it('blocks stale writes via the _updated_at gate for objects without native updated', async () => {
@@ -374,7 +375,7 @@ describe('_updated_at column write-through', () => {
       destination.write(
         { config: makeConfig(), catalog: updatedAtCatalog },
         toAsyncIter([
-          makeRecord('customers', { id: 'cus_1', name: 'Alice v2', _updated_at: newer }),
+          makeRecord('customer', { id: 'cus_1', name: 'Alice v2', _updated_at: newer }),
         ])
       )
     )
@@ -382,7 +383,7 @@ describe('_updated_at column write-through', () => {
       destination.write(
         { config: makeConfig(), catalog: updatedAtCatalog },
         toAsyncIter([
-          makeRecord('customers', {
+          makeRecord('customer', {
             id: 'cus_1',
             name: 'Alice v1 (stale)',
             _updated_at: older,
@@ -393,7 +394,7 @@ describe('_updated_at column write-through', () => {
 
     const { rows } = await pool.query<{ name: string; ts: Date }>(
       `SELECT _raw_data->>'name' AS name, _updated_at AS ts
-       FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+       FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].ts.getTime()).toBe(newer * 1000)
@@ -405,7 +406,7 @@ describe('multi-org sync (two account IDs)', () => {
     streams: [
       {
         stream: {
-          name: 'customers',
+          name: 'customer',
           primary_key: [['id'], ['_account_id']],
           newer_than_field: '_updated_at',
           metadata: {},
@@ -430,7 +431,7 @@ describe('multi-org sync (two account IDs)', () => {
   it('creates table with composite primary key (id, _account_id)', async () => {
     const { rows } = await pool.query(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_schema = $1 AND table_name = 'customers'
+       WHERE table_schema = $1 AND table_name = 'customer'
        ORDER BY ordinal_position`,
       [SCHEMA]
     )
@@ -444,15 +445,15 @@ describe('multi-org sync (two account IDs)', () => {
        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
        WHERE i.indrelid = $1::regclass AND i.indisprimary
        ORDER BY array_position(i.indkey, a.attnum)`,
-      [`"${SCHEMA}"."customers"`]
+      [`"${SCHEMA}"."customer"`]
     )
     expect(pkRows.map((r) => r.attname)).toEqual(['id', '_account_id'])
   })
 
   it('stores rows from two accounts with the same object id as separate rows', async () => {
     const messages = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice (Acct A)', _account_id: 'acct_AAA' }),
-      makeRecord('customers', { id: 'cus_1', name: 'Alice (Acct B)', _account_id: 'acct_BBB' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice (Acct A)', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice (Acct B)', _account_id: 'acct_BBB' }),
     ])
 
     await collectOutputs(
@@ -461,7 +462,7 @@ describe('multi-org sync (two account IDs)', () => {
 
     const { rows } = await pool.query(
       `SELECT id, _account_id, _raw_data->>'name' AS name
-       FROM "${SCHEMA}".customers ORDER BY _account_id`
+       FROM "${SCHEMA}".customer ORDER BY _account_id`
     )
     expect(rows).toEqual([
       { id: 'cus_1', _account_id: 'acct_AAA', name: 'Alice (Acct A)' },
@@ -471,15 +472,15 @@ describe('multi-org sync (two account IDs)', () => {
 
   it('upserts per-account: same id + same account updates, different account inserts', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_AAA' }),
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_BBB' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_BBB' }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: multiOrgCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', _account_id: 'acct_AAA' }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: multiOrgCatalog }, batch2)
@@ -487,7 +488,7 @@ describe('multi-org sync (two account IDs)', () => {
 
     const { rows } = await pool.query(
       `SELECT _account_id, _raw_data->>'name' AS name
-       FROM "${SCHEMA}".customers ORDER BY _account_id`
+       FROM "${SCHEMA}".customer ORDER BY _account_id`
     )
     expect(rows).toEqual([
       { _account_id: 'acct_AAA', name: 'Alice v2' },
@@ -508,7 +509,7 @@ describe('upsertMany standalone', () => {
       await upsertMany(
         testPool,
         SCHEMA,
-        'customers',
+        'customer',
         [
           { id: 'cus_10', name: 'Direct', _updated_at: ts },
           { id: 'cus_11', name: 'Insert', _updated_at: ts },
@@ -517,7 +518,7 @@ describe('upsertMany standalone', () => {
         '_updated_at'
       )
 
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(2)
     } finally {
       await testPool.end()
@@ -527,8 +528,8 @@ describe('upsertMany standalone', () => {
   it('no-ops on empty array', async () => {
     const testPool = new pg.Pool({ connectionString })
     try {
-      await upsertMany(testPool, SCHEMA, 'customers', [], ['id'], '_updated_at')
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      await upsertMany(testPool, SCHEMA, 'customer', [], ['id'], '_updated_at')
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(0)
     } finally {
       await testPool.end()
@@ -542,7 +543,7 @@ describe('schema-driven CHECK constraints', () => {
       streams: [
         {
           stream: {
-            name: 'charges',
+            name: 'charge',
             primary_key: [['id'], [column]],
             json_schema: {
               type: 'object',
@@ -559,7 +560,7 @@ describe('schema-driven CHECK constraints', () => {
     }
   }
 
-  async function constraintDefs(table = 'charges'): Promise<string[]> {
+  async function constraintDefs(table = 'charge'): Promise<string[]> {
     const { rows } = await pool.query(
       `SELECT pg_get_constraintdef(c.oid) AS def
        FROM pg_constraint c
@@ -580,14 +581,14 @@ describe('schema-driven CHECK constraints', () => {
     )
     await expect(
       pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
+        `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
       )
     ).rejects.toMatchObject({ code: '23514' })
     await expect(
-      pool.query(`INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"missing"}'::jsonb)`)
+      pool.query(`INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"missing"}'::jsonb)`)
     ).rejects.toMatchObject({ code: '23502' })
     await pool.query(
-      `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"a","_account_id":"acct_a"}'::jsonb)`
+      `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"a","_account_id":"acct_a"}'::jsonb)`
     )
 
     // Same allow-list re-runs cleanly (idempotent).
@@ -604,11 +605,11 @@ describe('schema-driven CHECK constraints', () => {
     await expect(
       drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
     ).rejects.toThrow(
-      /enum values changed.*charges.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
+      /enum values changed.*charge.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
     )
 
     // After dropping the constraint manually, the next setup installs the new one.
-    await pool.query(`ALTER TABLE "${SCHEMA}".charges DROP CONSTRAINT "chk_charges__account_id"`)
+    await pool.query(`ALTER TABLE "${SCHEMA}".charge DROP CONSTRAINT "chk_charge__account_id"`)
     await drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
     const defs = await constraintDefs()
     expect(defs).toHaveLength(1)
@@ -616,7 +617,7 @@ describe('schema-driven CHECK constraints', () => {
     expect(defs[0]).not.toContain(`'acct_b'`)
     await expect(
       pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
+        `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
       )
     ).rejects.toMatchObject({ code: '23514' })
   })

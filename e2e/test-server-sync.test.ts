@@ -123,7 +123,7 @@ describe('test-server sync via Docker engine', () => {
   }
 
   async function seedCustomers(objects: Record<string, unknown>[]) {
-    await replaceTableObjects('customers', objects)
+    await replaceTableObjects('customer', objects)
   }
 
   function generateCustomers(count: number, prefix: string): Record<string, unknown>[] {
@@ -156,7 +156,7 @@ describe('test-server sync via Docker engine', () => {
           batch_size: 100,
         },
       },
-      streams: opts.streams ?? [{ name: 'customers', sync_mode: 'full_refresh' }],
+      streams: opts.streams ?? [{ name: 'customer', sync_mode: 'full_refresh' }],
     }
   }
 
@@ -291,10 +291,10 @@ describe('test-server sync via Docker engine', () => {
 
     const { state } = await runSync({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
-    const destIds = new Set(await listIds(destSchema, 'customers'))
+    const destIds = new Set(await listIds(destSchema, 'customer'))
     for (const customer of expected) {
       expect(
         destIds.has(customer.id as string),
@@ -303,7 +303,7 @@ describe('test-server sync via Docker engine', () => {
     }
     expect(destIds.size).toBe(expected.length)
 
-    const finalState = state.streams.customers as StreamState
+    const finalState = state.streams.customer as StreamState
     expect(finalState.remaining).toEqual([])
   }, 120_000)
 
@@ -325,10 +325,10 @@ describe('test-server sync via Docker engine', () => {
     await seedCustomers([...inRange, ...outOfRange])
     await runSync({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
-    const ids = new Set(await listIds(destSchema, 'customers'))
+    const ids = new Set(await listIds(destSchema, 'customer'))
     for (const customer of inRange) {
       expect(ids.has(customer.id as string), `expected in-range ${customer.id}`).toBe(true)
     }
@@ -348,7 +348,7 @@ describe('test-server sync via Docker engine', () => {
       destSchema,
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(COUNT)
+    expect(await countRows(destSchema, 'customer')).toBe(COUNT)
     expect(messages.filter((msg) => msg.type === 'source_state').length).toBeGreaterThan(1)
   }, 120_000)
 
@@ -375,7 +375,7 @@ describe('test-server sync via Docker engine', () => {
 
     const { messages } = await runRead({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
     const recordIds = messages
@@ -412,11 +412,11 @@ describe('test-server sync via Docker engine', () => {
     await runSync({
       destSchema,
       state: sourceState({
-        customers: { remaining: remainingRanges },
+        customer: { remaining: remainingRanges },
       }),
     })
 
-    const destIds = new Set(await listIds(destSchema, 'customers'))
+    const destIds = new Set(await listIds(destSchema, 'customer'))
     for (const rangeIdx of [3, 4]) {
       for (let i = 0; i < PER_RANGE; i++) {
         const id = `cus_seg${rangeIdx}_${String(i).padStart(4, '0')}`
@@ -450,11 +450,11 @@ describe('test-server sync via Docker engine', () => {
 
     const { state } = await runSync({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(objects.length)
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
+    expect(await countRows(destSchema, 'customer')).toBe(objects.length)
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
   }, 120_000)
 
   it('second sync after completion emits zero records', async () => {
@@ -464,11 +464,11 @@ describe('test-server sync via Docker engine', () => {
 
     const { messages } = await runSync({
       destSchema,
-      state: sourceState({ customers: completeState() }),
+      state: sourceState({ customer: completeState() }),
     })
 
     expect(messages.filter((msg) => msg.type === 'source_state').length).toBe(0)
-    expect(await countRows(destSchema, 'customers')).toBe(0)
+    expect(await countRows(destSchema, 'customer')).toBe(0)
   }, 120_000)
 
   it('backfill_limit stops fetching after the threshold', async () => {
@@ -479,10 +479,10 @@ describe('test-server sync via Docker engine', () => {
 
     const { messages } = await runSync({
       destSchema,
-      streams: [{ name: 'customers', sync_mode: 'full_refresh', backfill_limit: 5 }],
+      streams: [{ name: 'customer', sync_mode: 'full_refresh', backfill_limit: 5 }],
     })
 
-    const synced = await countRows(destSchema, 'customers')
+    const synced = await countRows(destSchema, 'customer')
     expect(synced).toBeGreaterThan(0)
     expect(synced).toBeLessThan(TOTAL)
     expect(messages.filter((msg) => msg.type === 'source_state').length).toBeGreaterThan(0)
@@ -501,7 +501,7 @@ describe('test-server sync via Docker engine', () => {
       destSchema,
     })
 
-    const destIds = new Set(await listIds(destSchema, 'customers'))
+    const destIds = new Set(await listIds(destSchema, 'customer'))
     for (const object of objects) {
       expect(destIds.has(object.id as string), `missing ${object.id}`).toBe(true)
     }
@@ -527,22 +527,22 @@ describe('test-server sync via Docker engine', () => {
     )
 
     await Promise.all([
-      replaceTableObjects('customers', customers),
-      replaceTableObjects('products', products),
+      replaceTableObjects('customer', customers),
+      replaceTableObjects('product', products),
     ])
 
     const { state } = await runSync({
       destSchema,
       streams: [
-        { name: 'customers', sync_mode: 'full_refresh' },
-        { name: 'products', sync_mode: 'full_refresh' },
+        { name: 'customer', sync_mode: 'full_refresh' },
+        { name: 'product', sync_mode: 'full_refresh' },
       ],
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(customers.length)
-    expect(await countRows(destSchema, 'products')).toBe(products.length)
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
-    expect((state.streams.products as StreamState).remaining).toEqual([])
+    expect(await countRows(destSchema, 'customer')).toBe(customers.length)
+    expect(await countRows(destSchema, 'product')).toBe(products.length)
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
+    expect((state.streams.product as StreamState).remaining).toEqual([])
   }, 120_000)
 
   it('zero objects: empty source completes cleanly with no records', async () => {
@@ -554,8 +554,8 @@ describe('test-server sync via Docker engine', () => {
       destSchema,
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(0)
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
+    expect(await countRows(destSchema, 'customer')).toBe(0)
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
   }, 120_000)
 
   it('single object: exactly one record syncs correctly', async () => {
@@ -567,9 +567,9 @@ describe('test-server sync via Docker engine', () => {
       destSchema,
     })
 
-    const ids = await listIds(destSchema, 'customers')
+    const ids = await listIds(destSchema, 'customer')
     expect(ids).toEqual(['cus_only_one'])
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
   }, 120_000)
 
   it('data integrity: destination _raw_data matches source objects', async () => {
@@ -581,12 +581,12 @@ describe('test-server sync via Docker engine', () => {
       destSchema,
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(sourceObjects.length)
+    expect(await countRows(destSchema, 'customer')).toBe(sourceObjects.length)
 
     const sample = [sourceObjects[0], sourceObjects[4999], sourceObjects[9999]]
     for (const object of sample) {
       const { rows } = await harness.destPool.query<{ _raw_data: Record<string, unknown> }>(
-        `SELECT "_raw_data" FROM "${destSchema}"."customers" WHERE id = $1`,
+        `SELECT "_raw_data" FROM "${destSchema}"."customer" WHERE id = $1`,
         [object!.id]
       )
       expect(rows.length, `missing ${object!.id} in destination`).toBe(1)
@@ -615,12 +615,12 @@ describe('test-server sync via Docker engine', () => {
 
     const { messages, state } = await runSync({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
-    expect(await countRows(destSchema, 'customers')).toBe(objects.length)
+    expect(await countRows(destSchema, 'customer')).toBe(objects.length)
     expect(messages.filter((msg) => msg.type === 'source_state').length).toBeGreaterThan(CONC)
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
   }, 120_000)
 
   it('stress: 25k objects synced successfully', async () => {
@@ -633,10 +633,10 @@ describe('test-server sync via Docker engine', () => {
 
     const { state } = await runSync({
       destSchema,
-      state: sourceState({ customers: pendingState() }),
+      state: sourceState({ customer: pendingState() }),
     })
 
-    const destIds = new Set(await listIds(destSchema, 'customers'))
+    const destIds = new Set(await listIds(destSchema, 'customer'))
     const expectedIds = new Set(objects.map((object) => object.id as string))
     const missing = [...expectedIds].filter((id) => !destIds.has(id))
     const unexpected = [...destIds].filter((id) => !expectedIds.has(id))
@@ -647,7 +647,7 @@ describe('test-server sync via Docker engine', () => {
     ).toBe(0)
     expect(unexpected.length, `unexpected ${unexpected.length} objects`).toBe(0)
     expect(destIds.size).toBe(TOTAL)
-    expect((state.streams.customers as StreamState).remaining).toEqual([])
+    expect((state.streams.customer as StreamState).remaining).toEqual([])
   }, 600_000)
 
   it('multiple keys: concurrent syncs with different API keys do not interfere', async () => {
@@ -668,7 +668,7 @@ describe('test-server sync via Docker engine', () => {
     const results = await Promise.all(syncs)
 
     for (const { apiKey, destSchema, state } of results) {
-      const ids = await listIds(destSchema, 'customers')
+      const ids = await listIds(destSchema, 'customer')
       expect(ids.length, `key ${apiKey}: expected ${COUNT} rows`).toBe(COUNT)
 
       const destIds = new Set(ids)
@@ -677,13 +677,13 @@ describe('test-server sync via Docker engine', () => {
         expect(destIds.has(expected), `key ${apiKey}: missing ${expected}`).toBe(true)
       }
 
-      expect((state.streams.customers as StreamState).remaining).toEqual([])
+      expect((state.streams.customer as StreamState).remaining).toEqual([])
     }
   }, 180_000)
 
-  it('v2 stream: syncs v2_core_event_destinations via cursor pagination', async () => {
+  it('v2 stream: syncs v2_core_event_destination via cursor pagination', async () => {
     const destSchema = uniqueSchema('v2sync')
-    const STREAM = 'v2_core_event_destinations'
+    const STREAM = 'v2_core_event_destination'
 
     const v2Objects = Array.from({ length: 10_000 }, (_, i) => ({
       id: `ed_test_${String(i).padStart(5, '0')}`,
