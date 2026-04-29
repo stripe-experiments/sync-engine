@@ -7,10 +7,16 @@ import { acquire, createRateLimiterTable } from './rateLimiter.js'
 // Docker Postgres lifecycle
 // ---------------------------------------------------------------------------
 
-let containerId: string
+let containerId: string | undefined
 let pool: pg.Pool
 
 beforeAll(async () => {
+  if (process.env.DATABASE_URL) {
+    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+    await pool.query('SELECT 1')
+    return
+  }
+
   containerId = execSync(
     'docker run -d --rm -p 0:5432 -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:16-alpine',
     { encoding: 'utf8' }
