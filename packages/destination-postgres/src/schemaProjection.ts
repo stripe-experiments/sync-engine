@@ -39,14 +39,23 @@ export function enumCheckConstraintName(tableName: string, columnName: string): 
   return safeIdentifier(`chk_${tableName}_${columnName}`)
 }
 
+/** Pull the non-null branch out of `{ oneOf: [X, {type:'null'}] }` (either order). */
+function unwrapNullable(prop: Record<string, unknown>): Record<string, unknown> {
+  const oneOf = prop.oneOf as Array<Record<string, unknown>> | undefined
+  if (!Array.isArray(oneOf) || oneOf.length === 0) return prop
+  const nonNull = oneOf.filter((s) => s?.type !== 'null')
+  if (nonNull.length === 1) return nonNull[0]
+  return prop
+}
+
 function jsonSchemaTypeToPg(prop: Record<string, unknown>): string {
-  const type = prop.type as string | undefined
-  const format = prop.format as string | undefined
+  const inner = unwrapNullable(prop)
+  const type = inner.type as string | undefined
+  const format = inner.format as string | undefined
 
   switch (type) {
     case 'string':
-      // date-time stays text for safety (no timezone parsing issues)
-      return format === 'date-time' ? 'text' : 'text'
+      return format === 'date-time' ? 'timestamptz' : 'text'
     case 'boolean':
       return 'boolean'
     case 'integer':

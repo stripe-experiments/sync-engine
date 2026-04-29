@@ -440,7 +440,7 @@ describe('pipeline CRUD', () => {
       body: JSON.stringify({
         source: { type: 'test', test: {} },
         destination: { type: 'test', test: {} },
-        streams: [{ name: 'customers' }],
+        streams: [{ name: 'customer' }],
       }),
     })
     expect(res.status).toBe(201)
@@ -453,7 +453,7 @@ describe('pipeline CRUD', () => {
   it('sync applies stream overrides and persists sync_state', async () => {
     const pipelineStore = memoryPipelineStore()
     const initialSyncState = {
-      source: { streams: { customers: { cursor: 'cus_initial' } }, global: {} },
+      source: { streams: { customer: { cursor: 'cus_initial' } }, global: {} },
       destination: {},
       sync_run: { progress: successEof.run_progress },
     }
@@ -490,7 +490,7 @@ describe('pipeline CRUD', () => {
         global_state_count: 2,
       }
       const endingState = {
-        source: { streams: { customers: { cursor: 'cus_final' } }, global: {} },
+        source: { streams: { customer: { cursor: 'cus_final' } }, global: {} },
         destination: {},
         sync_run: { run_id: 'run_demo', progress: runProgress },
       }
@@ -523,7 +523,7 @@ describe('pipeline CRUD', () => {
     const res = await syncApp.request('/pipelines/pipe_sync/sync?run_id=run_demo', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ streams: [{ name: 'customers' }] }),
+      body: JSON.stringify({ streams: [{ name: 'customer' }] }),
     })
     expect(res.status).toBe(200)
     await res.text()
@@ -531,14 +531,14 @@ describe('pipeline CRUD', () => {
     expect(seenPipeline).toMatchObject({
       source: { type: 'test', test: {} },
       destination: { type: 'test', test: {} },
-      streams: [{ name: 'customers' }],
+      streams: [{ name: 'customer' }],
     })
     expect(seenState).toEqual(initialSyncState)
     expect(seenBody?.run_id).toBe('run_demo')
 
     const updated = await pipelineStore.get('pipe_sync')
     expect(updated.sync_state).toEqual({
-      source: { streams: { customers: { cursor: 'cus_final' } }, global: {} },
+      source: { streams: { customer: { cursor: 'cus_final' } }, global: {} },
       destination: {},
       sync_run: {
         run_id: 'run_demo',
@@ -554,7 +554,7 @@ describe('pipeline CRUD', () => {
   it('sync with reset_state does not read or persist sync_state', async () => {
     const pipelineStore = memoryPipelineStore()
     const initialSyncState = {
-      source: { streams: { customers: { cursor: 'cus_initial' } }, global: {} },
+      source: { streams: { customer: { cursor: 'cus_initial' } }, global: {} },
       destination: {},
       sync_run: { progress: successEof.run_progress },
     }
@@ -589,7 +589,7 @@ describe('pipeline CRUD', () => {
           eof: {
             has_more: false,
             ending_state: {
-              source: { streams: { customers: { cursor: 'cus_final' } }, global: {} },
+              source: { streams: { customer: { cursor: 'cus_final' } }, global: {} },
               destination: {},
               sync_run: { progress: successEof.run_progress },
             },
@@ -611,7 +611,7 @@ describe('pipeline CRUD', () => {
     const res = await syncApp.request('/pipelines/pipe_sync/sync?reset_state=true', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ streams: [{ name: 'customers' }] }),
+      body: JSON.stringify({ streams: [{ name: 'customer' }] }),
     })
     expect(res.status).toBe(200)
     await res.text()
@@ -622,7 +622,7 @@ describe('pipeline CRUD', () => {
     // But ending state IS still persisted back
     const updated = await pipelineStore.get('pipe_sync')
     expect(updated.sync_state).toEqual({
-      source: { streams: { customers: { cursor: 'cus_final' } }, global: {} },
+      source: { streams: { customer: { cursor: 'cus_final' } }, global: {} },
       destination: {},
       sync_run: { progress: successEof.run_progress },
     })
@@ -701,7 +701,7 @@ describe('pipeline CRUD', () => {
       body: JSON.stringify({
         source: { type: 'test', test: {} },
         destination: { type: 'test', test: {} },
-        streams: [{ name: 'customers' }],
+        streams: [{ name: 'customer' }],
       }),
     })
     const created = await createRes.json()
@@ -711,7 +711,7 @@ describe('pipeline CRUD', () => {
     const updateRes = await a.request(`/pipelines/${created.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ streams: [{ name: 'products' }] }),
+      body: JSON.stringify({ streams: [{ name: 'product' }] }),
     })
     expect(updateRes.status).toBe(200)
     const updated = await updateRes.json()

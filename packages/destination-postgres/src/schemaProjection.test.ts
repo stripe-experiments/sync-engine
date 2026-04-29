@@ -35,7 +35,30 @@ describe('jsonSchemaToColumns', () => {
     expect(byName.created.pgType).toBe('bigint')
     expect(byName.deleted.pgType).toBe('boolean')
     expect(byName.metadata.pgType).toBe('jsonb')
-    expect(byName.expires_at.pgType).toBe('text') // date-time → text for safety
+    expect(byName.expires_at.pgType).toBe('timestamptz')
+    expect(byName.expires_at.expression).toBe("(NULLIF(_raw_data->>'expires_at', ''))::timestamptz")
+  })
+
+  it('unwraps nullable oneOf wrappers when picking column types', () => {
+    const columns = jsonSchemaToColumns({
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        nullable_ts: {
+          oneOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        },
+        nullable_meta: {
+          oneOf: [{ type: 'object' }, { type: 'null' }],
+        },
+        nullable_count: {
+          oneOf: [{ type: 'null' }, { type: 'integer' }],
+        },
+      },
+    })
+    const byName = Object.fromEntries(columns.map((c) => [c.name, c]))
+    expect(byName.nullable_ts.pgType).toBe('timestamptz')
+    expect(byName.nullable_meta.pgType).toBe('jsonb')
+    expect(byName.nullable_count.pgType).toBe('bigint')
   })
 
   it('skips the id column (generated separately)', () => {
