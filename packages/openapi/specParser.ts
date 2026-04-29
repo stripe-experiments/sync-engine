@@ -7,7 +7,7 @@ import type {
   ParsedOpenApiSpec,
   ScalarType,
 } from './types.js'
-import { OPENAPI_COMPATIBILITY_COLUMNS, OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings.js'
+import { OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings.js'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
 const CRUD_SUFFIXES = ['.created', '.updated', '.deleted'] as const
@@ -15,7 +15,7 @@ const CRUD_SUFFIXES = ['.created', '.updated', '.deleted'] as const
 const RESERVED_COLUMNS = new Set([
   'id',
   '_raw_data',
-  '_last_synced_at',
+  '_synced_at',
   '_updated_at',
   '_account_id',
 ])
@@ -153,27 +153,6 @@ export class SpecParser {
       }
 
       tableMap.set(tableName, existing)
-    }
-
-    for (const tableName of Array.from(allowedTables).sort((a, b) => a.localeCompare(b))) {
-      const current =
-        tableMap.get(tableName) ??
-        ({
-          resourceId: tableName,
-          sourceSchemaName: 'compatibility_fallback',
-          columns: new Map<string, ColumnAccumulator>(),
-        } as const)
-      for (const compatibilityColumn of OPENAPI_COMPATIBILITY_COLUMNS[tableName] ?? []) {
-        const existing = current.columns.get(compatibilityColumn.name)
-        if (!existing) {
-          current.columns.set(compatibilityColumn.name, {
-            type: compatibilityColumn.type,
-            nullable: compatibilityColumn.nullable,
-            expandableReference: compatibilityColumn.expandableReference ?? false,
-          })
-        }
-      }
-      tableMap.set(tableName, current)
     }
 
     const tables = Array.from(tableMap.entries())
