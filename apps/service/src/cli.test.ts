@@ -491,7 +491,7 @@ describe('generated pipeline CLI', () => {
         'sync',
         pipelineId,
         '--streams',
-        'customers,prices',
+        'customer,price',
         '--run-id',
         'run_demo',
         '--reset-state',

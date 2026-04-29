@@ -114,7 +114,7 @@ const catalog: ConfiguredCatalog = {
   streams: [
     {
       stream: {
-        name: 'customers',
+        name: 'customer',
         primary_key: [['id']],
         newer_than_field: '_updated_at',
         metadata: {},
@@ -159,7 +159,7 @@ describe('destination default export', () => {
         `SELECT table_name FROM information_schema.tables WHERE table_schema = $1`,
         [SCHEMA]
       )
-      expect(rows.map((r) => r.table_name)).toContain('customers')
+      expect(rows.map((r) => r.table_name)).toContain('customer')
     })
   })
 
@@ -183,8 +183,8 @@ describe('destination default export', () => {
 
     it('upserts records and emits log on completion', async () => {
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice' }),
-        makeRecord('customers', { id: 'cus_2', name: 'Bob' }),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice' }),
+        makeRecord('customer', { id: 'cus_2', name: 'Bob' }),
       ])
 
       const outputs = await collectOutputs(
@@ -201,11 +201,11 @@ describe('destination default export', () => {
     it('batches inserts with configurable batch size', async () => {
       const config = { ...makeConfig(), batch_size: 2 }
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1' }),
-        makeRecord('customers', { id: 'cus_2' }),
-        makeRecord('customers', { id: 'cus_3' }),
-        makeRecord('customers', { id: 'cus_4' }),
-        makeRecord('customers', { id: 'cus_5' }),
+        makeRecord('customer', { id: 'cus_1' }),
+        makeRecord('customer', { id: 'cus_2' }),
+        makeRecord('customer', { id: 'cus_3' }),
+        makeRecord('customer', { id: 'cus_4' }),
+        makeRecord('customer', { id: 'cus_5' }),
       ])
 
       await collectOutputs(destination.write({ config, catalog }, messages))
@@ -217,9 +217,9 @@ describe('destination default export', () => {
     it('re-emits SourceStateMessage after flushing preceding records', async () => {
       const stateData = { cursor: 'abc123' }
       const messages = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice' }),
-        makeRecord('customers', { id: 'cus_2', name: 'Bob' }),
-        makeState('customers', stateData),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice' }),
+        makeRecord('customer', { id: 'cus_2', name: 'Bob' }),
+        makeState('customer', stateData),
       ])
 
       const outputs = await collectOutputs(
@@ -230,7 +230,7 @@ describe('destination default export', () => {
       expect(stateOutputs).toHaveLength(1)
       expect(stateOutputs[0]).toEqual({
         type: 'source_state',
-        source_state: { stream: 'customers', data: stateData },
+        source_state: { stream: 'customer', data: stateData },
       })
 
       // Records should be in DB (flushed before state was yielded)
@@ -239,11 +239,11 @@ describe('destination default export', () => {
     })
 
     it('handles upsert (ON CONFLICT update)', async () => {
-      const messages1 = toAsyncIter([makeRecord('customers', { id: 'cus_1', name: 'Alice' })])
+      const messages1 = toAsyncIter([makeRecord('customer', { id: 'cus_1', name: 'Alice' })])
       await collectOutputs(destination.write({ config: makeConfig(), catalog }, messages1))
 
       const messages2 = toAsyncIter([
-        makeRecord('customers', { id: 'cus_1', name: 'Alice Updated' }),
+        makeRecord('customer', { id: 'cus_1', name: 'Alice Updated' }),
       ])
       await collectOutputs(destination.write({ config: makeConfig(), catalog }, messages2))
 
@@ -260,7 +260,7 @@ describe('newer_than_field stale write prevention', () => {
     streams: [
       {
         stream: {
-          name: 'customers',
+          name: 'customer',
           primary_key: [['id']],
           json_schema: {
             type: 'object',
@@ -284,14 +284,14 @@ describe('newer_than_field stale write prevention', () => {
 
   it('skips upsert when incoming record is older than existing', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1 (stale)', updated: 100 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1 (stale)', updated: 100 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch2)
@@ -306,14 +306,14 @@ describe('newer_than_field stale write prevention', () => {
 
   it('allows upsert when incoming record is newer than existing', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', updated: 100 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', updated: 100 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', updated: 200 }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: newerThanCatalog }, batch2)
@@ -333,7 +333,7 @@ describe('_updated_at column write-through', () => {
   const updatedAtCatalog: ConfiguredCatalog = {
     streams: [
       {
-        stream: { name: 'customers', primary_key: [['id']], newer_than_field: '_updated_at' },
+        stream: { name: 'customer', primary_key: [['id']], newer_than_field: '_updated_at' },
         sync_mode: 'full_refresh',
         destination_sync_mode: 'overwrite',
       },
@@ -347,7 +347,7 @@ describe('_updated_at column write-through', () => {
   it('writes source-stamped _updated_at into the timestamptz column', async () => {
     const ts = 1_700_000_000 // 2023-11-14T22:13:20Z
     const batch = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice', _updated_at: ts }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice', _updated_at: ts }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: updatedAtCatalog }, batch)
@@ -374,7 +374,7 @@ describe('_updated_at column write-through', () => {
       destination.write(
         { config: makeConfig(), catalog: updatedAtCatalog },
         toAsyncIter([
-          makeRecord('customers', { id: 'cus_1', name: 'Alice v2', _updated_at: newer }),
+          makeRecord('customer', { id: 'cus_1', name: 'Alice v2', _updated_at: newer }),
         ])
       )
     )
@@ -382,7 +382,7 @@ describe('_updated_at column write-through', () => {
       destination.write(
         { config: makeConfig(), catalog: updatedAtCatalog },
         toAsyncIter([
-          makeRecord('customers', {
+          makeRecord('customer', {
             id: 'cus_1',
             name: 'Alice v1 (stale)',
             _updated_at: older,
@@ -405,7 +405,7 @@ describe('multi-org sync (two account IDs)', () => {
     streams: [
       {
         stream: {
-          name: 'customers',
+          name: 'customer',
           primary_key: [['id'], ['_account_id']],
           newer_than_field: '_updated_at',
           metadata: {},
@@ -430,7 +430,7 @@ describe('multi-org sync (two account IDs)', () => {
   it('creates table with composite primary key (id, _account_id)', async () => {
     const { rows } = await pool.query(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_schema = $1 AND table_name = 'customers'
+       WHERE table_schema = $1 AND table_name = 'customer'
        ORDER BY ordinal_position`,
       [SCHEMA]
     )
@@ -444,15 +444,15 @@ describe('multi-org sync (two account IDs)', () => {
        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
        WHERE i.indrelid = $1::regclass AND i.indisprimary
        ORDER BY array_position(i.indkey, a.attnum)`,
-      [`"${SCHEMA}"."customers"`]
+      [`"${SCHEMA}"."customer"`]
     )
     expect(pkRows.map((r) => r.attname)).toEqual(['id', '_account_id'])
   })
 
   it('stores rows from two accounts with the same object id as separate rows', async () => {
     const messages = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice (Acct A)', _account_id: 'acct_AAA' }),
-      makeRecord('customers', { id: 'cus_1', name: 'Alice (Acct B)', _account_id: 'acct_BBB' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice (Acct A)', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice (Acct B)', _account_id: 'acct_BBB' }),
     ])
 
     await collectOutputs(
@@ -471,15 +471,15 @@ describe('multi-org sync (two account IDs)', () => {
 
   it('upserts per-account: same id + same account updates, different account inserts', async () => {
     const batch1 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_AAA' }),
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_BBB' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v1', _account_id: 'acct_BBB' }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: multiOrgCatalog }, batch1)
     )
 
     const batch2 = toAsyncIter([
-      makeRecord('customers', { id: 'cus_1', name: 'Alice v2', _account_id: 'acct_AAA' }),
+      makeRecord('customer', { id: 'cus_1', name: 'Alice v2', _account_id: 'acct_AAA' }),
     ])
     await collectOutputs(
       destination.write({ config: makeConfig(), catalog: multiOrgCatalog }, batch2)
@@ -508,7 +508,7 @@ describe('upsertMany standalone', () => {
       await upsertMany(
         testPool,
         SCHEMA,
-        'customers',
+        'customer',
         [
           { id: 'cus_10', name: 'Direct', _updated_at: ts },
           { id: 'cus_11', name: 'Insert', _updated_at: ts },
@@ -527,7 +527,7 @@ describe('upsertMany standalone', () => {
   it('no-ops on empty array', async () => {
     const testPool = new pg.Pool({ connectionString })
     try {
-      await upsertMany(testPool, SCHEMA, 'customers', [], ['id'], '_updated_at')
+      await upsertMany(testPool, SCHEMA, 'customer', [], ['id'], '_updated_at')
       const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
       expect(rows[0].n).toBe(0)
     } finally {
@@ -542,7 +542,7 @@ describe('schema-driven CHECK constraints', () => {
       streams: [
         {
           stream: {
-            name: 'charges',
+            name: 'charge',
             primary_key: [['id'], [column]],
             json_schema: {
               type: 'object',
@@ -559,7 +559,7 @@ describe('schema-driven CHECK constraints', () => {
     }
   }
 
-  async function constraintDefs(table = 'charges'): Promise<string[]> {
+  async function constraintDefs(table = 'charge'): Promise<string[]> {
     const { rows } = await pool.query(
       `SELECT pg_get_constraintdef(c.oid) AS def
        FROM pg_constraint c

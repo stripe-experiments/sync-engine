@@ -122,7 +122,7 @@ describe('buildCreateTableWithSchema', () => {
   })
 
   it('adds system columns and indexes when system_columns is provided', () => {
-    const stmts = buildCreateTableWithSchema('stripe', 'customers', SAMPLE_JSON_SCHEMA, {
+    const stmts = buildCreateTableWithSchema('stripe', 'customer', SAMPLE_JSON_SCHEMA, {
       system_columns: [{ name: '_account_id', type: 'text', index: true }],
     })
 
@@ -152,13 +152,13 @@ describe('buildCreateTableWithSchema', () => {
   })
 
   it('handles expandable reference columns', () => {
-    const stmts = buildCreateTableWithSchema('mydata', 'charges', EXPANDABLE_REF_SCHEMA)
+    const stmts = buildCreateTableWithSchema('mydata', 'charge', EXPANDABLE_REF_SCHEMA)
     expect(stmts[0]).toContain('"customer" text GENERATED ALWAYS AS (CASE')
     expect(stmts[0]).toContain("WHEN jsonb_typeof(_raw_data->'customer') = 'object'")
   })
 
   it('generates composite primary key with _account_id when primary_key option is set', () => {
-    const stmts = buildCreateTableWithSchema('stripe', 'customers', SAMPLE_JSON_SCHEMA, {
+    const stmts = buildCreateTableWithSchema('stripe', 'customer', SAMPLE_JSON_SCHEMA, {
       primary_key: [['id'], ['_account_id']],
     })
 
@@ -176,8 +176,8 @@ describe('buildCreateTableWithSchema', () => {
   })
 
   it('produces stable output across repeated calls', () => {
-    const first = buildCreateTableWithSchema('mydata', 'customers', SAMPLE_JSON_SCHEMA)
-    const second = buildCreateTableWithSchema('mydata', 'customers', SAMPLE_JSON_SCHEMA)
+    const first = buildCreateTableWithSchema('mydata', 'customer', SAMPLE_JSON_SCHEMA)
+    const second = buildCreateTableWithSchema('mydata', 'customer', SAMPLE_JSON_SCHEMA)
     expect(second).toEqual(first)
   })
 
@@ -193,7 +193,7 @@ describe('buildCreateTableWithSchema', () => {
         _updated_at: { type: 'integer' },
       },
     }
-    const stmts = buildCreateTableWithSchema('stripe', 'customers', schemaWithUpdatedAt)
+    const stmts = buildCreateTableWithSchema('stripe', 'customer', schemaWithUpdatedAt)
 
     expect(stmts[0]).toContain('"_updated_at" timestamptz NOT NULL DEFAULT now()')
     expect(stmts[0]).not.toContain('"_updated_at" bigint')
@@ -211,7 +211,7 @@ describe('buildCreateTableDDL', () => {
   it('buildCreateTableDDL emits CHECK with IN list for any column with enum in JSON Schema', () => {
     const ddl = buildCreateTableDDL(
       'stripe',
-      'charges',
+      'charge',
       {
         properties: {
           id: { type: 'string' },
@@ -231,7 +231,7 @@ describe('buildCreateTableDDL', () => {
   })
 
   it('buildCreateTableDDL emits CHECK for non-account enum columns too', () => {
-    const ddl = buildCreateTableDDL('stripe', 'events', {
+    const ddl = buildCreateTableDDL('stripe', 'event', {
       properties: {
         id: { type: 'string' },
         status: { type: 'string', enum: ['active', 'paused', 'cancelled'] },
@@ -245,7 +245,7 @@ describe('buildCreateTableDDL', () => {
   })
 
   it('buildCreateTableDDL skips CHECK when no enum is present in JSON Schema', () => {
-    const ddl = buildCreateTableDDL('stripe', 'charges', SAMPLE_JSON_SCHEMA, {
+    const ddl = buildCreateTableDDL('stripe', 'charge', SAMPLE_JSON_SCHEMA, {
       primary_key: [['id'], ['_account_id']],
     })
     expect(ddl).toContain('"_account_id" text GENERATED ALWAYS AS')
@@ -273,7 +273,7 @@ describe('buildCreateTableDDL', () => {
   })
 
   it('wraps every DDL statement in exception handlers', () => {
-    const ddl = buildCreateTableDDL('stripe', 'customers', SAMPLE_JSON_SCHEMA, {
+    const ddl = buildCreateTableDDL('stripe', 'customer', SAMPLE_JSON_SCHEMA, {
       system_columns: [{ name: '_account_id', type: 'text', index: true }],
     })
 
@@ -316,8 +316,8 @@ describe('buildCreateTableDDL', () => {
   })
 
   it('produces stable output across repeated calls', () => {
-    const first = buildCreateTableDDL('mydata', 'customers', SAMPLE_JSON_SCHEMA)
-    const second = buildCreateTableDDL('mydata', 'customers', SAMPLE_JSON_SCHEMA)
+    const first = buildCreateTableDDL('mydata', 'customer', SAMPLE_JSON_SCHEMA)
+    const second = buildCreateTableDDL('mydata', 'customer', SAMPLE_JSON_SCHEMA)
     expect(second).toEqual(first)
   })
 })

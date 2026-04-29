@@ -177,9 +177,9 @@ async function syncAllEndpointsForVersion(
   }
 
   try {
-    // v2_core_events uses ISO timestamps for created filter and opaque page tokens;
+    // v2_core_event uses ISO timestamps for created filter and opaque page tokens;
     // the test-server's V2 pagination + subdivision interaction is not yet verified.
-    const TEST_EXCLUDED = new Set([...EXCLUDED_TABLES, 'v2_core_events'])
+    const TEST_EXCLUDED = new Set([...EXCLUDED_TABLES, 'v2_core_event'])
     const syncableTables = new SpecParser().discoverSyncableTables(endpointSet.spec, {
       excluded: EXCLUDED_TABLES,
     })
