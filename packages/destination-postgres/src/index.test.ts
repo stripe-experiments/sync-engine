@@ -608,8 +608,8 @@ describe('deleteMany / writeMany', () => {
         SCHEMA,
         'customers',
         [
-          { id: 'cus_new', name: 'New', _updated_at: ts + 1 },
-          { id: 'cus_old', deleted: true, _updated_at: ts + 1 },
+          { data: { id: 'cus_new', name: 'New', _updated_at: ts + 1 } },
+          { recordDeleted: true, data: { id: 'cus_old', _updated_at: ts + 1 } },
         ],
         ['id'],
         '_updated_at'

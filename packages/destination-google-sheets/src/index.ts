@@ -760,7 +760,7 @@ export function createDestination(
         for await (const msg of $stdin) {
           if (msg.type === 'record') {
             recordCount++
-            const { stream, data, recordDeleted} = msg.record
+            const { stream, data, recordDeleted } = msg.record
             const cleanData: Record<string, unknown> = stripSystemFields(data)
             const newerThanField = streamNewerThanField.get(stream)
             if (

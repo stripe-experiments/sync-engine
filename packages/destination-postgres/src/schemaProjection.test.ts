@@ -10,7 +10,6 @@ const SAMPLE_JSON_SCHEMA: Record<string, unknown> = {
   properties: {
     id: { type: 'string' },
     created: { type: 'integer' },
-    deleted: { type: 'boolean' },
     metadata: { type: 'object' },
     expires_at: { type: 'string', format: 'date-time' },
   },
