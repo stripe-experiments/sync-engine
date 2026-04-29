@@ -681,9 +681,9 @@ describe('test-server sync via Docker engine', () => {
     }
   }, 180_000)
 
-  it('v2 stream: syncs v2_core_event_destinations via cursor pagination', async () => {
+  it('v2 stream: syncs v2_core_event_destination via cursor pagination', async () => {
     const destSchema = uniqueSchema('v2sync')
-    const STREAM = 'v2_core_event_destinations'
+    const STREAM = 'v2_core_event_destination'
 
     const v2Objects = Array.from({ length: 10_000 }, (_, i) => ({
       id: `ed_test_${String(i).padStart(5, '0')}`,
