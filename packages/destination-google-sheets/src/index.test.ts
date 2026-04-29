@@ -18,22 +18,19 @@ import {
 import { createMemorySheets } from '../__tests__/memory-sheets.js'
 
 /**
- * Strip the source-provided `_updated_at` column from a 2D rows array.
+ * Strip metadata timestamp columns from a 2D rows array.
  *
- * The source stamps every record with `_updated_at` (unix seconds, from
- * `event.created` for webhooks or the HTTP `Date` header for backfill);
- * the destination passes the value through verbatim. Most tests don't
- * care about its exact value and just want to assert on source data;
- * use this helper at the assertion site to drop the column before
- * comparing. Tests that exercise the column itself stay in the
- * `_updated_at column` describe block at the bottom of this file.
+ * The destination stamps `_synced_at`; the source may stamp `_updated_at`.
+ * Most tests only care about source data, so drop both at assertion sites.
  */
 function stripUpdatedAt(rows: unknown[][] | undefined): unknown[][] {
   if (!rows || rows.length === 0) return rows ?? []
   const header = rows[0] as unknown[]
-  const idx = header.indexOf('_updated_at')
-  if (idx < 0) return rows
-  return rows.map((row) => row.filter((_, i) => i !== idx))
+  const indexes = new Set(
+    ['_updated_at', '_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
+  )
+  if (indexes.size === 0) return rows
+  return rows.map((row) => row.filter((_, i) => !indexes.has(i)))
 }
 
 /** Collect all output from the destination's write() generator. */
@@ -1784,8 +1781,11 @@ describe('_updated_at column (source-owned, passthrough)', () => {
     )
 
     const rows = getData(getSpreadsheetIds()[0], 'users')!
-    expect(rows[0]).toEqual(['id', 'name'])
+    expect(rows[0]).toEqual(['id', 'name', '_synced_at'])
     expect(rows[0]).not.toContain('_updated_at')
+    const syncedAtIdx = (rows[0] as string[]).indexOf('_synced_at')
+    expect(syncedAtIdx).toBeGreaterThanOrEqual(0)
+    expect(Date.parse(String(rows[1][syncedAtIdx]))).not.toBeNaN()
   })
 
   it('passes the source-provided _updated_at through verbatim', async () => {

@@ -353,7 +353,7 @@ describe('test-server API', () => {
   }, 60_000)
 
   it('retrieve returns object by ID, 404 for missing', async () => {
-    await replaceTableObjects('customers', [
+    await replaceTableObjects('customer', [
       { id: 'cus_ret_1', object: 'customer', created: RANGE_START + 100 },
     ])
 
@@ -374,7 +374,7 @@ describe('test-server API', () => {
   }, 120_000)
 
   it('unrecognized path returns 404, non-GET returns 405', async () => {
-    await replaceTableObjects('customers', [])
+    await replaceTableObjects('customer', [])
 
     const notFoundRes = await fetch(`${testServer.url}/v1/totally_fake_endpoint`, {
       headers: { Authorization: 'Bearer sk_test_fake' },

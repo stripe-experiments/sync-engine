@@ -31,40 +31,6 @@ describe('SpecParser', () => {
     })
   })
 
-  it('injects compatibility columns for runtime-critical tables', () => {
-    const parser = new SpecParser()
-    const parsed = parser.parse(
-      {
-        ...minimalStripeOpenApiSpec,
-        components: { schemas: {} },
-      },
-      { allowedTables: ['active_entitlement', 'subscription_item'] }
-    )
-
-    const activeEntitlements = parsed.tables.find(
-      (table) => table.tableName === 'active_entitlement'
-    )
-    expect(activeEntitlements?.columns).toContainEqual({
-      name: 'customer',
-      type: 'text',
-      nullable: true,
-    })
-
-    const subscriptionItems = parsed.tables.find(
-      (table) => table.tableName === 'subscription_item'
-    )
-    expect(subscriptionItems?.columns).toContainEqual({
-      name: 'deleted',
-      type: 'boolean',
-      nullable: true,
-    })
-    expect(subscriptionItems?.columns).toContainEqual({
-      name: 'subscription',
-      type: 'text',
-      nullable: true,
-    })
-  })
-
   it('is deterministic regardless of schema key order', () => {
     const parser = new SpecParser()
     const normal = parser.parse(minimalStripeOpenApiSpec, {

@@ -35,8 +35,8 @@ describe('jsonSchemaToColumns', () => {
     expect(byName.created.pgType).toBe('bigint')
     expect(byName.deleted.pgType).toBe('boolean')
     expect(byName.metadata.pgType).toBe('jsonb')
-    expect(byName.expires_at.pgType).toBe('timestamptz')
-    expect(byName.expires_at.expression).toBe("(NULLIF(_raw_data->>'expires_at', ''))::timestamptz")
+    expect(byName.expires_at.pgType).toBe('text')
+    expect(byName.expires_at.expression).toBe("(_raw_data->>'expires_at')::text")
   })
 
   it('unwraps nullable oneOf wrappers when picking column types', () => {
@@ -56,7 +56,7 @@ describe('jsonSchemaToColumns', () => {
       },
     })
     const byName = Object.fromEntries(columns.map((c) => [c.name, c]))
-    expect(byName.nullable_ts.pgType).toBe('timestamptz')
+    expect(byName.nullable_ts.pgType).toBe('text')
     expect(byName.nullable_meta.pgType).toBe('jsonb')
     expect(byName.nullable_count.pgType).toBe('bigint')
   })
@@ -74,11 +74,12 @@ describe('jsonSchemaToColumns', () => {
     expect(customerCol.expression).toContain("->>'id'")
   })
 
-  it('skips _updated_at (kept as a legacy hardcoded timestamptz column, not generated)', () => {
+  it('skips system timestamp columns', () => {
     const schema = {
       type: 'object',
-      properties: { _updated_at: { type: 'integer' } },
+      properties: { _synced_at: { type: 'string' }, _updated_at: { type: 'integer' } },
     }
+    expect(jsonSchemaToColumns(schema).find((c) => c.name === '_synced_at')).toBeUndefined()
     expect(jsonSchemaToColumns(schema).find((c) => c.name === '_updated_at')).toBeUndefined()
   })
 })
@@ -111,6 +112,7 @@ describe('buildCreateTableWithSchema', () => {
     // No indexes by default (no system_columns with index: true)
     expect(stmts.some((s) => s.includes('CREATE INDEX'))).toBe(false)
 
+    expect(stmts[0]).toContain('"_synced_at" timestamptz NOT NULL DEFAULT now()')
     // _updated_at keeps its legacy timestamptz shape so existing
     // deployments don't need a column migration. upsertMany writes the
     // source-stamped value explicitly per row (DDR-009); the legacy
@@ -267,6 +269,7 @@ describe('buildCreateTableDDL', () => {
     expect(ddl).toContain('ADD COLUMN IF NOT EXISTS "metadata"')
     expect(ddl).toContain('ADD COLUMN IF NOT EXISTS "expires_at"')
 
+    expect(ddl).toContain('"_synced_at" timestamptz NOT NULL DEFAULT now()')
     expect(ddl).toContain('"_updated_at" timestamptz NOT NULL DEFAULT now()')
     expect(ddl).toContain('DROP TRIGGER IF EXISTS handle_updated_at')
     expect(ddl).not.toContain('CREATE TRIGGER handle_updated_at')

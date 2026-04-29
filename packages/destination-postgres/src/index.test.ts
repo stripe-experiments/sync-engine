@@ -328,8 +328,7 @@ describe('newer_than_field stale write prevention', () => {
 })
 
 describe('_updated_at column write-through', () => {
-  // `_updated_at` is the legacy hardcoded `timestamptz` column; upsertMany
-  // writes the source-stamped unix-seconds value into it (DDR-009).
+  // `_updated_at` is source time; `_synced_at` is destination write time.
   const updatedAtCatalog: ConfiguredCatalog = {
     streams: [
       {
@@ -356,14 +355,16 @@ describe('_updated_at column write-through', () => {
     const { rows } = await pool.query<{
       raw: string
       column_ts: Date
+      synced_at: Date
     }>(
-      `SELECT _raw_data->>'_updated_at' AS raw, _updated_at AS column_ts
+      `SELECT _raw_data->>'_updated_at' AS raw, _updated_at AS column_ts, _synced_at AS synced_at
        FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].raw).toBe(String(ts))
     // Column is timestamptz; verify the unix-seconds → Date conversion
     // landed on the exact second we asked for (no millisecond drift).
     expect(rows[0].column_ts.getTime()).toBe(ts * 1000)
+    expect(rows[0].synced_at).toBeInstanceOf(Date)
   })
 
   it('blocks stale writes via the _updated_at gate for objects without native updated', async () => {
