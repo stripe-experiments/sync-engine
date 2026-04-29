@@ -129,6 +129,177 @@ describe('SpecParser', () => {
     })
   })
 
+  it('excludes list envelope properties from parent tables', () => {
+    const parser = new SpecParser()
+    const parsed = parser.parse(
+      {
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            subscription: {
+              'x-resourceId': 'subscription',
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                items: {
+                  type: 'object',
+                  properties: {
+                    object: { enum: ['list'] },
+                    data: { type: 'array', items: { type: 'string' } },
+                    has_more: { type: 'boolean' },
+                    url: { type: 'string' },
+                  },
+                },
+                latest_invoice: { type: 'object', properties: { id: { type: 'string' } } },
+              },
+            },
+          },
+        },
+      },
+      { allowedTables: ['subscription'] }
+    )
+
+    const subscription = parsed.tables.find((table) => table.tableName === 'subscription')
+    expect(subscription?.columns).toContainEqual({ name: 'latest_invoice', type: 'json', nullable: false })
+    expect(subscription?.columns.map((c) => c.name)).not.toContain('items')
+  })
+
+  it('excludes list envelope properties when they are references', () => {
+    const parser = new SpecParser()
+    const parsed = parser.parse(
+      {
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            charge: {
+              'x-resourceId': 'charge',
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                refunds: { $ref: '#/components/schemas/refund_list' },
+                metadata: { type: 'object' },
+              },
+            },
+            refund_list: {
+              type: 'object',
+              properties: {
+                object: { enum: ['list'] },
+                data: { type: 'array', items: { type: 'string' } },
+                has_more: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      { allowedTables: ['charge'] }
+    )
+
+    const charge = parsed.tables.find((table) => table.tableName === 'charge')
+    expect(charge?.columns).toContainEqual({ name: 'metadata', type: 'json', nullable: false })
+    expect(charge?.columns.map((c) => c.name)).not.toContain('refunds')
+  })
+
+  it('excludes v2 list envelope properties', () => {
+    const parser = new SpecParser()
+    const parsed = parser.parse(
+      {
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            v2_event_destination: {
+              'x-resourceId': 'v2.core.event_destination',
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                deliveries: {
+                  type: 'object',
+                  properties: {
+                    data: { type: 'array', items: { type: 'string' } },
+                    next_page_url: { type: 'string' },
+                  },
+                },
+                description: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      { allowedTables: ['v2_core_event_destination'] }
+    )
+
+    const eventDest = parsed.tables.find((table) => table.tableName === 'v2_core_event_destination')
+    expect(eventDest?.columns).toContainEqual({ name: 'description', type: 'text', nullable: false })
+    expect(eventDest?.columns.map((c) => c.name)).not.toContain('deliveries')
+  })
+
+  it('excludes list envelope properties in oneOf', () => {
+    const parser = new SpecParser()
+    const parsed = parser.parse(
+      {
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            product: {
+              'x-resourceId': 'product',
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                discounts: {
+                  oneOf: [
+                    {
+                      type: 'object',
+                      properties: {
+                        object: { enum: ['list'] },
+                        data: { type: 'array', items: { type: 'string' } },
+                      },
+                    },
+                  ],
+                },
+                name: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      { allowedTables: ['product'] }
+    )
+
+    const product = parsed.tables.find((table) => table.tableName === 'product')
+    expect(product?.columns).toContainEqual({ name: 'name', type: 'text', nullable: false })
+    expect(product?.columns.map((c) => c.name)).not.toContain('discounts')
+  })
+
+  it('keeps objects with data arrays that are not list envelopes', () => {
+    const parser = new SpecParser()
+    const parsed = parser.parse(
+      {
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            product: {
+              'x-resourceId': 'product',
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                attributes: {
+                  type: 'object',
+                  properties: {
+                    data: { type: 'array', items: { type: 'string' } },
+                    label: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      { allowedTables: ['product'] }
+    )
+
+    const product = parsed.tables.find((table) => table.tableName === 'product')
+    expect(product?.columns).toContainEqual({ name: 'attributes', type: 'json', nullable: false })
+  })
+
   describe('discoverListableResourceIds', () => {
     it('discovers resource ids from list endpoints in paths', () => {
       const parser = new SpecParser()

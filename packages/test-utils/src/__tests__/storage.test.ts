@@ -11,7 +11,7 @@ describe('ensureObjectTable', () => {
 
     expect(query).toHaveBeenCalledTimes(2)
     expect(normalizeSql(query.mock.calls[1]?.[0] as string)).toBe(
-      'CREATE INDEX IF NOT EXISTS "customers_created_id_idx" ON "stripe"."customer" ("created" DESC, "id" DESC)'
+      'CREATE INDEX IF NOT EXISTS "customer_created_id_idx" ON "stripe"."customer" ("created" DESC, "id" DESC)'
     )
   })
 })

@@ -192,7 +192,7 @@ describe('destination default export', () => {
       )
 
       // Verify records in DB
-      const { rows } = await pool.query(`SELECT id FROM "${SCHEMA}".customers ORDER BY id`)
+      const { rows } = await pool.query(`SELECT id FROM "${SCHEMA}".customer ORDER BY id`)
       expect(rows.map((r) => r.id)).toEqual(['cus_1', 'cus_2'])
 
       // Log messages now go through pino, not the protocol stream
@@ -210,7 +210,7 @@ describe('destination default export', () => {
 
       await collectOutputs(destination.write({ config, catalog }, messages))
 
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(5)
     })
 
@@ -234,7 +234,7 @@ describe('destination default export', () => {
       })
 
       // Records should be in DB (flushed before state was yielded)
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(2)
     })
 
@@ -248,7 +248,7 @@ describe('destination default export', () => {
       await collectOutputs(destination.write({ config: makeConfig(), catalog }, messages2))
 
       const { rows } = await pool.query(
-        `SELECT _raw_data->>'name' AS name FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+        `SELECT _raw_data->>'name' AS name FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
       )
       expect(rows[0].name).toBe('Alice Updated')
     })
@@ -298,7 +298,7 @@ describe('newer_than_field stale write prevention', () => {
     )
 
     const { rows } = await pool.query(
-      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].updated).toBe('200')
@@ -320,7 +320,7 @@ describe('newer_than_field stale write prevention', () => {
     )
 
     const { rows } = await pool.query(
-      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+      `SELECT _raw_data->>'name' AS name, updated FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].updated).toBe('200')
@@ -358,7 +358,7 @@ describe('_updated_at column write-through', () => {
       column_ts: Date
     }>(
       `SELECT _raw_data->>'_updated_at' AS raw, _updated_at AS column_ts
-       FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+       FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].raw).toBe(String(ts))
     // Column is timestamptz; verify the unix-seconds → Date conversion
@@ -393,7 +393,7 @@ describe('_updated_at column write-through', () => {
 
     const { rows } = await pool.query<{ name: string; ts: Date }>(
       `SELECT _raw_data->>'name' AS name, _updated_at AS ts
-       FROM "${SCHEMA}".customers WHERE id = 'cus_1'`
+       FROM "${SCHEMA}".customer WHERE id = 'cus_1'`
     )
     expect(rows[0].name).toBe('Alice v2')
     expect(rows[0].ts.getTime()).toBe(newer * 1000)
@@ -461,7 +461,7 @@ describe('multi-org sync (two account IDs)', () => {
 
     const { rows } = await pool.query(
       `SELECT id, _account_id, _raw_data->>'name' AS name
-       FROM "${SCHEMA}".customers ORDER BY _account_id`
+       FROM "${SCHEMA}".customer ORDER BY _account_id`
     )
     expect(rows).toEqual([
       { id: 'cus_1', _account_id: 'acct_AAA', name: 'Alice (Acct A)' },
@@ -487,7 +487,7 @@ describe('multi-org sync (two account IDs)', () => {
 
     const { rows } = await pool.query(
       `SELECT _account_id, _raw_data->>'name' AS name
-       FROM "${SCHEMA}".customers ORDER BY _account_id`
+       FROM "${SCHEMA}".customer ORDER BY _account_id`
     )
     expect(rows).toEqual([
       { _account_id: 'acct_AAA', name: 'Alice v2' },
@@ -517,7 +517,7 @@ describe('upsertMany standalone', () => {
         '_updated_at'
       )
 
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(2)
     } finally {
       await testPool.end()
@@ -528,7 +528,7 @@ describe('upsertMany standalone', () => {
     const testPool = new pg.Pool({ connectionString })
     try {
       await upsertMany(testPool, SCHEMA, 'customer', [], ['id'], '_updated_at')
-      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customers`)
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM "${SCHEMA}".customer`)
       expect(rows[0].n).toBe(0)
     } finally {
       await testPool.end()
@@ -580,14 +580,14 @@ describe('schema-driven CHECK constraints', () => {
     )
     await expect(
       pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
+        `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"x","_account_id":"acct_other"}'::jsonb)`
       )
     ).rejects.toMatchObject({ code: '23514' })
     await expect(
-      pool.query(`INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"missing"}'::jsonb)`)
+      pool.query(`INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"missing"}'::jsonb)`)
     ).rejects.toMatchObject({ code: '23502' })
     await pool.query(
-      `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"a","_account_id":"acct_a"}'::jsonb)`
+      `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"a","_account_id":"acct_a"}'::jsonb)`
     )
 
     // Same allow-list re-runs cleanly (idempotent).
@@ -604,11 +604,11 @@ describe('schema-driven CHECK constraints', () => {
     await expect(
       drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
     ).rejects.toThrow(
-      /enum values changed.*charges.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
+      /enum values changed.*charge.*_account_id.*acct_a, acct_b.*acct_a.*DROP CONSTRAINT/s
     )
 
     // After dropping the constraint manually, the next setup installs the new one.
-    await pool.query(`ALTER TABLE "${SCHEMA}".charges DROP CONSTRAINT "chk_charges__account_id"`)
+    await pool.query(`ALTER TABLE "${SCHEMA}".charge DROP CONSTRAINT "chk_charge__account_id"`)
     await drain(destination.setup!({ config: makeConfig(), catalog: catalogWith(['acct_a']) }))
     const defs = await constraintDefs()
     expect(defs).toHaveLength(1)
@@ -616,7 +616,7 @@ describe('schema-driven CHECK constraints', () => {
     expect(defs[0]).not.toContain(`'acct_b'`)
     await expect(
       pool.query(
-        `INSERT INTO "${SCHEMA}".charges (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
+        `INSERT INTO "${SCHEMA}".charge (_raw_data) VALUES ('{"id":"b","_account_id":"acct_b"}'::jsonb)`
       )
     ).rejects.toMatchObject({ code: '23514' })
   })
