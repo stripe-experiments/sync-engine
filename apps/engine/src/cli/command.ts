@@ -5,6 +5,7 @@ import type { ConnectorResolver } from '../lib/index.js'
 import { startApiServer } from '../api/server.js'
 import { createApp } from '../api/app.js'
 import { createSyncCmd } from './sync.js'
+import { createStartCmd } from './start.js'
 import { createResolverFromFlags } from './resolver-flags.js'
 
 /** Connector discovery flags shared by all commands (serve + one-shot). */
@@ -86,6 +87,7 @@ export async function createProgram() {
     },
     subCommands: {
       serve: createServeCmd(resolverPromise),
+      start: createStartCmd(resolverPromise),
       sync: createSyncCmd(resolverPromise),
       api: await buildApiCmd(appPromise),
     },
