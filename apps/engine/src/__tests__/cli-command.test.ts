@@ -5,6 +5,7 @@ const createConnectorResolver = vi.fn()
 const createApp = vi.fn()
 const startApiServer = vi.fn()
 const createSyncCmd = vi.fn(() => ({ meta: { name: 'sync' } }))
+const createStartCmd = vi.fn(() => ({ meta: { name: 'start' } }))
 const defaultConnectors = {
   sources: { stripe: {} },
   destinations: { postgres: {}, google_sheets: {} },
@@ -38,6 +39,10 @@ vi.mock('../api/server.js', () => ({
 
 vi.mock('../cli/sync.js', () => ({
   createSyncCmd,
+}))
+
+vi.mock('../cli/start.js', () => ({
+  createStartCmd,
 }))
 
 vi.mock('../lib/default-connectors.js', () => ({
@@ -84,6 +89,8 @@ describe('engine command wiring', () => {
     expect(app.fetch).toHaveBeenCalledOnce()
 
     expect(program.subCommands?.api).toBeDefined()
+    expect(program.subCommands?.start).toBeDefined()
+    expect(createStartCmd).toHaveBeenCalledOnce()
     expect(createSyncCmd).toHaveBeenCalledOnce()
     expect(startApiServer).not.toHaveBeenCalled()
   })
