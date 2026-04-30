@@ -279,6 +279,10 @@ export interface components {
             rate_limit?: number;
             /** @description Max records to fetch per stream (useful for testing) */
             backfill_limit?: number;
+            /** @description Webhook signing secret for HMAC-SHA256 signature verification */
+            webhook_secret?: string;
+            /** @description Port for built-in webhook HTTP listener (e.g. 4243) */
+            webhook_port?: number;
         };
         DestinationConfig: {
             /** @constant */
