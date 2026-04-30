@@ -42,7 +42,7 @@ GOOGLE_SPREADSHEET_ID=...         # optional — creates a new spreadsheet if om
 Any of these work:
 
 - **Docker:** `docker run -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17`
-  → `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres`
+→ `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres`
 - **Supabase / Neon / etc.** — any hosted Postgres
 - **Stripe Projects:** [projects.dev](https://projects.dev)
 
@@ -133,14 +133,16 @@ outbound WebSocket connection.
 
 ## All demos
 
+
 | Script                       | What it does                                         | Required env vars                |
 | ---------------------------- | ---------------------------------------------------- | -------------------------------- |
 | `read-from-stripe.sh`        | Read from Stripe, output NDJSON to stdout            | `STRIPE_API_KEY`                 |
 | `write-to-postgres.sh`       | Write NDJSON (stdin or sample data) to Postgres      | `DATABASE_URL`                   |
-| `write-to-sheets.sh`         | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_*`                       |
+| `write-to-sheets.sh`         | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_`*                       |
 | `stripe-to-postgres.sh`      | Stripe → Postgres via the engine                     | `STRIPE_API_KEY`, `DATABASE_URL` |
 | `stripe-to-google-sheets.sh` | Stripe → Google Sheets via the engine                | `STRIPE_API_KEY`, `GOOGLE_*`     |
 | `stripe-to-postgres-live.sh` | Stripe → Postgres with live WebSocket streaming      | `STRIPE_API_KEY`, `DATABASE_URL` |
+
 
 ### TypeScript API
 
@@ -152,7 +154,31 @@ node --import tsx demo/stripe-to-google-sheets.ts
 node --import tsx demo/stripe-to-postgres-live.ts   # live WebSocket mode
 ```
 
+## Metronome → Redis (MVP branch)
+
+Runs outside the Postgres demos: connectors `source-metronome` and `destination-redis`.
+
+1. **Install / Node**: same as above — Node 24+, `pnpm install` from repo root.
+2. **Redis**: `docker compose up redis -d` (listens on `localhost:56379` per `compose.yml`).
+3. **Catalog**: `./packages/source-metronome` publishes stream definitions (`discover`). Curated MVP streams use documented Metronome endpoints: customers, contracts, balances (page snapshots), net_balance, credits, commits, entitlements, and supporting reference streams.
+4. **Pipe locally**:
+  ```sh
+   export METRONOME_API_TOKEN=...
+   npx tsx --conditions bun packages/source-metronome/src/bin.ts discover --config "{\"api_key\":\"$METRONOME_API_TOKEN\"}"
+  ```
+   Example read → write with a narrowed catalog JSON (matching your configured streams’ primary keys):
+
+   ```sh
+   npx tsx --conditions bun packages/source-metronome/src/bin.ts read --config "{\"api_key\":\"$METRONOME_API_TOKEN\",\"backfill_limit\":50}" --catalog '{"streams":[{"stream":{"name":"net_balance","primary_key":[["customer_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"}]}' \
+     | npx tsx --conditions bun packages/destination-redis/src/bin.ts write \
+       --config '{"url":"redis://localhost:56379","key_prefix":"sync:","batch_size":10}' \
+       --catalog '{"streams":[{"stream":{"name":"net_balance","primary_key":[["customer_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"}]}'
+   ```
+
+5. **End-to-end script** (`scripts/e2e-metronome-redis.sh`): requires `METRONOME_API_TOKEN`, `METRONOME_CUSTOMER_ID`, plus Redis — see comments in that script.
+
 ## Utilities
+
 
 | Script              | What it does                                     |
 | ------------------- | ------------------------------------------------ |

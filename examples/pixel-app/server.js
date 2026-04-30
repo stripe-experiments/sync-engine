@@ -2,7 +2,7 @@
  * PixelDraw — Metronome + Redis entitlement demo.
  *
  * Each pixel drawn sends a usage event to Metronome (color = event type).
- * Credit balance is checked in Redis — synced from Metronome via sync-engine.
+ * Customer balance is checked in Redis — synced from Metronome via sync-engine.
  * NO local state in Redis. The only data is replicated from Metronome.
  *
  * Architecture:
@@ -47,20 +47,20 @@ const redis = new Redis(REDIS_URL)
 
 // ---- Redis reads (Metronome-synced data only) ----
 
-/** Get credit balance from Metronome-synced grant data in Redis */
+/** Get customer net balance from Metronome-synced Redis data */
 async function getCreditBalance() {
-  const keys = await scanKeys(`${KEY_PREFIX}credit_grants:*`)
-  let balance = 0
-
-  for (const key of keys) {
-    const raw = await redis.get(key)
-    if (!raw) continue
-    const grant = JSON.parse(raw)
-    if (grant.customer_id !== METRONOME_CUSTOMER_ID) continue
-    balance += grant.balance?.including_pending ?? 0
+  const raw = await redis.get(`${KEY_PREFIX}net_balance:${METRONOME_CUSTOMER_ID}`)
+  if (!raw) {
+    return { balance: 0, syncedAt: null, source: 'missing' }
   }
 
-  return balance
+  const netBalance = JSON.parse(raw)
+  return {
+    balance: Number(netBalance.balance ?? 0),
+    syncedAt: netBalance._synced_at ?? null,
+    source: 'net_balance',
+    creditTypeId: netBalance.credit_type_id ?? null,
+  }
 }
 
 /** Get entitlement for a specific product from Redis */
@@ -129,10 +129,10 @@ app.get('/api/health', async (_req, res) => {
 
 /** Get current credit balance + entitlements from Metronome-synced Redis */
 app.get('/api/credits', async (_req, res) => {
-  const balance = await getCreditBalance()
+  const balanceInfo = await getCreditBalance()
   const entitlement = await getEntitlement('API Access')
   res.json({
-    balance,
+    ...balanceInfo,
     entitled: entitlement?.entitled ?? false,
     product: entitlement?.product_name ?? null,
   })
@@ -146,12 +146,13 @@ app.post('/api/draw', async (req, res) => {
   }
 
   // 1. Check Metronome-synced credit balance in Redis
-  const balance = await getCreditBalance()
-  if (balance <= 0) {
+  const balanceInfo = await getCreditBalance()
+  if (balanceInfo.balance <= 0) {
     return res.status(402).json({
       allowed: false,
       error: 'Out of credits',
       balance: 0,
+      syncedAt: balanceInfo.syncedAt,
     })
   }
 
@@ -162,7 +163,8 @@ app.post('/api/draw', async (req, res) => {
 
   res.json({
     allowed: true,
-    balance,
+    balance: balanceInfo.balance,
+    syncedAt: balanceInfo.syncedAt,
     color,
     x,
     y,

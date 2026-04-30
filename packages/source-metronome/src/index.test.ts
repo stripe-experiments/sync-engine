@@ -33,6 +33,36 @@ const CUSTOMERS_CATALOG: ConfiguredCatalog = {
   ],
 }
 
+const NET_BALANCE_CATALOG: ConfiguredCatalog = {
+  streams: [
+    {
+      stream: {
+        name: 'net_balance',
+        primary_key: [['customer_id']],
+        newer_than_field: '_synced_at',
+        json_schema: {},
+      },
+      sync_mode: 'full_refresh',
+      destination_sync_mode: 'append_dedup',
+    },
+  ],
+}
+
+const BALANCES_CATALOG: ConfiguredCatalog = {
+  streams: [
+    {
+      stream: {
+        name: 'balances',
+        primary_key: [['customer_id'], ['_page_slot']],
+        newer_than_field: '_synced_at',
+        json_schema: {},
+      },
+      sync_mode: 'full_refresh',
+      destination_sync_mode: 'append_dedup',
+    },
+  ],
+}
+
 describe('source-metronome', () => {
   describe('spec()', () => {
     it('yields a spec message with config JSON schema', async () => {
@@ -58,6 +88,9 @@ describe('source-metronome', () => {
       for (const resource of resources) {
         expect(streamNames).toContain(resource.name)
       }
+
+      const net = msg.catalog.streams.find((s) => s.name === 'net_balance')
+      expect(net?.metadata?.metronome_mvp_notes).toMatch(/net_balance/)
     })
   })
 
@@ -150,6 +183,143 @@ describe('source-metronome', () => {
         const startIdx = messages.indexOf(startMsg!)
         const completeIdx = messages.indexOf(completeMsg!)
         expect(startIdx).toBeLessThan(completeIdx)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it('loads net_balance with one POST per customer (single-object response)', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(makeResponse({ data: [{ id: 'cus_nb' }], next_page: null }))
+        .mockResolvedValueOnce(makeResponse({ data: { balance: 42, credit_type_id: 'usd' } }))
+
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const messages = (await collectAll(
+          source.read({ config: TEST_CONFIG, catalog: NET_BALANCE_CATALOG })
+        )) as Message[]
+
+        const records = messages.filter((m) => m.type === 'record')
+        expect(records).toHaveLength(1)
+        if (records[0].type !== 'record') throw new Error('expected record')
+        expect(records[0].record.stream).toBe('net_balance')
+        expect(records[0].record.data).toMatchObject({
+          customer_id: 'cus_nb',
+          balance: 42,
+          credit_type_id: 'usd',
+          _synced_at: expect.any(Number),
+        })
+
+        expect(fetchMock.mock.calls.length).toBe(2)
+        const [, nbInit] = fetchMock.mock.calls[1]
+        expect(nbInit?.method).toBe('POST')
+        const nbBody = JSON.parse(nbInit?.body as string)
+        expect(nbBody).toMatchObject({
+          customer_id: 'cus_nb',
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it('processes webhook source input by refetching documented balance streams', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(makeResponse({ data: [{ id: 'credit_1' }], next_page: null }))
+        .mockResolvedValueOnce(makeResponse({ data: [{ id: 'commit_1' }], next_page: null }))
+        .mockResolvedValueOnce(makeResponse({ data: { balance: 99, credit_type_id: 'usd' } }))
+
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const catalog: ConfiguredCatalog = {
+          streams: [
+            {
+              stream: {
+                name: 'credits',
+                primary_key: [['id']],
+                newer_than_field: '_synced_at',
+                json_schema: {},
+              },
+              sync_mode: 'full_refresh',
+              destination_sync_mode: 'append_dedup',
+            },
+            {
+              stream: {
+                name: 'commits',
+                primary_key: [['id']],
+                newer_than_field: '_synced_at',
+                json_schema: {},
+              },
+              sync_mode: 'full_refresh',
+              destination_sync_mode: 'append_dedup',
+            },
+            {
+              stream: {
+                name: 'net_balance',
+                primary_key: [['customer_id']],
+                newer_than_field: '_synced_at',
+                json_schema: {},
+              },
+              sync_mode: 'full_refresh',
+              destination_sync_mode: 'append_dedup',
+            },
+          ],
+        }
+
+        async function* input() {
+          yield { type: 'credit.segment.end', customer_id: 'cus_live', id: 'evt_1' }
+        }
+
+        const messages = (await collectAll(
+          source.read({ config: TEST_CONFIG, catalog }, input())
+        )) as Message[]
+
+        const records = messages.filter((m) => m.type === 'record')
+        expect(records.map((r) => (r.type === 'record' ? r.record.stream : ''))).toEqual([
+          'credits',
+          'commits',
+          'net_balance',
+        ])
+        if (records[2].type !== 'record') throw new Error('expected record')
+        expect(records[2].record.data).toMatchObject({
+          customer_id: 'cus_live',
+          balance: 99,
+          credit_type_id: 'usd',
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it('loads balances stream as page snapshots per customer', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(makeResponse({ data: [{ id: 'cus_bal' }], next_page: null }))
+        .mockResolvedValueOnce(
+          makeResponse({ data: [{ kind: 'row' }], next_page: null })
+        )
+
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const messages = (await collectAll(
+          source.read({ config: TEST_CONFIG, catalog: BALANCES_CATALOG })
+        )) as Message[]
+
+        const records = messages.filter((m) => m.type === 'record')
+        expect(records).toHaveLength(1)
+        if (records[0].type !== 'record') throw new Error('expected record')
+        expect(records[0].record.stream).toBe('balances')
+        expect(records[0].record.data).toMatchObject({
+          customer_id: 'cus_bal',
+          _page_slot: 0,
+          items: [{ kind: 'row' }],
+          _synced_at: expect.any(Number),
+        })
+
+        const [, balInit] = fetchMock.mock.calls[1]
+        const balBody = JSON.parse(balInit?.body as string)
+        expect(balBody.limit).toBe(25)
       } finally {
         vi.unstubAllGlobals()
       }

@@ -41,6 +41,7 @@
       <div class="credits-num" id="balance">—</div>
       <div class="credits-label">remaining credits</div>
       <div class="credits-bar"><div class="credits-fill" id="bar"></div></div>
+      <div class="credits-label" id="synced">Redis sync: —</div>
     </div>
     <div class="sb">
       <div class="blocked-banner" id="blocked">Out of credits! Drawing disabled.</div>
@@ -74,6 +75,7 @@ const COLORS = [
 let grid = new Array(G * G).fill(null);
 let sel = COLORS[0];
 let balance = null;
+let syncedAt = null;
 let PX;
 let drawCount = 0;
 
@@ -145,6 +147,7 @@ async function paint(e, cx) {
 
     balance = data.balance;
     updateCreditsUI();
+    syncedAt = data.syncedAt ?? syncedAt;
     $('status').textContent = `Pixel ${drawCount} drawn (${sel.name}) — ${balance} credits left`;
   } catch (err) {
     $('status').textContent = `Error: ${err.message}`;
@@ -169,6 +172,7 @@ function updateCreditsUI() {
   const bar = $('bar');
   bar.style.width = pct + '%';
   bar.className = 'credits-fill' + (pct < 20 ? ' low' : '');
+  $('synced').textContent = 'Redis sync: ' + (syncedAt ? new Date(syncedAt * 1000).toLocaleTimeString() : '—');
 
   const blocked = $('blocked');
   if (balance != null && balance <= 0) {
@@ -183,8 +187,9 @@ async function refreshCredits() {
     const res = await fetch('/api/credits');
     const data = await res.json();
     balance = data.balance;
+    syncedAt = data.syncedAt ?? null;
     updateCreditsUI();
-    $('status').textContent = `Credits refreshed: ${balance}`;
+    $('status').textContent = `Credits refreshed: ${balance} (${data.source || 'unknown'})`;
   } catch (err) {
     $('status').textContent = `Refresh failed: ${err.message}`;
   }

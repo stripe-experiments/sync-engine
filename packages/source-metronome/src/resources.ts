@@ -13,6 +13,24 @@ export interface ResourceDefinition {
   perCustomer?: boolean
   /** If true, requires iterating parent customers AND their contracts */
   perContract?: boolean
+  /** Merged into POST body when fanning out per customer or per contract */
+  postBodyMerge?: Record<string, unknown>
+  /** POST list: `limit` field per request (defaults to client global page size). */
+  pageLimit?: number
+  /**
+   * `list` — normal `{ data[], next_page }` pagination (default).
+   * `single_object` — one JSON object per POST (no `data` pagination), used for getNetBalance.
+   */
+  responseKind?: 'list' | 'single_object'
+  /** If true for `single_object`, emit the response's `data` object instead of the wrapper. */
+  unwrapData?: boolean
+  /**
+   * When set with `perCustomer` list APIs: one output record per HTTP page with `items` = `data` rows
+   * (customerBalances/list).
+   */
+  emitPageSnapshots?: boolean
+  /** Human-readable MVP catalog notes (discover / operators; not sent to API). */
+  catalogNotes?: string
 }
 
 export const resources: ResourceDefinition[] = [
@@ -77,6 +95,8 @@ export const resources: ResourceDefinition[] = [
     method: 'POST',
     primaryKey: [['id']],
     perCustomer: true,
+    catalogNotes:
+      'Parent fanout: customers. Cursor in POST body. Redis: metronome:contract:{id} or per-customer aggregates.',
     jsonSchema: {
       type: 'object',
       properties: {
@@ -86,6 +106,101 @@ export const resources: ResourceDefinition[] = [
         starting_at: { type: 'string' },
         ending_before: { type: ['string', 'null'] },
         name: { type: ['string', 'null'] },
+        custom_fields: { type: 'object' },
+        _synced_at: { type: 'integer' },
+      },
+    },
+  },
+  {
+    name: 'balances',
+    endpoint: '/v1/contracts/customerBalances/list',
+    method: 'POST',
+    primaryKey: [['customer_id'], ['_page_slot']],
+    perCustomer: true,
+    emitPageSnapshots: true,
+    pageLimit: 25,
+    postBodyMerge: {
+      include_balance: true,
+      include_contract_balances: true,
+      include_ledgers: false,
+    },
+    catalogNotes:
+      'One record per paginated page; primary key is customer + page index. Redis intent: metronome:customer:{customer_id}:balances:{page_tag}.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        customer_id: { type: 'string' },
+        _page_slot: { type: 'integer' },
+        items: { type: 'array' },
+        _synced_at: { type: 'integer' },
+      },
+    },
+  },
+  {
+    name: 'net_balance',
+    endpoint: '/v1/contracts/customerBalances/getNetBalance',
+    method: 'POST',
+    primaryKey: [['customer_id']],
+    perCustomer: true,
+    responseKind: 'single_object',
+    unwrapData: true,
+    catalogNotes:
+      'Single object per customer. Redis intent: metronome:customer:{customer_id}:net_balance.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        customer_id: { type: 'string' },
+        balance: { type: 'number' },
+        credit_type_id: { type: 'string' },
+        _synced_at: { type: 'integer' },
+      },
+    },
+  },
+  {
+    name: 'credits',
+    endpoint: '/v1/contracts/customerCredits/list',
+    method: 'POST',
+    primaryKey: [['id']],
+    perCustomer: true,
+    pageLimit: 25,
+    postBodyMerge: {
+      include_balance: true,
+      include_contract_credits: true,
+      include_ledgers: false,
+    },
+    catalogNotes:
+      'Customer-scoped credit rows (distinct from credit_grants). Redis intent: metronome:credit:{id}.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        customer_id: { type: 'string' },
+        balance: { type: 'object' },
+        custom_fields: { type: 'object' },
+        _synced_at: { type: 'integer' },
+      },
+    },
+  },
+  {
+    name: 'commits',
+    endpoint: '/v1/contracts/customerCommits/list',
+    method: 'POST',
+    primaryKey: [['id']],
+    perCustomer: true,
+    pageLimit: 25,
+    postBodyMerge: {
+      include_balance: true,
+      include_contract_commits: true,
+      include_ledgers: false,
+    },
+    catalogNotes:
+      'Customer-scoped commit rows. Redis intent: metronome:commit:{id}.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        customer_id: { type: 'string' },
+        balance: { type: 'object' },
         custom_fields: { type: 'object' },
         _synced_at: { type: 'integer' },
       },
@@ -118,28 +233,6 @@ export const resources: ResourceDefinition[] = [
         id: { type: 'string' },
         name: { type: 'string' },
         description: { type: ['string', 'null'] },
-        custom_fields: { type: 'object' },
-        _synced_at: { type: 'integer' },
-      },
-    },
-  },
-  {
-    name: 'credit_grants',
-    endpoint: '/v1/credits/listGrants',
-    method: 'POST',
-    primaryKey: [['id']],
-    jsonSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        name: { type: 'string' },
-        customer_id: { type: 'string' },
-        reason: { type: ['string', 'null'] },
-        effective_at: { type: 'string' },
-        expires_at: { type: ['string', 'null'] },
-        priority: { type: 'number' },
-        credit_grant_type: { type: ['string', 'null'] },
-        balance: { type: 'object' },
         custom_fields: { type: 'object' },
         _synced_at: { type: 'integer' },
       },

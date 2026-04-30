@@ -68,6 +68,26 @@ describe('MetronomeClient', () => {
       const body = JSON.parse(init?.body as string)
       expect(body).toMatchObject({ customer_id: 'cus_1', limit: 100 })
     })
+
+    it('honors pageLimit in POST body', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(makeResponse({ data: [], next_page: null }))
+
+      const client = new MetronomeClient({ apiKey: 'test-key', fetch: fetchMock })
+      for await (const _ of client.paginate(
+        'POST',
+        '/v1/contracts/customerCredits/list',
+        { customer_id: 'cus_1' },
+        { pageLimit: 25 }
+      )) {
+        // single page
+      }
+
+      const [, init] = fetchMock.mock.calls[0]
+      const body = JSON.parse(init?.body as string)
+      expect(body.limit).toBe(25)
+    })
   })
 
   describe('retry logic', () => {
