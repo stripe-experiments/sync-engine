@@ -1145,6 +1145,16 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991,
             "description": "Max records to fetch per stream (useful for testing)"
+          },
+          "webhook_secret": {
+            "type": "string",
+            "description": "Webhook signing secret for HMAC-SHA256 signature verification"
+          },
+          "webhook_port": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Port for built-in webhook HTTP listener (e.g. 4243)"
           }
         },
         "required": [
