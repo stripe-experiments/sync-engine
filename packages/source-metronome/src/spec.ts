@@ -33,6 +33,17 @@ export const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>
 
+export const metronomeWebhookEventSchema = z
+  .object({
+    type: z.string().describe('Metronome notification event type'),
+    id: z.string().optional().describe('Metronome notification/event id'),
+    customer_id: z.string().optional().describe('Affected Metronome customer id'),
+    contract_id: z.string().optional().describe('Affected Metronome contract id'),
+    timestamp: z.string().optional(),
+    properties: z.record(z.string(), z.unknown()).optional(),
+  })
+  .catchall(z.unknown())
+
 export const streamStateSpec = z.object({
   next_page: z
     .string()
@@ -45,4 +56,5 @@ export type StreamState = z.infer<typeof streamStateSpec>
 export default {
   config: z.toJSONSchema(configSchema),
   source_state_stream: z.toJSONSchema(streamStateSpec),
+  source_input: z.toJSONSchema(metronomeWebhookEventSchema),
 } satisfies ConnectorSpecification

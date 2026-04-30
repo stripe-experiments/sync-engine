@@ -12,9 +12,38 @@ export interface MetronomePageResponse<T = Record<string, unknown>> {
   next_page: string | null
 }
 
+export interface PaginateOptions {
+  /** Resume token from a prior `next_page` response */
+  startCursor?: string | null
+  /** Request page size (`limit` query param or POST body field) */
+  pageLimit?: number
+}
+
 const DEFAULT_BASE_URL = 'https://api.metronome.com'
 const MAX_RETRIES = 3
 const PAGE_SIZE = 100
+
+function resolvePagination(
+  opts?: string | null | PaginateOptions
+): { startCursor?: string | undefined; pageLimit: number } {
+  if (opts !== undefined && opts !== null && typeof opts === 'object') {
+    const pageLimit =
+      typeof opts.pageLimit === 'number' && Number.isFinite(opts.pageLimit)
+        ? opts.pageLimit
+        : PAGE_SIZE
+    return {
+      startCursor:
+        opts.startCursor === undefined || opts.startCursor === null
+          ? undefined
+          : opts.startCursor,
+      pageLimit,
+    }
+  }
+  if (typeof opts === 'string') {
+    return { startCursor: opts, pageLimit: PAGE_SIZE }
+  }
+  return { pageLimit: PAGE_SIZE }
+}
 
 export class MetronomeClient {
   private apiKey: string
@@ -99,21 +128,22 @@ export class MetronomeClient {
     method: 'GET' | 'POST',
     path: string,
     body?: Record<string, unknown>,
-    startCursor?: string | null
+    pagination?: string | null | PaginateOptions
   ): AsyncGenerator<MetronomePageResponse<T>> {
-    let nextPage: string | undefined = startCursor ?? undefined
+    const { startCursor, pageLimit } = resolvePagination(pagination)
+    let nextPage: string | undefined = startCursor
 
     while (true) {
       let page: MetronomePageResponse<T>
 
       if (method === 'GET') {
-        const params = new URLSearchParams({ limit: String(PAGE_SIZE) })
+        const params = new URLSearchParams({ limit: String(pageLimit) })
         if (nextPage) params.set('next_page', nextPage)
         page = await this.get<MetronomePageResponse<T>>(`${path}?${params.toString()}`)
       } else {
         const reqBody: Record<string, unknown> = {
           ...(body ?? {}),
-          limit: PAGE_SIZE,
+          limit: pageLimit,
         }
         if (nextPage) reqBody['next_page'] = nextPage
         page = await this.post<MetronomePageResponse<T>>(path, reqBody)

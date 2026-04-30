@@ -255,6 +255,9 @@ importers:
       '@stripe/sync-destination-postgres':
         specifier: workspace:*
         version: link:../../packages/destination-postgres
+      '@stripe/sync-destination-redis':
+        specifier: workspace:*
+        version: link:../../packages/destination-redis
       '@stripe/sync-engine':
         specifier: workspace:*
         version: link:../engine
@@ -267,6 +270,9 @@ importers:
       '@stripe/sync-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@stripe/sync-source-metronome':
+        specifier: workspace:*
+        version: link:../../packages/source-metronome
       '@stripe/sync-source-stripe':
         specifier: workspace:*
         version: link:../../packages/source-stripe

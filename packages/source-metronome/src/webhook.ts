@@ -13,6 +13,14 @@ export function verifyWebhookSignature(
   date: string,
   secret: string
 ): void {
+  const timestamp = Date.parse(date)
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('Invalid Date header')
+  }
+  if (Math.abs(Date.now() - timestamp) > 5 * 60 * 1000) {
+    throw new Error('Webhook Date header is stale')
+  }
+
   const expected = createHmac('sha256', secret).update(`${date}\n${body}`).digest('hex')
 
   const sigBuffer = Buffer.from(signature, 'hex')

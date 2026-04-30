@@ -2,42 +2,75 @@
 # End-to-end test: Metronome → source-metronome → destination-redis
 #
 # Proves the full pipeline works with real data:
-#   1. Backfill credit grants + entitlements to Redis
+#   1. Backfill documented Metronome customer balance streams to Redis
 #   2. Start webhook listener
 #   3. Simulate customer usage (send events to Metronome ingest API)
 #   4. Fire a webhook event → source re-fetches → Redis updates
-#   5. Check Redis reflects current credit balance
+#   5. Check Redis reflects a fresh customer net balance sync timestamp
 #
 # Prerequisites:
-#   - METRONOME_API_TOKEN env var set
-#   - Redis running on localhost:56379 (docker compose up redis)
-#   - Customer + contract + credit grant already exist in Metronome sandbox
+#   - METRONOME_API_TOKEN
+#   - METRONOME_CUSTOMER_ID — sandbox customer that receives ingest events / webhooks
+#   - Redis (default localhost:56379 — matches compose.yml)
 #
-# Usage: ./scripts/e2e-metronome-redis.sh
+# Optional env:
+#   REDIS_PORT (default 56379), WEBHOOK_PORT (default 4243), KEY_PREFIX (default sync:),
+#   METRONOME_BASE_URL — only adds to connector config when set and not the public default
+#
+# Usage: METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh
 set -euo pipefail
 
 : "${METRONOME_API_TOKEN:?Set METRONOME_API_TOKEN}"
+: "${METRONOME_CUSTOMER_ID:?Set METRONOME_CUSTOMER_ID}"
 
-CUSTOMER_ID="1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3"
-GRANT_ID="30ec9faa-3c5d-4cea-9e2a-b44a4e4446bd"
-REDIS_PORT=56379
-WEBHOOK_PORT=4243
-KEY_PREFIX="sync:"
+CUSTOMER_ID="${METRONOME_CUSTOMER_ID}"
+REDIS_PORT="${REDIS_PORT:-56379}"
+WEBHOOK_PORT="${WEBHOOK_PORT:-4243}"
+KEY_PREFIX="${KEY_PREFIX:-sync:}"
+METRONOME_API_ROOT="${METRONOME_BASE_URL:-https://api.metronome.com}"
+METRONOME_API_ROOT="${METRONOME_API_ROOT%/}"
+
+SOURCE_CONFIG="$(
+  METRONOME_API_TOKEN="${METRONOME_API_TOKEN}" \
+  SOURCE_METRONOME_BASE_URL_EFFECTIVE="${METRONOME_BASE_URL:-}" \
+  WEBHOOK_PORT_EFFECTIVE="${WEBHOOK_PORT}" \
+    python3 - <<'PY'
+import json
+import os
+
+cfg = {
+    "api_key": os.environ["METRONOME_API_TOKEN"],
+    "webhook_port": int(os.environ["WEBHOOK_PORT_EFFECTIVE"]),
+}
+bu = os.environ.get("SOURCE_METRONOME_BASE_URL_EFFECTIVE", "").strip()
+if bu and bu.rstrip("/") != "https://api.metronome.com":
+    cfg["base_url"] = bu
+print(json.dumps(cfg))
+PY
+)"
 
 echo "=== E2E: Metronome → source-metronome → destination-redis ==="
 echo ""
 
+redis_cli() {
+  if command -v redis-cli >/dev/null 2>&1; then
+    redis-cli -p "$REDIS_PORT" "$@"
+  else
+    docker compose exec -T redis redis-cli "$@"
+  fi
+}
+
 # Verify Redis is running
-if ! redis-cli -p "$REDIS_PORT" ping &>/dev/null; then
+if ! redis_cli ping &>/dev/null; then
   echo "ERROR: Redis not running on port $REDIS_PORT. Run: docker compose up redis -d"
   exit 1
 fi
 
-redis-cli -p "$REDIS_PORT" FLUSHDB >/dev/null
+redis_cli FLUSHDB >/dev/null
 
-CATALOG='{"streams":[{"stream":{"name":"credit_grants","primary_key":[["id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"entitlements","primary_key":[["customer_id"],["contract_id"],["product_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"}]}'
-SOURCE_CONFIG="{\"api_key\": \"$METRONOME_API_TOKEN\", \"webhook_port\": $WEBHOOK_PORT}"
+CATALOG='{"streams":[{"stream":{"name":"net_balance","primary_key":[["customer_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"credits","primary_key":[["id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"commits","primary_key":[["id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"balances","primary_key":[["customer_id"],["_page_slot"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"entitlements","primary_key":[["customer_id"],["contract_id"],["product_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"}]}'
 DEST_CONFIG="{\"url\":\"redis://localhost:$REDIS_PORT\",\"key_prefix\":\"$KEY_PREFIX\",\"batch_size\":1}"
+NET_BALANCE_KEY="${KEY_PREFIX}net_balance:$CUSTOMER_ID"
 
 # Step 1: Start pipeline (backfill + webhook server)
 echo "Step 1: Starting pipeline (backfill + webhook listener on port $WEBHOOK_PORT)..."
@@ -46,7 +79,11 @@ npx tsx --conditions bun packages/source-metronome/src/bin.ts read \
 npx tsx --conditions bun packages/destination-redis/src/bin.ts write \
   --config "$DEST_CONFIG" --catalog "$CATALOG" >/dev/null 2>/dev/null &
 PIPE_PID=$!
-trap "kill $PIPE_PID 2>/dev/null; wait $PIPE_PID 2>/dev/null" EXIT
+cleanup() {
+  kill "$PIPE_PID" 2>/dev/null || true
+  pkill -TERM -P "$PIPE_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
 sleep 5
 
 echo "Step 1: Backfill complete."
@@ -54,16 +91,16 @@ echo ""
 
 # Step 2: Check initial state
 echo "Step 2: Initial Redis state after backfill:"
-BALANCE_BEFORE=$(redis-cli -p "$REDIS_PORT" GET "${KEY_PREFIX}credit_grants:$GRANT_ID" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['balance']['including_pending'])")
-SYNCED_BEFORE=$(redis-cli -p "$REDIS_PORT" GET "${KEY_PREFIX}credit_grants:$GRANT_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['_synced_at'])")
-echo "  Credit balance: $BALANCE_BEFORE"
+BALANCE_BEFORE=$(redis_cli GET "$NET_BALANCE_KEY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('balance', '<missing>'))")
+SYNCED_BEFORE=$(redis_cli GET "$NET_BALANCE_KEY" | python3 -c "import sys,json; print(json.load(sys.stdin)['_synced_at'])")
+echo "  Net balance:    $BALANCE_BEFORE"
 echo "  Synced at:      $SYNCED_BEFORE"
 echo ""
 
 # Step 3: Simulate customer usage
 echo "Step 3: Simulating customer usage (5 API calls)..."
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl -s -X POST https://api.metronome.com/v1/ingest \
+curl -s -X POST "${METRONOME_API_ROOT}/v1/ingest" \
   -H "Authorization: Bearer $METRONOME_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d "[
@@ -75,6 +112,8 @@ curl -s -X POST https://api.metronome.com/v1/ingest \
   ]" >/dev/null
 echo "  Sent 5 usage events to Metronome."
 echo ""
+
+sleep 2
 
 # Step 4: Trigger webhook (simulates Metronome firing a credit event)
 echo "Step 4: Firing credit.segment.end webhook..."
@@ -91,9 +130,9 @@ echo ""
 
 # Step 5: Verify Redis updated
 echo "Step 5: Redis state after webhook refresh:"
-BALANCE_AFTER=$(redis-cli -p "$REDIS_PORT" GET "${KEY_PREFIX}credit_grants:$GRANT_ID" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['balance']['including_pending'])")
-SYNCED_AFTER=$(redis-cli -p "$REDIS_PORT" GET "${KEY_PREFIX}credit_grants:$GRANT_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['_synced_at'])")
-echo "  Credit balance: $BALANCE_AFTER"
+BALANCE_AFTER=$(redis_cli GET "$NET_BALANCE_KEY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('balance', '<missing>'))")
+SYNCED_AFTER=$(redis_cli GET "$NET_BALANCE_KEY" | python3 -c "import sys,json; print(json.load(sys.stdin)['_synced_at'])")
+echo "  Net balance:    $BALANCE_AFTER"
 echo "  Synced at:      $SYNCED_AFTER"
 echo ""
 
@@ -107,6 +146,6 @@ fi
 
 echo ""
 echo "=== All Redis keys ==="
-redis-cli -p "$REDIS_PORT" KEYS "${KEY_PREFIX}*"
+redis_cli KEYS "${KEY_PREFIX}*"
 echo ""
 echo "=== E2E complete ==="
