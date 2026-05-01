@@ -69,6 +69,26 @@ describe('applySelection()', () => {
     expect(Object.keys(props(filtered))).toEqual(['id', 'name', 'active'])
   })
 
+  it('keeps primary keys when they are not explicitly selected', () => {
+    const catalog = makeCatalog([
+      {
+        name: 'customers',
+        fields: ['email'],
+        json_schema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            email: { type: 'string' },
+          },
+        },
+      },
+    ])
+
+    const filtered = applySelection(catalog)
+    expect(Object.keys(props(filtered))).toEqual(['id', 'email'])
+  })
+
   it('passes stream through unchanged when json_schema is absent', () => {
     const catalog = makeCatalog([{ name: 'events', fields: ['id', 'type'] }])
     const filtered = applySelection(catalog)
