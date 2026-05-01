@@ -314,16 +314,16 @@ export interface components {
             base_url?: string;
             /**
              * Format: uri
-             * @description URL for managed webhook endpoint registration
+             * @description Public URL for managed Stripe webhook endpoint registration
              */
             webhook_url?: string;
-            /** @description Webhook signing secret (whsec_...) for signature verification */
+            /** @description Stripe webhook signing secret (whsec_...) for signature verification. Setup can fill this when it creates a new endpoint. */
             webhook_secret?: string;
             /** @description Enable WebSocket streaming for live events */
             websocket?: boolean;
             /** @description Enable events API polling for incremental sync after backfill */
             poll_events?: boolean;
-            /** @description Port for built-in webhook HTTP listener (e.g. 4242) */
+            /** @description Local port where this process listens for webhook HTTP POSTs (e.g. 4242) */
             webhook_port?: number;
             /** @description Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"]) */
             revalidate_objects?: string[];
@@ -340,14 +340,19 @@ export interface components {
              * @description Override the Metronome API base URL (default: https://api.metronome.com)
              */
             base_url?: string;
+            /**
+             * Format: uri
+             * @description Public HTTPS URL Metronome will POST webhook events to. For local demos, use a webhook.site URL and forward it to webhook_port.
+             */
+            webhook_url?: string;
+            /** @description Metronome webhook signing secret for HMAC-SHA256 signature verification */
+            webhook_secret?: string;
+            /** @description Local port where this process listens for webhook HTTP POSTs (e.g. 4243) */
+            webhook_port?: number;
             /** @description Max requests per second (default: no limit) */
             rate_limit?: number;
             /** @description Max records to fetch per stream (useful for testing) */
             backfill_limit?: number;
-            /** @description Webhook signing secret for HMAC-SHA256 signature verification */
-            webhook_secret?: string;
-            /** @description Port for built-in webhook HTTP listener (e.g. 4243) */
-            webhook_port?: number;
         };
         DestinationConfig: {
             /** @constant */
