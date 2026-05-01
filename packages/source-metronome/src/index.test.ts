@@ -63,6 +63,61 @@ const BALANCES_CATALOG: ConfiguredCatalog = {
   ],
 }
 
+const CREDITS_CATALOG: ConfiguredCatalog = {
+  streams: [
+    {
+      stream: {
+        name: 'credits',
+        primary_key: [['id']],
+        newer_than_field: '_synced_at',
+        json_schema: {},
+      },
+      sync_mode: 'full_refresh',
+      destination_sync_mode: 'append_dedup',
+    },
+  ],
+}
+
+const LIVE_SHAPED_CUSTOMER = {
+  name: 'Acme Corp',
+  id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
+  customer_config: { salesforce_account_id: null },
+  external_id: 'acme-corp',
+  ingest_aliases: ['acme-corp'],
+  updated_at: '2026-05-01T00:19:13.002202+00:00',
+  archived_at: null,
+  created_at: '2026-04-30T17:05:59.008069+00:00',
+  custom_fields: {},
+}
+
+const LIVE_SHAPED_CREDIT = {
+  id: '66fa37f1-3a61-4902-9c86-fe330b3bccd5',
+  rate_type: 'LIST_RATE',
+  product: {
+    id: '39fbd8e0-1806-418c-af27-ca12ce455cce',
+    name: 'Pro Plan Access',
+  },
+  priority: 1,
+  access_schedule: {
+    credit_type: {
+      id: '2714e483-4ff1-48e4-9e25-ac732e8f24f2',
+      name: 'USD (cents)',
+    },
+    schedule_items: [
+      {
+        id: '62ca6737-009c-5694-8ea3-4ec64013f175',
+        amount: 1000000,
+        starting_at: '2026-03-29T00:00:00+00:00',
+        ending_before: '2026-04-30T23:00:00+00:00',
+      },
+    ],
+  },
+  balance: 0,
+  custom_fields: {},
+  created_at: '2026-05-01T04:25:07.906000+00:00',
+  type: 'CREDIT',
+}
+
 describe('source-metronome', () => {
   describe('spec()', () => {
     it('yields a spec message with config JSON schema', async () => {
@@ -245,6 +300,54 @@ describe('source-metronome', () => {
       }
     })
 
+    it('follows Metronome next_page cursors for live-shaped customer pages', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          makeResponse({
+            data: [LIVE_SHAPED_CUSTOMER],
+            next_page: '31613664653334652d656336382d343662302d613163332d626233643439663636626233',
+          })
+        )
+        .mockResolvedValueOnce(
+          makeResponse({
+            data: [{ ...LIVE_SHAPED_CUSTOMER, id: 'cus_second', name: 'Second Customer' }],
+            next_page: null,
+          })
+        )
+
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const messages = (await collectAll(
+          source.read({ config: TEST_CONFIG, catalog: CUSTOMERS_CATALOG })
+        )) as Message[]
+
+        const records = messages.filter((m) => m.type === 'record')
+        expect(records).toHaveLength(2)
+        if (records[0].type !== 'record') throw new Error('expected record')
+        expect(records[0].record.data).toMatchObject({
+          id: LIVE_SHAPED_CUSTOMER.id,
+          customer_config: { salesforce_account_id: null },
+          ingest_aliases: ['acme-corp'],
+        })
+
+        const secondUrl = fetchMock.mock.calls[1][0] as string
+        expect(secondUrl).toContain(
+          'next_page=31613664653334652d656336382d343662302d613163332d626233643439663636626233'
+        )
+
+        const stateMessages = messages.filter(
+          (m): m is Extract<Message, { type: 'source_state' }> => m.type === 'source_state'
+        )
+        expect(stateMessages.map((m) => m.source_state.data.next_page)).toContain(
+          '31613664653334652d656336382d343662302d613163332d626233643439663636626233'
+        )
+        expect(stateMessages.at(-1)?.source_state.data.next_page).toBeNull()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
     it('loads net_balance with one POST per customer (single-object response)', async () => {
       const fetchMock = vi
         .fn<typeof fetch>()
@@ -353,9 +456,7 @@ describe('source-metronome', () => {
       const fetchMock = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(makeResponse({ data: [{ id: 'cus_bal' }], next_page: null }))
-        .mockResolvedValueOnce(
-          makeResponse({ data: [{ kind: 'row' }], next_page: null })
-        )
+        .mockResolvedValueOnce(makeResponse({ data: [{ kind: 'row' }], next_page: null }))
 
       vi.stubGlobal('fetch', fetchMock)
       try {
@@ -377,6 +478,52 @@ describe('source-metronome', () => {
         const [, balInit] = fetchMock.mock.calls[1]
         const balBody = JSON.parse(balInit?.body as string)
         expect(balBody.limit).toBe(25)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it('preserves live-shaped credit rows and requests Metronome balance fields', async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(makeResponse({ data: [{ id: 'cus_credit' }], next_page: null }))
+        .mockResolvedValueOnce(makeResponse({ data: [LIVE_SHAPED_CREDIT], next_page: null }))
+
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const messages = (await collectAll(
+          source.read({ config: TEST_CONFIG, catalog: CREDITS_CATALOG })
+        )) as Message[]
+
+        const records = messages.filter((m) => m.type === 'record')
+        expect(records).toHaveLength(1)
+        if (records[0].type !== 'record') throw new Error('expected record')
+        expect(records[0].record.stream).toBe('credits')
+        expect(records[0].record.data).toMatchObject({
+          id: LIVE_SHAPED_CREDIT.id,
+          customer_id: 'cus_credit',
+          balance: 0,
+          product: { name: 'Pro Plan Access' },
+          access_schedule: {
+            credit_type: { name: 'USD (cents)' },
+            schedule_items: [
+              expect.objectContaining({
+                amount: 1000000,
+                starting_at: '2026-03-29T00:00:00+00:00',
+              }),
+            ],
+          },
+          _synced_at: expect.any(Number),
+        })
+
+        const [, creditsInit] = fetchMock.mock.calls[1]
+        expect(JSON.parse(creditsInit?.body as string)).toMatchObject({
+          customer_id: 'cus_credit',
+          include_balance: true,
+          include_contract_credits: true,
+          include_ledgers: false,
+          limit: 25,
+        })
       } finally {
         vi.unstubAllGlobals()
       }

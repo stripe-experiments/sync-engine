@@ -175,7 +175,7 @@ export const resources: ResourceDefinition[] = [
       properties: {
         id: { type: 'string' },
         customer_id: { type: 'string' },
-        balance: { type: 'object' },
+        balance: { type: 'number' },
         custom_fields: { type: 'object' },
         _synced_at: { type: 'integer' },
       },
@@ -193,14 +193,13 @@ export const resources: ResourceDefinition[] = [
       include_contract_commits: true,
       include_ledgers: false,
     },
-    catalogNotes:
-      'Customer-scoped commit rows. Redis intent: metronome:commit:{id}.',
+    catalogNotes: 'Customer-scoped commit rows. Redis intent: metronome:commit:{id}.',
     jsonSchema: {
       type: 'object',
       properties: {
         id: { type: 'string' },
         customer_id: { type: 'string' },
-        balance: { type: 'object' },
+        balance: { type: 'number' },
         custom_fields: { type: 'object' },
         _synced_at: { type: 'integer' },
       },
