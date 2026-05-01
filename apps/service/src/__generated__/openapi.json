@@ -3,7 +3,7 @@
   "info": {
     "title": "Stripe Sync Service",
     "version": "1.0.0",
-    "description": "Stripe Sync Service — manage pipelines and webhook ingress.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| GET | /pipelines | List pipelines |\n| POST | /pipelines | Create pipeline |\n| GET | /pipelines/{id} | Retrieve pipeline |\n| PATCH | /pipelines/{id} | Update pipeline |\n| DELETE | /pipelines/{id} | Delete pipeline |\n| POST | /pipelines/{id}/sync | Run sync for a pipeline |\n| POST | /pipelines/{id}/sync_batch | Run sync for a pipeline (batch, returns JSON) |\n| POST | /pipelines/{id}/check | Check pipeline connectivity |\n| POST | /pipelines/{id}/setup | Run pipeline setup hooks |\n| POST | /pipelines/{id}/teardown | Run pipeline teardown hooks |\n| POST | /pipelines/{id}/simulate_webhook_sync | Simulate webhook sync by fetching events from the Stripe API |\n| POST | /pipelines/{id}/sync_workflow_test | Run sync using the workflow backfill loop (no Temporal) |\n| POST | /webhooks/{pipeline_id} | Ingest a Stripe webhook event |"
+    "description": "Stripe Sync Service — manage pipelines and webhook ingress.\n\n## Endpoints\n\n| Method | Path | Summary |\n|--------|------|---------|\n| GET | /health | Health check |\n| GET | /pipelines | List pipelines |\n| POST | /pipelines | Create pipeline |\n| GET | /pipelines/{id} | Retrieve pipeline |\n| PATCH | /pipelines/{id} | Update pipeline |\n| DELETE | /pipelines/{id} | Delete pipeline |\n| POST | /pipelines/{id}/sync | Run sync for a pipeline |\n| POST | /pipelines/{id}/sync_batch | Run sync for a pipeline (batch, returns JSON) |\n| POST | /pipelines/{id}/check | Check pipeline connectivity |\n| POST | /pipelines/{id}/setup | Run pipeline setup hooks |\n| POST | /pipelines/{id}/teardown | Run pipeline teardown hooks |\n| POST | /pipelines/{id}/simulate_webhook_sync | Simulate webhook sync by fetching events from the Stripe API |\n| POST | /pipelines/{id}/sync_workflow_test | Run sync using the workflow backfill loop (no Temporal) |\n| POST | /webhooks/{pipeline_id} | Ingest a source webhook event |"
   },
   "paths": {
     "/health": {
@@ -1132,8 +1132,8 @@
         "tags": [
           "Webhooks"
         ],
-        "summary": "Ingest a Stripe webhook event",
-        "description": "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
+        "summary": "Ingest a source webhook event",
+        "description": "Receives a raw Stripe or Metronome webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
         "parameters": [
           {
             "in": "path",
@@ -1288,11 +1288,11 @@
           "webhook_url": {
             "type": "string",
             "format": "uri",
-            "description": "URL for managed webhook endpoint registration"
+            "description": "Public URL for managed Stripe webhook endpoint registration"
           },
           "webhook_secret": {
             "type": "string",
-            "description": "Webhook signing secret (whsec_...) for signature verification"
+            "description": "Stripe webhook signing secret (whsec_...) for signature verification. Setup can fill this when it creates a new endpoint."
           },
           "websocket": {
             "type": "boolean",
@@ -1306,7 +1306,7 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
-            "description": "Port for built-in webhook HTTP listener (e.g. 4242)"
+            "description": "Local port where this process listens for webhook HTTP POSTs (e.g. 4242)"
           },
           "revalidate_objects": {
             "type": "array",
@@ -1345,6 +1345,21 @@
             "format": "uri",
             "description": "Override the Metronome API base URL (default: https://api.metronome.com)"
           },
+          "webhook_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTPS URL Metronome will POST webhook events to. For local demos, use a webhook.site URL and forward it to webhook_port."
+          },
+          "webhook_secret": {
+            "type": "string",
+            "description": "Metronome webhook signing secret for HMAC-SHA256 signature verification"
+          },
+          "webhook_port": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Local port where this process listens for webhook HTTP POSTs (e.g. 4243)"
+          },
           "rate_limit": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -1356,16 +1371,6 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991,
             "description": "Max records to fetch per stream (useful for testing)"
-          },
-          "webhook_secret": {
-            "type": "string",
-            "description": "Webhook signing secret for HMAC-SHA256 signature verification"
-          },
-          "webhook_port": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "description": "Port for built-in webhook HTTP listener (e.g. 4243)"
           }
         },
         "required": [
