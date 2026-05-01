@@ -7,6 +7,29 @@ import { createApp } from '../api/app.js'
 import { createSyncCmd } from './sync.js'
 import { createStartCmd } from './start.js'
 import { createResolverFromFlags } from './resolver-flags.js'
+import { ENGINE_INTERNAL_REQUEST_HEADER } from '../request-context.js'
+
+const API_META = {
+  name: 'api',
+  description: 'Raw API operations (runs against a local in-process engine by default)',
+  version: '0.1.0',
+}
+
+const FLAGS_WITH_VALUES = new Set(['--connectors-from-command-map', '--port'])
+
+function selectedTopLevelCommand(argv: string[]): string | undefined {
+  for (let i = 2; i < argv.length; i++) {
+    const arg = argv[i]
+    if (!arg || arg === '--') return undefined
+    if (arg.startsWith('--')) {
+      if (!arg.includes('=') && FLAGS_WITH_VALUES.has(arg)) i++
+      continue
+    }
+    if (arg.startsWith('-')) continue
+    return arg
+  }
+  return undefined
+}
 
 /** Connector discovery flags shared by all commands (serve + one-shot). */
 const connectorArgs = {
@@ -45,7 +68,11 @@ function createServeCmd(resolverPromise: Promise<ConnectorResolver>) {
 
 async function buildApiCmd(appPromise: ReturnType<typeof createApp>) {
   const app = await appPromise
-  const openapiResponse = await Promise.resolve(app.request('/openapi.json'))
+  const openapiResponse = await Promise.resolve(
+    app.request('/openapi.json', {
+      headers: { [ENGINE_INTERNAL_REQUEST_HEADER]: 'true' },
+    })
+  )
   const spec = await openapiResponse.json()
 
   // Remap verbose spec tags to CLI-friendly group names
@@ -67,17 +94,25 @@ async function buildApiCmd(appPromise: ReturnType<typeof createApp>) {
     },
     ndjsonBodyStream: () =>
       process.stdin.isTTY ? null : (Readable.toWeb(process.stdin) as ReadableStream),
-    meta: {
-      name: 'api',
-      description: 'Raw API operations (runs against a local in-process engine by default)',
-      version: '0.1.0',
+    meta: API_META,
+  })
+}
+
+function createApiPlaceholderCmd() {
+  return defineCommand({
+    meta: API_META,
+    run() {
+      throw new Error('Internal error: api command was not initialized')
     },
   })
 }
 
-export async function createProgram() {
-  const resolverPromise = createResolverFromFlags()
-  const appPromise = resolverPromise.then((resolver) => createApp(resolver))
+export async function createProgram(argv = process.argv) {
+  const resolverPromise = createResolverFromFlags(argv)
+  const apiCommand =
+    selectedTopLevelCommand(argv) === 'api'
+      ? await buildApiCmd(resolverPromise.then((resolver) => createApp(resolver)))
+      : createApiPlaceholderCmd()
 
   return defineCommand({
     meta: {
@@ -89,7 +124,7 @@ export async function createProgram() {
       serve: createServeCmd(resolverPromise),
       start: createStartCmd(resolverPromise),
       sync: createSyncCmd(resolverPromise),
-      api: await buildApiCmd(appPromise),
+      api: apiCommand,
     },
   })
 }

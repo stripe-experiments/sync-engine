@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "sync": "node sync.js"
+    "start": "./start.sh",
+    "start:node": "node server.js"
   },
   "dependencies": {
     "express": "^4.21.0",

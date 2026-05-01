@@ -35,13 +35,16 @@
     <div class="sb">
       <h1>PixelDraw</h1>
       <div class="sub">Metronome + Redis entitlements</div>
+      <div class="sub" id="redis-h" style="margin-top:6px">Redis: checking…</div>
+      <div class="sub" id="usage-model">1 pixel = checking…</div>
     </div>
     <div class="sb">
       <h2>Credits</h2>
       <div class="credits-num" id="balance">—</div>
       <div class="credits-label">remaining credits</div>
       <div class="credits-bar"><div class="credits-fill" id="bar"></div></div>
-      <div class="credits-label" id="synced">Redis sync: —</div>
+      <div class="credits-label" id="entitledRow">API Access: —</div>
+      <div class="credits-label" id="synced">Redis sync (net_balance)</div>
     </div>
     <div class="sb">
       <div class="blocked-banner" id="blocked">Out of credits! Drawing disabled.</div>
@@ -62,7 +65,8 @@
 
 <script>
 const G = 48;
-const INITIAL_CREDITS = 10000;
+const INITIAL_CREDITS = 20;
+const CREDIT_REFRESH_INTERVAL_MS = 2000;
 const COLORS = [
   { id: 'red',    hex: '#ef4444', name: 'Red' },
   { id: 'green',  hex: '#22c55e', name: 'Green' },
@@ -148,7 +152,11 @@ async function paint(e, cx) {
     balance = data.balance;
     updateCreditsUI();
     syncedAt = data.syncedAt ?? syncedAt;
-    $('status').textContent = `Pixel ${drawCount} drawn (${sel.name}) — ${balance} credits left`;
+    const burn = data.estimatedCreditsBurned ?? null;
+    const usageEvents = data.usageEvents ?? 1;
+    $('status').textContent =
+      `Pixel ${drawCount} drawn (${sel.name}) — sent ${usageEvents} api_call events` +
+      (burn != null ? ` (~${burn} credits)` : '');
   } catch (err) {
     $('status').textContent = `Error: ${err.message}`;
   }
@@ -168,11 +176,14 @@ function clearCanvas() {
 
 function updateCreditsUI() {
   $('balance').textContent = balance != null ? balance.toLocaleString() : '—';
-  const pct = balance != null ? Math.max(0, Math.min(100, (balance / INITIAL_CREDITS) * 100)) : 100;
+  const denom =
+    balance != null ? Math.max(INITIAL_CREDITS, balance || 1) : INITIAL_CREDITS;
+  const pct = balance != null ? Math.max(0, Math.min(100, (balance / denom) * 100)) : 100;
   const bar = $('bar');
   bar.style.width = pct + '%';
   bar.className = 'credits-fill' + (pct < 20 ? ' low' : '');
-  $('synced').textContent = 'Redis sync: ' + (syncedAt ? new Date(syncedAt * 1000).toLocaleTimeString() : '—');
+  $('synced').textContent =
+    'Redis sync: ' + (syncedAt ? new Date(Number(syncedAt) * 1000).toLocaleString() : '—');
 
   const blocked = $('blocked');
   if (balance != null && balance <= 0) {
@@ -182,16 +193,25 @@ function updateCreditsUI() {
   }
 }
 
-async function refreshCredits() {
+async function refreshCredits({ silent = false } = {}) {
   try {
     const res = await fetch('/api/credits');
     const data = await res.json();
+    const previousBalance = balance;
     balance = data.balance;
     syncedAt = data.syncedAt ?? null;
+    $('entitledRow').textContent = data.product
+      ? `${data.product}: ${data.entitled === true ? 'entitled ✓' : 'not entitled'}`
+      : 'Entitlement (Redis): none loaded';
+    $('entitledRow').title = 'Synced from Redis (entitlements keys)';
     updateCreditsUI();
-    $('status').textContent = `Credits refreshed: ${balance} (${data.source || 'unknown'})`;
+    if (!silent) {
+      $('status').textContent = `Credits refreshed: ${balance} (${data.source || 'unknown'})`;
+    } else if (previousBalance !== null && balance !== previousBalance) {
+      $('status').textContent = `Redis updated: credits ${previousBalance} → ${balance}`;
+    }
   } catch (err) {
-    $('status').textContent = `Refresh failed: ${err.message}`;
+    if (!silent) $('status').textContent = `Refresh failed: ${err.message}`;
   }
 }
 
@@ -213,9 +233,30 @@ function selectColor(id) {
 
 // ---- Init ----
 
+async function pingRedisBanner() {
+  try {
+    const res = await fetch('/api/health');
+    const d = await res.json();
+    if (d.ok) {
+      $('redis-h').textContent = `Redis: ${d.redis} (${d.redisTarget || '?'}, ${d.keyPrefix || 'sync:'}*)`;
+      if (d.usageEventsPerPixel) {
+        $('usage-model').textContent =
+          `1 pixel = ${d.usageEventsPerPixel} api_call events` +
+          (d.estimatedCreditsPerPixel != null ? ` (~${d.estimatedCreditsPerPixel} credits)` : '');
+      }
+    } else {
+      $('redis-h').textContent = 'Redis: disconnected — check port & docker compose';
+    }
+  } catch {
+    $('redis-h').textContent = 'Redis: server unreachable';
+  }
+}
+
 initCanvas();
 renderColors();
+pingRedisBanner();
 refreshCredits();
+setInterval(() => refreshCredits({ silent: true }), CREDIT_REFRESH_INTERVAL_MS);
 </script>
 </body>
 </html>

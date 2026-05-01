@@ -1,55 +1,96 @@
 #!/usr/bin/env bash
-# Poll webhook.site for new requests and forward them to a local server.
+# Poll webhook.site for new requests and forward them to a local webhook server.
 # Usage: ./scripts/webhook-relay.sh <webhook-site-token> <local-url>
 set -euo pipefail
 
 TOKEN="${1:?Usage: webhook-relay.sh <webhook-site-token> <local-url>}"
 TARGET="${2:-http://localhost:4243}"
-SEEN=""
+POLL_INTERVAL_SECONDS="${WEBHOOK_RELAY_INTERVAL_SECONDS:-0.5}"
+SEEN_FILE="$(mktemp)"
+trap 'rm -f "$SEEN_FILE"' EXIT
 
 echo "Relaying webhook.site/$TOKEN → $TARGET"
-echo "Polling every 2 seconds..."
+echo "Polling every $POLL_INTERVAL_SECONDS seconds..."
+
+INITIAL_REQUESTS=$(curl -s "https://webhook.site/token/$TOKEN/requests?sorting=newest&per_page=100" 2>/dev/null)
+INITIAL_REQUESTS="$INITIAL_REQUESTS" SEEN_FILE="$SEEN_FILE" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+seen_path = Path(os.environ["SEEN_FILE"])
+try:
+    data = json.loads(os.environ.get("INITIAL_REQUESTS", "{}"))
+except json.JSONDecodeError:
+    raise SystemExit(0)
+
+with seen_path.open("a") as fh:
+    for req in data.get("data", []):
+        uuid = req.get("uuid")
+        if uuid:
+            fh.write(uuid + "\n")
+PY
 
 while true; do
   REQUESTS=$(curl -s "https://webhook.site/token/$TOKEN/requests?sorting=newest&per_page=5" 2>/dev/null)
 
-  # Extract request UUIDs and process new ones
-  echo "$REQUESTS" | python3 -c "
-import sys, json, subprocess
+  REQUESTS="$REQUESTS" TARGET="$TARGET" SEEN_FILE="$SEEN_FILE" python3 - <<'PY'
+import json
+import os
+import subprocess
+from pathlib import Path
 
-data = json.load(sys.stdin)
-seen = set('''$SEEN'''.split())
+target = os.environ["TARGET"]
+seen_path = Path(os.environ["SEEN_FILE"])
+seen = set(seen_path.read_text().split()) if seen_path.exists() else set()
 
-for req in reversed(data.get('data', [])):
-    uuid = req['uuid']
-    if uuid in seen:
+try:
+    data = json.loads(os.environ.get("REQUESTS", "{}"))
+except json.JSONDecodeError as exc:
+    print(f"Could not parse webhook.site response: {exc}")
+    raise SystemExit(0)
+
+forward_headers = {
+    "content-type",
+    "date",
+    "metronome-webhook-signature",
+    "stripe-signature",
+}
+
+new_seen = []
+for req in reversed(data.get("data", [])):
+    uuid = req.get("uuid")
+    if not uuid or uuid in seen:
         continue
 
-    # Forward the request body + headers to target
-    body = req.get('content', '') or '{}'
-    headers = req.get('headers', {})
+    body = req.get("content") or ""
+    headers = req.get("headers") or {}
+    cmd = ["curl", "-sS", "-X", "POST", target]
 
-    cmd = ['curl', '-s', '-X', 'POST', '$TARGET', '-H', 'Content-Type: application/json']
+    has_content_type = False
+    for hdr_key, hdr_vals in headers.items():
+        lower = hdr_key.lower()
+        if lower not in forward_headers or not hdr_vals:
+            continue
+        val = hdr_vals[0] if isinstance(hdr_vals, list) else hdr_vals
+        if lower == "content-type":
+            has_content_type = True
+        cmd.extend(["-H", f"{hdr_key}: {val}"])
 
-    # Forward relevant headers
-    for key in ['date', 'metronome-webhook-signature']:
-        for hdr_key, hdr_vals in headers.items():
-            if hdr_key.lower() == key and hdr_vals:
-                val = hdr_vals[0] if isinstance(hdr_vals, list) else hdr_vals
-                cmd.extend(['-H', f'{hdr_key}: {val}'])
+    if not has_content_type:
+        cmd.extend(["-H", "Content-Type: application/json"])
 
-    cmd.extend(['-d', body])
+    cmd.extend(["--data-binary", "@-"])
+    result = subprocess.run(cmd, input=body, capture_output=True, text=True)
+    status = "ok" if result.returncode == 0 else f"exit {result.returncode}"
+    print(f"Relayed {uuid[:8]}... ({status}) → {result.stdout[:120] or result.stderr[:120]}")
+    new_seen.append(uuid)
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    print(f'Relayed {uuid[:8]}... → {result.stdout[:80]}')
-    print(uuid)  # Print UUID so we can track it
-" 2>/dev/null | while IFS= read -r line; do
-    if [[ "$line" =~ ^[0-9a-f]{8}-[0-9a-f]{4} ]]; then
-      SEEN="$SEEN $line"
-    else
-      echo "$line"
-    fi
-  done
+if new_seen:
+    with seen_path.open("a") as fh:
+        for uuid in new_seen:
+            fh.write(uuid + "\n")
+PY
 
-  sleep 2
+  sleep "$POLL_INTERVAL_SECONDS"
 done

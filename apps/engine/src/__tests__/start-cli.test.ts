@@ -141,4 +141,112 @@ describe('start cli', () => {
     })
     expect(io.output.join('')).toContain('Unknown stream(s): missing')
   })
+
+  it('prompts live webhook config as a dedicated Metronome block', async () => {
+    const pipelines: unknown[] = []
+    const engine = {
+      async meta_sources_list() {
+        return {
+          items: [
+            {
+              type: 'metronome',
+              config_schema: {
+                type: 'object',
+                required: ['api_key'],
+                properties: {
+                  api_key: { type: 'string' },
+                  webhook_url: { type: 'string' },
+                  webhook_secret: { type: 'string' },
+                  webhook_port: { type: 'integer' },
+                  backfill_limit: { type: 'integer' },
+                },
+              },
+            },
+          ],
+        }
+      },
+      async meta_destinations_list() {
+        return {
+          items: [
+            {
+              type: 'redis',
+              config_schema: {
+                type: 'object',
+                required: ['url'],
+                properties: {
+                  url: { type: 'string' },
+                },
+              },
+            },
+          ],
+        }
+      },
+      async *source_discover() {
+        yield {
+          type: 'catalog',
+          catalog: {
+            streams: [
+              {
+                name: 'net_balance',
+                primary_key: [['customer_id']],
+                newer_than_field: '_synced_at',
+                json_schema: {},
+              },
+            ],
+          },
+        }
+      },
+      async *pipeline_check(pipeline: unknown) {
+        pipelines.push(pipeline)
+        yield {
+          type: 'connection_status',
+          _emitted_by: 'source/metronome',
+          connection_status: { status: 'succeeded' },
+        }
+      },
+      async *pipeline_setup(pipeline: unknown) {
+        pipelines.push(pipeline)
+      },
+      async *pipeline_sync(pipeline: unknown) {
+        pipelines.push(pipeline)
+        yield {
+          type: 'eof',
+          eof: { run_progress: progress() },
+        }
+      },
+    }
+
+    const io = scriptedIO([
+      'test-token',
+      'y',
+      'https://webhook.site/435bac65-9de6-41b9-9bac-84f6cb26331b',
+      'metronome-secret',
+      '4244',
+      'n',
+      'redis://127.0.0.1:56379',
+      '',
+    ])
+
+    await runStartWizard(engine as never, io, { plain: true })
+
+    expect(pipelines.at(-1)).toEqual({
+      source: {
+        type: 'metronome',
+        metronome: {
+          api_key: 'test-token',
+          webhook_url: 'https://webhook.site/435bac65-9de6-41b9-9bac-84f6cb26331b',
+          webhook_secret: 'metronome-secret',
+          webhook_port: 4244,
+        },
+      },
+      destination: {
+        type: 'redis',
+        redis: { url: 'redis://127.0.0.1:56379' },
+      },
+    })
+    expect(io.output.join('')).toContain('Enable live webhook sync for metronome?')
+    expect(io.output.join('')).toContain(
+      './scripts/webhook-relay.sh 435bac65-9de6-41b9-9bac-84f6cb26331b http://127.0.0.1:4244'
+    )
+  })
 })

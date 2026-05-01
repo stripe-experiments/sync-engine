@@ -13,6 +13,7 @@ import { createEngine, type ConnectorListItem, type ConnectorResolver, type Engi
 import { applyControlToPipeline } from './source-config-cache.js'
 
 type JsonSchema = Record<string, unknown>
+const WEBHOOK_FIELD_NAMES = new Set(['webhook_url', 'webhook_secret', 'webhook_port'])
 
 export interface StartPromptIO {
   isTTY: boolean
@@ -97,6 +98,21 @@ function schemaType(schema: JsonSchema): string | undefined {
 
 function isSecretField(name: string): boolean {
   return /(^|_)(api_)?key$|token|secret|password/i.test(name)
+}
+
+function isWebhookField(name: string): boolean {
+  return WEBHOOK_FIELD_NAMES.has(name)
+}
+
+function webhookSiteToken(webhookUrl: string): string | undefined {
+  try {
+    const url = new URL(webhookUrl)
+    if (url.hostname !== 'webhook.site') return undefined
+    const token = url.pathname.split('/').filter(Boolean)[0]
+    return token || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function parseValue(raw: string, schema: JsonSchema): unknown {
@@ -191,16 +207,26 @@ async function promptField(
 async function promptConnectorConfig(
   io: StartPromptIO,
   role: 'source' | 'destination',
-  connector: ConnectorListItem
+  connector: ConnectorListItem,
+  opts: {
+    skipFields?: Set<string>
+    promptRequired?: boolean
+    promptOptional?: boolean
+    header?: boolean
+  } = {}
 ): Promise<Record<string, unknown>> {
   const properties = schemaProperties(connector.config_schema)
   const required = schemaRequired(connector.config_schema)
-  const entries = Object.entries(properties)
-  const requiredEntries = entries.filter(([name]) => required.has(name))
-  const optionalEntries = entries.filter(([name]) => !required.has(name))
+  const entries = Object.entries(properties).filter(([name]) => !opts.skipFields?.has(name))
+  const requiredEntries =
+    opts.promptRequired === false ? [] : entries.filter(([name]) => required.has(name))
+  const optionalEntries =
+    opts.promptOptional === false ? [] : entries.filter(([name]) => !required.has(name))
   const config: Record<string, unknown> = {}
 
-  io.write(`\n${role === 'source' ? 'Source' : 'Destination'} config (${connector.type})\n`)
+  if (opts.header !== false) {
+    io.write(`\n${role === 'source' ? 'Source' : 'Destination'} config (${connector.type})\n`)
+  }
   for (const [name, schema] of requiredEntries) {
     config[name] = await promptField(io, name, schema, true)
   }
@@ -217,6 +243,65 @@ async function promptConnectorConfig(
       }
     }
   }
+  return config
+}
+
+async function promptLiveWebhookConfig(
+  io: StartPromptIO,
+  source: ConnectorListItem
+): Promise<Record<string, unknown>> {
+  const properties = schemaProperties(source.config_schema)
+  const webhookEntries = Object.entries(properties).filter(([name]) => isWebhookField(name))
+  if (webhookEntries.length === 0) return {}
+
+  const enabled = await promptYesNo(io, `Enable live webhook sync for ${source.type}?`, false)
+  if (!enabled) return {}
+
+  const config: Record<string, unknown> = {}
+  io.write('\nLive webhook config\n')
+  if (source.type === 'stripe') {
+    io.write(
+      'Stripe setup can create a managed webhook endpoint for this URL. If you are reusing an existing endpoint, paste its signing secret.\n'
+    )
+  } else if (source.type === 'metronome') {
+    io.write(
+      'Metronome webhooks are registered in Metronome. Paste that URL and signing secret here; setup validates and prints the local relay instructions.\n'
+    )
+  }
+
+  const webhookUrlSchema = properties.webhook_url
+  if (webhookUrlSchema) {
+    config.webhook_url = await promptField(io, 'webhook_url', webhookUrlSchema, true)
+  }
+
+  const webhookSecretSchema = properties.webhook_secret
+  if (webhookSecretSchema) {
+    const secretRequired = source.type === 'metronome'
+    const secret = await promptField(io, 'webhook_secret', webhookSecretSchema, secretRequired)
+    if (secret !== undefined) config.webhook_secret = secret
+  }
+
+  const webhookPortSchema = properties.webhook_port
+  if (webhookPortSchema) {
+    config.webhook_port = await promptField(io, 'webhook_port', webhookPortSchema, true)
+  }
+
+  const url = typeof config.webhook_url === 'string' ? config.webhook_url : undefined
+  const port = typeof config.webhook_port === 'number' ? config.webhook_port : undefined
+  if (url && port) {
+    io.write('\nWebhook delivery summary\n')
+    io.write(`  Public URL: ${url}\n`)
+    io.write(`  Local listener: http://127.0.0.1:${port}\n`)
+
+    const token = webhookSiteToken(url)
+    if (token) {
+      io.write('\nRun this in another terminal before starting live delivery:\n')
+      io.write(`  ./scripts/webhook-relay.sh ${token} http://127.0.0.1:${port}\n`)
+    } else {
+      io.write('\nForward your public URL to the local listener above.\n')
+    }
+  }
+
   return config
 }
 
@@ -313,7 +398,18 @@ export async function runStartWizard(engine: Engine, io: StartPromptIO, opts: St
   io.write('This command will not start Docker or provision local infrastructure.\n')
 
   const source = await promptChoice(io, 'Source', (await engine.meta_sources_list()).items)
-  const sourceConfig = await promptConnectorConfig(io, 'source', source)
+  const sourceConfig = {
+    ...(await promptConnectorConfig(io, 'source', source, {
+      skipFields: WEBHOOK_FIELD_NAMES,
+      promptOptional: false,
+    })),
+    ...(await promptLiveWebhookConfig(io, source)),
+    ...(await promptConnectorConfig(io, 'source', source, {
+      skipFields: WEBHOOK_FIELD_NAMES,
+      promptRequired: false,
+      header: false,
+    })),
+  }
   const sourceEnvelope = { type: source.type, [source.type]: sourceConfig } as PipelineConfig['source']
   const catalog = await collectFirst(engine.source_discover(sourceEnvelope), 'catalog')
 
