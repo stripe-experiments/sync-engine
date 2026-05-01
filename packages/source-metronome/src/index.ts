@@ -1,11 +1,12 @@
 import type {
   CatalogPayload,
-  Source,
-  SpecOutput,
   CheckOutput,
   DiscoverOutput,
   Message,
+  SetupOutput,
+  Source,
   SourceInputMessage,
+  SpecOutput,
 } from '@stripe/sync-protocol'
 import { createSourceMessageFactory } from '@stripe/sync-protocol'
 import defaultSpec from './spec.js'
@@ -40,6 +41,15 @@ function buildCatalog(): CatalogPayload {
 
 /** Event types that should trigger targeted Metronome refetches. */
 const REFRESH_EVENT_TYPES = new Set([
+  'alerts.spend_threshold_reached',
+  'alerts.low_remaining_credit_balance_reached',
+  'alerts.low_remaining_contract_credit_balance_reached',
+  'alerts.low_remaining_contract_credit_percentage_reached',
+  'alerts.low_remaining_contract_credit_and_commit_balance_reached',
+  'alerts.low_remaining_commit_balance_reached',
+  'alerts.low_remaining_commit_percentage_reached',
+  'alerts.usage_threshold_reached',
+  'alerts.invoice_total_reached',
   'contract.create',
   'contract.start',
   'contract.edit',
@@ -87,6 +97,37 @@ function normalizeSourceInput(input: MetronomeSourceInput): MetronomeWebhookEven
   }
 
   return unwrapped as MetronomeWebhookEvent
+}
+
+function webhookSiteToken(webhookUrl: string): string | undefined {
+  try {
+    const url = new URL(webhookUrl)
+    if (url.hostname !== 'webhook.site') return undefined
+    return url.pathname.split('/').filter(Boolean)[0]
+  } catch {
+    return undefined
+  }
+}
+
+function webhookSetupData(config: Config): Record<string, unknown> {
+  const data: Record<string, unknown> = {
+    webhook_url: config.webhook_url,
+    setup_action:
+      'Register this URL in Metronome Connections > API tokens & webhooks > Webhooks, using the configured webhook_secret for verification.',
+  }
+
+  if (config.webhook_port) {
+    data.local_listener = `http://127.0.0.1:${config.webhook_port}`
+  }
+
+  if (config.webhook_url && config.webhook_port) {
+    const token = webhookSiteToken(config.webhook_url)
+    if (token) {
+      data.webhook_site_relay_command = `./scripts/webhook-relay.sh ${token} http://127.0.0.1:${config.webhook_port}`
+    }
+  }
+
+  return data
 }
 
 async function collectContractIds(
@@ -275,6 +316,36 @@ const source: Source<Config, StreamState> = {
 
   async *discover(): AsyncGenerator<DiscoverOutput> {
     yield { type: 'catalog' as const, catalog: buildCatalog() }
+  },
+
+  async *setup({ config }: { config: Config }): AsyncGenerator<SetupOutput> {
+    if (!config.webhook_url) {
+      yield {
+        type: 'log',
+        log: {
+          level: 'info',
+          message:
+            'metronome: setup skipped webhook registration because webhook_url is not configured',
+        },
+      }
+      return
+    }
+
+    if (!config.webhook_secret) {
+      throw new Error(
+        'Metronome webhook setup requires webhook_secret. Create/register the webhook URL in Metronome, copy the per-webhook signing secret into source.metronome.webhook_secret, then run setup again. Metronome does not expose a documented Stripe-style webhook destination create API in the public docs.'
+      )
+    }
+
+    yield {
+      type: 'log',
+      log: {
+        level: 'warn',
+        message:
+          'metronome: webhook_url is configured; complete webhook destination registration in Metronome',
+        data: webhookSetupData(config),
+      },
+    }
   },
 
   async *read(
@@ -547,7 +618,7 @@ const source: Source<Config, StreamState> = {
     // After backfill: start webhook server for live updates
     if (config.webhook_port) {
       log.info(
-        { port: config.webhook_port },
+        { port: config.webhook_port, webhookUrl: config.webhook_url },
         'metronome: starting webhook listener for live updates'
       )
 

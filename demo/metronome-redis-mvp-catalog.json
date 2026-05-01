@@ -1,0 +1,54 @@
+{
+  "streams": [
+    {
+      "stream": {
+        "name": "net_balance",
+        "primary_key": [["customer_id"]],
+        "newer_than_field": "_synced_at",
+        "json_schema": {}
+      },
+      "sync_mode": "full_refresh",
+      "destination_sync_mode": "append_dedup"
+    },
+    {
+      "stream": {
+        "name": "credits",
+        "primary_key": [["id"]],
+        "newer_than_field": "_synced_at",
+        "json_schema": {}
+      },
+      "sync_mode": "full_refresh",
+      "destination_sync_mode": "append_dedup"
+    },
+    {
+      "stream": {
+        "name": "commits",
+        "primary_key": [["id"]],
+        "newer_than_field": "_synced_at",
+        "json_schema": {}
+      },
+      "sync_mode": "full_refresh",
+      "destination_sync_mode": "append_dedup"
+    },
+    {
+      "stream": {
+        "name": "balances",
+        "primary_key": [["customer_id"], ["_page_slot"]],
+        "newer_than_field": "_synced_at",
+        "json_schema": {}
+      },
+      "sync_mode": "full_refresh",
+      "destination_sync_mode": "append_dedup"
+    },
+    {
+      "stream": {
+        "name": "entitlements",
+        "primary_key": [["customer_id"], ["contract_id"], ["product_id"]],
+        "newer_than_field": "_synced_at",
+        "json_schema": {}
+      },
+      "sync_mode": "full_refresh",
+      "destination_sync_mode": "append_dedup"
+    }
+  ]
+}

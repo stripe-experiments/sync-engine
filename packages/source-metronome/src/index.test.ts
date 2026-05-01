@@ -74,6 +74,9 @@ describe('source-metronome', () => {
       expect(msg.spec.config).toBeDefined()
       expect(typeof msg.spec.config).toBe('object')
       expect(msg.spec.source_state_stream).toBeDefined()
+      expect(
+        (msg.spec.config as { properties?: Record<string, unknown> }).properties?.webhook_url
+      ).toBeDefined()
     })
   })
 
@@ -134,6 +137,60 @@ describe('source-metronome', () => {
       } finally {
         vi.unstubAllGlobals()
       }
+    })
+  })
+
+  describe('setup()', () => {
+    it('skips webhook registration when webhook_url is omitted', async () => {
+      const messages = await collectAll(
+        source.setup!({ config: TEST_CONFIG, catalog: CUSTOMERS_CATALOG })
+      )
+
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatchObject({
+        type: 'log',
+        log: {
+          level: 'info',
+          message:
+            'metronome: setup skipped webhook registration because webhook_url is not configured',
+        },
+      })
+    })
+
+    it('fails clearly when webhook_url is set without a Metronome signing secret', async () => {
+      await expect(
+        collectAll(
+          source.setup!({
+            config: { ...TEST_CONFIG, webhook_url: 'https://sync.example.com/webhooks/pipe_123' },
+            catalog: CUSTOMERS_CATALOG,
+          })
+        )
+      ).rejects.toThrow(/requires webhook_secret/)
+    })
+
+    it('emits manual registration instructions when webhook_url and secret are configured', async () => {
+      const messages = await collectAll(
+        source.setup!({
+          config: {
+            ...TEST_CONFIG,
+            webhook_url: 'https://sync.example.com/webhooks/pipe_123',
+            webhook_secret: 'metronome-secret',
+          },
+          catalog: CUSTOMERS_CATALOG,
+        })
+      )
+
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatchObject({
+        type: 'log',
+        log: {
+          level: 'warn',
+          data: {
+            webhook_url: 'https://sync.example.com/webhooks/pipe_123',
+          },
+        },
+      })
+      expect(JSON.stringify(messages[0])).not.toContain('metronome-secret')
     })
   })
 

@@ -46,6 +46,7 @@ import {
 } from '@stripe/sync-util-postgres'
 import { syncRequestContext, logApiStream, createConnectionAbort } from './helpers.js'
 import {
+  ENGINE_INTERNAL_REQUEST_HEADER,
   ENGINE_REQUEST_ID_HEADER,
   getEngineRequestId,
   runWithEngineRequestContext,
@@ -81,9 +82,12 @@ export async function createApp(resolver: ConnectorResolver) {
     const engineRequestId = crypto.randomUUID()
     const action_id = c.req.header('X-Action-Id')?.trim() || null
     const run_id = new URL(c.req.url).searchParams.get('run_id')
+    const internalRequest = c.req.header(ENGINE_INTERNAL_REQUEST_HEADER) === 'true'
     await runWithEngineRequestContext({ engineRequestId, action_id, run_id }, async () => {
       const start = Date.now()
-      log.info({ method: c.req.method, path: c.req.path }, 'request start')
+      if (!internalRequest) {
+        log.info({ method: c.req.method, path: c.req.path }, 'request start')
+      }
       await next()
 
       c.res.headers.set(ENGINE_REQUEST_ID_HEADER, engineRequestId)
@@ -97,16 +101,18 @@ export async function createApp(resolver: ConnectorResolver) {
         }
       }
       const level = c.res.status >= 200 && c.res.status < 300 ? 'info' : 'warn'
-      log[level](
-        {
-          method: c.req.method,
-          path: c.req.path,
-          status: c.res.status,
-          durationMs: Date.now() - start,
-          error,
-        },
-        'request end'
-      )
+      if (!internalRequest) {
+        log[level](
+          {
+            method: c.req.method,
+            path: c.req.path,
+            status: c.res.status,
+            durationMs: Date.now() - start,
+            error,
+          },
+          'request end'
+        )
+      }
     })
   })
 

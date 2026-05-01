@@ -8,6 +8,23 @@ export const configSchema = z.object({
     .url()
     .optional()
     .describe('Override the Metronome API base URL (default: https://api.metronome.com)'),
+  webhook_url: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      'Public HTTPS URL Metronome will POST webhook events to. For local demos, use a webhook.site URL and forward it to webhook_port.'
+    ),
+  webhook_secret: z
+    .string()
+    .optional()
+    .describe('Metronome webhook signing secret for HMAC-SHA256 signature verification'),
+  webhook_port: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Local port where this process listens for webhook HTTP POSTs (e.g. 4243)'),
   rate_limit: z
     .number()
     .int()
@@ -20,15 +37,6 @@ export const configSchema = z.object({
     .positive()
     .optional()
     .describe('Max records to fetch per stream (useful for testing)'),
-  webhook_secret: z
-    .string()
-    .optional()
-    .describe('Webhook signing secret for HMAC-SHA256 signature verification'),
-  webhook_port: z
-    .number()
-    .int()
-    .optional()
-    .describe('Port for built-in webhook HTTP listener (e.g. 4243)'),
 })
 
 export type Config = z.infer<typeof configSchema>

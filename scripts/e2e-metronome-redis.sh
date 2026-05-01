@@ -15,10 +15,17 @@
 #
 # Optional env:
 #   REDIS_PORT (default 56379), WEBHOOK_PORT (default 4243), KEY_PREFIX (default sync:),
+#   METRONOME_WEBHOOK_URL — optional public delivery URL to include in source setup metadata
+#   METRONOME_WEBHOOK_SECRET — optional; signs the synthetic webhook if set
 #   METRONOME_BASE_URL — only adds to connector config when set and not the public default
 #
 # Usage: METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh
+#
+# Run from any directory; resolves paths from repo root (sync-engine/).
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 : "${METRONOME_API_TOKEN:?Set METRONOME_API_TOKEN}"
 : "${METRONOME_CUSTOMER_ID:?Set METRONOME_CUSTOMER_ID}"
@@ -32,6 +39,8 @@ METRONOME_API_ROOT="${METRONOME_API_ROOT%/}"
 
 SOURCE_CONFIG="$(
   METRONOME_API_TOKEN="${METRONOME_API_TOKEN}" \
+  METRONOME_WEBHOOK_URL_EFFECTIVE="${METRONOME_WEBHOOK_URL:-}" \
+  METRONOME_WEBHOOK_SECRET_EFFECTIVE="${METRONOME_WEBHOOK_SECRET:-}" \
   SOURCE_METRONOME_BASE_URL_EFFECTIVE="${METRONOME_BASE_URL:-}" \
   WEBHOOK_PORT_EFFECTIVE="${WEBHOOK_PORT}" \
     python3 - <<'PY'
@@ -42,6 +51,12 @@ cfg = {
     "api_key": os.environ["METRONOME_API_TOKEN"],
     "webhook_port": int(os.environ["WEBHOOK_PORT_EFFECTIVE"]),
 }
+webhook_url = os.environ.get("METRONOME_WEBHOOK_URL_EFFECTIVE", "").strip()
+if webhook_url:
+    cfg["webhook_url"] = webhook_url
+secret = os.environ.get("METRONOME_WEBHOOK_SECRET_EFFECTIVE", "").strip()
+if secret:
+    cfg["webhook_secret"] = secret
 bu = os.environ.get("SOURCE_METRONOME_BASE_URL_EFFECTIVE", "").strip()
 if bu and bu.rstrip("/") != "https://api.metronome.com":
     cfg["base_url"] = bu
@@ -60,31 +75,61 @@ redis_cli() {
   fi
 }
 
+assert_port_free() {
+  python3 - "$WEBHOOK_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    sock.bind(("::", port))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+PY
+}
+
 # Verify Redis is running
 if ! redis_cli ping &>/dev/null; then
   echo "ERROR: Redis not running on port $REDIS_PORT. Run: docker compose up redis -d"
   exit 1
 fi
+if ! assert_port_free; then
+  echo "ERROR: Webhook port $WEBHOOK_PORT is already in use. Stop the old pipeline or set WEBHOOK_PORT."
+  exit 1
+fi
 
 redis_cli FLUSHDB >/dev/null
 
-CATALOG='{"streams":[{"stream":{"name":"net_balance","primary_key":[["customer_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"credits","primary_key":[["id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"commits","primary_key":[["id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"balances","primary_key":[["customer_id"],["_page_slot"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"},{"stream":{"name":"entitlements","primary_key":[["customer_id"],["contract_id"],["product_id"]],"newer_than_field":"_synced_at","json_schema":{}},"sync_mode":"full_refresh","destination_sync_mode":"append_dedup"}]}'
+CATALOG_PATH="${CATALOG_PATH:-$ROOT/demo/metronome-redis-mvp-catalog.json}"
+CATALOG="$(cat "$CATALOG_PATH")"
 DEST_CONFIG="{\"url\":\"redis://localhost:$REDIS_PORT\",\"key_prefix\":\"$KEY_PREFIX\",\"batch_size\":1}"
+
+PIPE_LOG="$(mktemp "${TMPDIR:-/tmp}/e2e-metronome-redis.XXXXXX")"
 NET_BALANCE_KEY="${KEY_PREFIX}net_balance:$CUSTOMER_ID"
 
 # Step 1: Start pipeline (backfill + webhook server)
 echo "Step 1: Starting pipeline (backfill + webhook listener on port $WEBHOOK_PORT)..."
 npx tsx --conditions bun packages/source-metronome/src/bin.ts read \
-  --config "$SOURCE_CONFIG" --catalog "$CATALOG" 2>/dev/null | \
+  --config "$SOURCE_CONFIG" --catalog "$CATALOG" 2>>"$PIPE_LOG" | \
 npx tsx --conditions bun packages/destination-redis/src/bin.ts write \
-  --config "$DEST_CONFIG" --catalog "$CATALOG" >/dev/null 2>/dev/null &
+  --config "$DEST_CONFIG" --catalog "$CATALOG" >/dev/null 2>>"$PIPE_LOG" &
 PIPE_PID=$!
 cleanup() {
   kill "$PIPE_PID" 2>/dev/null || true
   pkill -TERM -P "$PIPE_PID" 2>/dev/null || true
+  rm -f "$PIPE_LOG" 2>/dev/null || true
 }
 trap cleanup EXIT
 sleep 5
+if ! kill -0 "$PIPE_PID" 2>/dev/null; then
+  echo "ERROR: Sync pipeline exited early. Last log lines:"
+  tail -80 "$PIPE_LOG" || true
+  exit 1
+fi
 
 echo "Step 1: Backfill complete."
 echo ""
@@ -119,9 +164,28 @@ sleep 2
 echo "Step 4: Firing credit.segment.end webhook..."
 
 # Verify webhook server is listening
+WEBHOOK_BODY="{\"type\":\"credit.segment.end\",\"id\":\"evt_e2e_$(date +%s)\",\"customer_id\":\"$CUSTOMER_ID\"}"
+WEBHOOK_HEADERS=(-H "Content-Type: application/json")
+if [[ -n "${METRONOME_WEBHOOK_SECRET:-}" ]]; then
+  WEBHOOK_DATE="$(date -u '+%a, %d %b %Y %H:%M:%S GMT')"
+  WEBHOOK_SIGNATURE="$(
+    METRONOME_WEBHOOK_SECRET="${METRONOME_WEBHOOK_SECRET}" \
+    WEBHOOK_DATE="${WEBHOOK_DATE}" \
+    WEBHOOK_BODY="${WEBHOOK_BODY}" \
+      python3 - <<'PY'
+import hashlib
+import hmac
+import os
+
+payload = f"{os.environ['WEBHOOK_DATE']}\n{os.environ['WEBHOOK_BODY']}".encode()
+print(hmac.new(os.environ["METRONOME_WEBHOOK_SECRET"].encode(), payload, hashlib.sha256).hexdigest())
+PY
+  )"
+  WEBHOOK_HEADERS+=(-H "Date: $WEBHOOK_DATE" -H "Metronome-Webhook-Signature: $WEBHOOK_SIGNATURE")
+fi
 if ! curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:$WEBHOOK_PORT" \
-  -H "Content-Type: application/json" \
-  -d "{\"type\":\"credit.segment.end\",\"id\":\"evt_e2e_$(date +%s)\",\"customer_id\":\"$CUSTOMER_ID\"}" | grep -q "200"; then
+  "${WEBHOOK_HEADERS[@]}" \
+  -d "$WEBHOOK_BODY" | grep -q "200"; then
   echo "  WARNING: Webhook server returned non-200"
 fi
 sleep 5
@@ -141,6 +205,8 @@ if [ "$SYNCED_AFTER" -gt "$SYNCED_BEFORE" ]; then
   echo "✓ SUCCESS: Redis was updated by webhook (synced_at $SYNCED_BEFORE → $SYNCED_AFTER)"
 else
   echo "✗ FAIL: Redis was NOT updated by webhook"
+  echo " Pipeline log tail (stderr):"
+  tail -80 "$PIPE_LOG" || true
   exit 1
 fi
 
