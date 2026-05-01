@@ -1,0 +1,31 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '${REDIS_PORT:-56379}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  sync-engine:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: metronome-redis-demo
+    environment:
+      METRONOME_API_TOKEN: '${METRONOME_API_TOKEN:?Set METRONOME_API_TOKEN}'
+      METRONOME_BASE_URL: '${METRONOME_BASE_URL:-}'
+      METRONOME_WEBHOOK_URL: '${METRONOME_WEBHOOK_URL:-}'
+      # Leave empty for webhook.site relay demos unless this matches the
+      # exact Metronome destination's signing secret.
+      METRONOME_WEBHOOK_SECRET: '${SYNC_ENGINE_METRONOME_WEBHOOK_SECRET:-}'
+      REDIS_URL: 'redis://redis:6379'
+      WEBHOOK_PORT: '4244'
+      KEY_PREFIX: '${KEY_PREFIX:-sync:}'
+    ports:
+      - '${WEBHOOK_PORT:-4244}:4244'
+    depends_on:
+      redis:
+        condition: service_healthy

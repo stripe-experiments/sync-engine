@@ -6,14 +6,14 @@
 # Env:
 #   METRONOME_API_TOKEN (required)
 #   METRONOME_CUSTOMER_ID — only needed by PixelDraw/e2e; pipeline syncs whatever Metronome returns
-#   REDIS_PORT (default 56379), WEBHOOK_PORT (default 4243), KEY_PREFIX (default sync:)
+#   REDIS_URL (default redis://localhost:$REDIS_PORT), REDIS_PORT (default 56379),
+#   WEBHOOK_PORT (default 4243), KEY_PREFIX (default sync:)
 #   METRONOME_WEBHOOK_URL — optional public delivery URL, e.g. https://webhook.site/<token>
 #   METRONOME_WEBHOOK_SECRET — optional; enables Metronome HMAC verification
 #   METRONOME_BASE_URL — passed to connector when set and not the public default
 #
-# After backfill completes, webhook listener is POST http://127.0.0.1:$WEBHOOK_PORT
-# Simulate Metronome: curl -s -X POST "http://127.0.0.1:$WEBHOOK_PORT" -H "Content-Type: application/json" \
-#   -d '{"type":"credit.segment.end","id":"evt_demo","customer_id":"<CUSTOMER_ID>"}'
+# After backfill completes, the local webhook listener accepts Metronome
+# notifications at POST http://127.0.0.1:$WEBHOOK_PORT.
 #
 set -euo pipefail
 
@@ -23,6 +23,7 @@ cd "$ROOT"
 : "${METRONOME_API_TOKEN:?Set METRONOME_API_TOKEN}"
 
 REDIS_PORT="${REDIS_PORT:-56379}"
+REDIS_URL="${REDIS_URL:-redis://localhost:$REDIS_PORT}"
 WEBHOOK_PORT="${WEBHOOK_PORT:-4243}"
 KEY_PREFIX="${KEY_PREFIX:-sync:}"
 METRONOME_API_ROOT="${METRONOME_BASE_URL:-https://api.metronome.com}"
@@ -57,13 +58,37 @@ print(json.dumps(cfg))
 PY
 )"
 
-DEST_CONFIG="{\"url\":\"redis://localhost:$REDIS_PORT\",\"key_prefix\":\"$KEY_PREFIX\",\"batch_size\":1}"
+DEST_CONFIG="$(
+  REDIS_URL_EFFECTIVE="$REDIS_URL" \
+  KEY_PREFIX_EFFECTIVE="$KEY_PREFIX" \
+    python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "url": os.environ["REDIS_URL_EFFECTIVE"],
+    "key_prefix": os.environ["KEY_PREFIX_EFFECTIVE"],
+    "batch_size": 1,
+}))
+PY
+)"
 
 redis_cli_ping() {
   if command -v redis-cli >/dev/null 2>&1; then
-    redis-cli -p "$REDIS_PORT" ping
-  else
+    redis-cli -u "$REDIS_URL" ping
+  elif [[ -S /var/run/docker.sock ]] && command -v docker >/dev/null 2>&1; then
     docker compose exec -T redis redis-cli ping
+  else
+    REDIS_URL_EFFECTIVE="$REDIS_URL" node --input-type=module - <<'NODE'
+import { Redis } from './packages/destination-redis/node_modules/ioredis/built/index.js'
+
+const redis = new Redis(process.env.REDIS_URL_EFFECTIVE)
+try {
+  await redis.ping()
+} finally {
+  await redis.quit()
+}
+NODE
   fi
 }
 
@@ -86,7 +111,7 @@ PY
 
 echo "=== Metronome → Redis pipeline (foreground) ==="
 echo " Repo:    $ROOT"
-echo " Redis:   localhost:$REDIS_PORT  (compose: docker compose up redis -d)"
+echo " Redis:   $REDIS_URL"
 echo " Webhook: http://127.0.0.1:$WEBHOOK_PORT (POST JSON Metronome events)"
 if [[ -n "${METRONOME_WEBHOOK_URL:-}" ]]; then
   echo " Public:  $METRONOME_WEBHOOK_URL"
