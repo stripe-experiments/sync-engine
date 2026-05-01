@@ -46,7 +46,7 @@ export interface WebhookInput {
   verified: boolean
 }
 
-export type WebhookPushFn = (input: WebhookInput) => void
+export type WebhookPushFn = (input: WebhookInput) => void | Promise<void>
 
 /**
  * Start an HTTP server that receives Metronome webhook events.
@@ -65,7 +65,7 @@ export function startWebhookServer(
 
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => {
+    req.on('end', async () => {
       const body = Buffer.concat(chunks).toString('utf8')
 
       try {
@@ -87,7 +87,7 @@ export function startWebhookServer(
           'metronome: webhook received'
         )
 
-        push({ event, raw_body: body, verified })
+        await push({ event, raw_body: body, verified })
         res.writeHead(200).end('{"received":true}')
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
