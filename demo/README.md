@@ -159,7 +159,7 @@ node --import tsx demo/stripe-to-postgres-live.ts   # live WebSocket mode
 Runs outside the Postgres demos: connectors `source-metronome` and `destination-redis`.
 
 1. **Install / Node**: same as above — Node 24+, `pnpm install` from repo root.
-2. **Redis**: `docker compose up redis -d` (listens on `localhost:56379` per `compose.yml`).
+2. **Redis sidecar**: either run `docker compose up redis -d` (listens on `localhost:56379` per `compose.yml`) or use the packaged demo Compose file below.
 3. **Catalog**: `./packages/source-metronome` publishes stream definitions (`discover`). Curated MVP streams use documented Metronome endpoints: customers, contracts, balances (page snapshots), net_balance, credits, commits, entitlements, and supporting reference streams.
 4. **Pipe locally**:
   ```sh
@@ -177,35 +177,50 @@ Runs outside the Postgres demos: connectors `source-metronome` and `destination-
   4. In another terminal, run `sync-engine start`, choose `metronome`, enable live webhook sync, and enter the same webhook URL, signing secret, and local port `4244`.
 6. **End-to-end script** (`scripts/e2e-metronome-redis.sh`): requires `METRONOME_API_TOKEN`, `METRONOME_CUSTOMER_ID`, plus Redis — see comments in that script. Loads catalog from `demo/metronome-redis-mvp-catalog.json` (override with `CATALOG_PATH`).
 
+### Packaged Redis Sidecar Demo
+
+This is the cleanest story for the Metronome demo:
+
+```sh
+export METRONOME_WEBHOOK_URL="https://webhook.site/<token>"
+docker compose --env-file ../.env -f demo/compose.metronome-redis.yml up --build
+```
+
+That starts:
+
+- `redis`: local read-model sidecar on `localhost:56379`
+- `sync-engine`: Metronome source → Redis destination pipeline, webhook listener on `localhost:4244`
+
+For webhook.site, forward public Metronome deliveries into the local `sync-engine` container:
+
+```sh
+./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
+```
+
+If Metronome delivery signs with a different per-destination secret, leave `SYNC_ENGINE_METRONOME_WEBHOOK_SECRET` unset for the demo relay. Set it only when it matches the exact Metronome webhook destination.
+
 ### PixelDraw UI (`examples/pixel-app`)
 
-Demonstrates the full loop visually: Redis holds Metronome-synced `net_balance` / `entitlements`; each stroke sends ingest to Metronome; **Refresh Credits** re-reads Redis (after webhook refresh, `_synced_at` should jump).
+Demonstrates the full loop visually: Redis holds Metronome-synced `net_balance` / `entitlements`; each stroke sends ingest to Metronome; the UI polls Redis every 2 seconds so credit creates/edits in Metronome show up after Sync Engine handles the webhook.
 
 From **sync-engine** root:
 
-1. **Redis** — `docker compose up redis -d` (port `56379`).
-2. **Sync pipeline** (separate terminal, foreground logs) —
+1. **Redis + Sync Engine pipeline** — either use the packaged Compose command above, or run the components manually:
   ```sh
    export METRONOME_API_TOKEN="…"
-   export METRONOME_WEBHOOK_SECRET="…"  # optional, enables signed Metronome webhook verification
    METRONOME_WEBHOOK_URL="https://webhook.site/<token>" \
-   WEBHOOK_PORT=7070 ./scripts/run-metronome-redis-pipeline.sh
+   WEBHOOK_PORT=4244 ./scripts/run-metronome-redis-pipeline.sh
   ```
-   Uses the same MVP catalog file as `e2e-metronome-redis.sh`. After backfill you should see webhook listener logs. For webhook.site, run `./scripts/webhook-relay.sh <token> http://127.0.0.1:7070` in another terminal so Metronome deliveries are forwarded to the local listener.
-3. **PixelDraw** —
+   Uses the same MVP catalog file as `e2e-metronome-redis.sh`. After backfill you should see webhook listener logs. For webhook.site, run `./scripts/webhook-relay.sh <token> http://127.0.0.1:4244` in another terminal so Metronome deliveries are forwarded to the local listener.
+2. **PixelDraw** —
   ```sh
    cd examples/pixel-app
    npm ci   # or npm install once
-   PORT=4000 npm start
+   npm start
   ```
-   `start.sh` auto-sources `sync-engine/../.env` if present (`ENV_FILE=/path/to/.env` to override); never commit tokens. PixelDraw reads Redis and sends usage to Metronome; it does not terminate webhooks.
-4. **Prove webhook refreshes Redis** — with the pipeline still running:
-  ```sh
-   curl -s -X POST "http://127.0.0.1:7070" -H "Content-Type: application/json" \
-     -d '{"type":"credit.segment.end","id":"evt_demo","customer_id":"<METRONOME_CUSTOMER_ID>"}'
-  ```
-   If `METRONOME_WEBHOOK_SECRET` is set, use Metronome’s real signed delivery through the tunnel instead of this unsigned `curl`, or sign the local request. Wait a few seconds, then in the PixelDraw sidebar click **Refresh Credits** — “Redis sync” time should advance if Metronome returned fresh data.
-5. Optional **automated E2E** (flushes Redis DB 0) — `METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh`.
+   `start.sh` auto-sources `sync-engine/../.env` if present (`ENV_FILE=/path/to/.env` to override); never commit tokens. PixelDraw reads Redis and sends usage to Metronome; it does not do direct Metronome balance reads.
+3. **Prove live update** — create or edit a credit in Metronome for the demo customer. Metronome emits `credit.create` / `credit.edit`; Sync Engine refreshes Metronome state and writes Redis; PixelDraw auto-updates from Redis within a few seconds.
+4. Optional **automated E2E** (flushes Redis DB 0) — `METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh`.
 
 ## Utilities
 

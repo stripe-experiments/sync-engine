@@ -1,6 +1,7 @@
 # Monorepo Dockerfile — build individual images with --target:
 #   docker build --target engine .   → @stripe/sync-engine (stateless HTTP API)
 #   docker build --target service .  → @stripe/sync-service (serve + worker CLI)
+#   docker build --target metronome-redis-demo . → demo pipeline runner
 
 # ---- Manifests stage (shared) ----
 # Extracts all package.json / lockfile / workspace config files via find so no
@@ -89,3 +90,21 @@ ENV BUILD_DATE=$BUILD_DATE
 ENV COMMIT_URL=$COMMIT_URL
 ENTRYPOINT ["node", "--use-env-proxy", "dist/bin/sync-service.js"]
 CMD ["serve", "--temporal-address", "temporal:7233", "--temporal-task-queue", "sync-engine"]
+
+# ===========================================================================
+# Metronome Redis demo runner
+# ===========================================================================
+
+FROM node:24 AS metronome-redis-demo
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable
+
+WORKDIR /app
+
+COPY . ./
+RUN pnpm install --frozen-lockfile
+
+ENTRYPOINT ["./scripts/run-metronome-redis-pipeline.sh"]
