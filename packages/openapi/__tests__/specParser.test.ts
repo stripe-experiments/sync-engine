@@ -330,6 +330,45 @@ describe('SpecParser', () => {
     })
   })
 
+  describe('discoverResourceOperations', () => {
+    it('discovers operation paths from x-stripeOperations metadata', () => {
+      const parser = new SpecParser()
+      const customerSchema = minimalStripeOpenApiSpec.components!.schemas!.customer
+      if ('$ref' in customerSchema) throw new Error('fixture customer schema must be concrete')
+
+      const ops = parser.discoverResourceOperations({
+        ...minimalStripeOpenApiSpec,
+        components: {
+          schemas: {
+            customer: {
+              ...customerSchema,
+              'x-stripeOperations': [
+                {
+                  method_name: 'search',
+                  method_on: 'service',
+                  method_type: 'custom',
+                  operation: 'get',
+                  path: '/v1/customers/search',
+                },
+              ],
+            },
+          },
+        },
+      })
+
+      expect(ops.get('customers')).toEqual([
+        {
+          tableName: 'customers',
+          resourceId: 'customer',
+          methodName: 'search',
+          methodType: 'custom',
+          operation: 'get',
+          path: '/v1/customers/search',
+        },
+      ])
+    })
+  })
+
   describe('auto-discovery via paths (no allowedTables)', () => {
     it('creates tables only for resources with list endpoints', () => {
       const parser = new SpecParser()

@@ -15,6 +15,15 @@ export type OpenApiSchemaObject = {
     oneOf?: OpenApiSchemaOrReference[]
   }
   'x-stripeEvent'?: { type?: string }
+  'x-stripeOperations'?: OpenApiStripeOperation[]
+}
+
+export type OpenApiStripeOperation = {
+  method_name?: string
+  method_on?: string
+  method_type?: string
+  operation?: string
+  path?: string
 }
 
 export type OpenApiReferenceObject = {
