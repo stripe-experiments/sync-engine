@@ -8,13 +8,14 @@
 - core of sync engine is the protocol
     - walk through different message types and what they are for
 - 3 components and their roles
-    - source
-    - destination
-    - engine
+    - source (interface)
+    - destination (interface)
+    - engine (interface)
 - transport agnostic
     - in-memory
     - stdin / out
     - http
+
 - dummy source & destination, simply using the file system
     - let's try it out. echo source | cat destination
     - now add the engine in there, and we get to keep track of the progress of sync
@@ -22,7 +23,19 @@
     - deep dive
 - dummy source | postgres destination
     - deep dive into postgres
+- role of the engine
+    - concept of a single sync run
+    - progress tracking
 - source-stripe | postgres destiination
+- Putting it all together
+    - scheduled sync
+        - start new sync run
+        - 1000 state messages per pipeline_sync requedst
+        - keep going until has_more: false
+        - done
+        - `/pipeline_sync_batch`
+    - real time
+        - `/pipeline_handle_events`
 - Experimental
     - When we started the sync engine, the vision is to become an ubiquitous utility to help user “get your data where you need it, in real time, with a consistent schema”
     - https://docs.google.com/document/d/1S4ELi0jZfCWupoi1m8iS49XmecPHgLOapi0xojtRDeM/edit?tab=t.0#heading=h.ihr1ujskb3dc
@@ -38,4 +51,3 @@
         - locations
         - devices 
 
-        
