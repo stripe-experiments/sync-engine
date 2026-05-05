@@ -50,6 +50,33 @@ mdc: true
 
 ---
 
+## developer workflow
+
+- forward proxy
+  - `source scripts/mitmweb-forward-proxy.sh`
+  - starts proxy on `127.0.0.1:9080`, UI on `127.0.0.1:9081`
+  - exports `HTTP_PROXY` / `HTTPS_PROXY`
+  - adds `NODE_OPTIONS=--use-env-proxy` because Node fetch otherwise bypasses the proxy
+- reverse proxy
+  - `scripts/mitmweb-reverse-proxy.sh http://localhost:3000`
+  - starts proxy on `127.0.0.1:9090`, UI on `127.0.0.1:9091`
+  - forwards traffic to a local engine listening on `:3000`
+- `--engine-mitm`
+  - `sync-service --engine-mitm` starts a local engine on `:3000`
+  - the service then points its engine traffic at `http://127.0.0.1:9090`
+  - this lets you inspect service → engine requests in the reverse proxy UI
+
+```mermaid
+flowchart LR
+  Shell["dev shell"] -->|"HTTP_PROXY / HTTPS_PROXY\nNODE_OPTIONS=--use-env-proxy"| Fwd["mitmweb forward\n:9080\nUI :9081"]
+  Fwd --> Ext["external HTTP APIs"]
+
+  Svc["sync-service --engine-mitm"] -->|"engine requests"| Rev["mitmweb reverse\n:9090\nUI :9091"]
+  Rev -->|"reverse to localhost:3000"| Eng["local engine\nserve.js\n:3000"]
+```
+
+---
+
 ## Sync Message Protocol
 
 <div class="h-[420px] overflow-y-auto pr-4">
