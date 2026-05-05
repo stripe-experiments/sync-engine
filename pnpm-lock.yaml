@@ -164,6 +164,9 @@ importers:
       '@stripe/sync-destination-postgres':
         specifier: workspace:*
         version: link:../../packages/destination-postgres
+      '@stripe/sync-destination-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/destination-sqlite
       '@stripe/sync-hono-zod-openapi':
         specifier: workspace:*
         version: link:../../packages/hono-zod-openapi
@@ -249,6 +252,9 @@ importers:
       '@stripe/sync-destination-postgres':
         specifier: workspace:*
         version: link:../../packages/destination-postgres
+      '@stripe/sync-destination-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/destination-sqlite
       '@stripe/sync-engine':
         specifier: workspace:*
         version: link:../engine
@@ -528,6 +534,18 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.1)
+
+  packages/destination-sqlite:
+    dependencies:
+      '@stripe/sync-logger':
+        specifier: workspace:*
+        version: link:../logger
+      '@stripe/sync-protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/hono-zod-openapi:
     dependencies:

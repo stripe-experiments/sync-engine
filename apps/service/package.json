@@ -32,6 +32,7 @@
     "@scalar/hono-api-reference": "^0.6",
     "@stripe/sync-destination-google-sheets": "workspace:*",
     "@stripe/sync-destination-postgres": "workspace:*",
+    "@stripe/sync-destination-sqlite": "workspace:*",
     "@stripe/sync-engine": "workspace:*",
     "@stripe/sync-hono-zod-openapi": "workspace:*",
     "@stripe/sync-logger": "workspace:*",

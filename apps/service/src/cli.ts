@@ -9,6 +9,7 @@ import { serve } from '@hono/node-server'
 import { createConnectorResolver, startApiServer, type ApiServerHandle } from '@stripe/sync-engine'
 import sourceStripe from '@stripe/sync-source-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
+import destinationSqlite from '@stripe/sync-destination-sqlite'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import { createApp } from './api/app.js'
 import {
@@ -27,7 +28,7 @@ const defaultDataDir = process.env.DATA_DIR ?? `${homedir()}/.stripe-sync`
 
 const resolverPromise = createConnectorResolver({
   sources: { stripe: sourceStripe },
-  destinations: { postgres: destinationPostgres, google_sheets: destinationGoogleSheets },
+  destinations: { postgres: destinationPostgres, sqlite: destinationSqlite, google_sheets: destinationGoogleSheets },
 })
 
 async function buildCliSpec() {
