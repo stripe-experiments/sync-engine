@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ConfiguredCatalog, Destination, Stream } from '@stripe/sync-protocol'
 import { createSourceMessageFactory } from '@stripe/sync-protocol'
-import {
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-  resolveOpenApiSpec,
-  resolveTableName,
-  SpecParser,
-} from '@stripe/sync-openapi'
 import defaultSpec, { configSchema, type Config } from './spec.js'
 import { log } from './logger.js'
 
@@ -19,18 +13,10 @@ export type StripeDestinationDeps = {
   sleep?: (ms: number) => Promise<void>
 }
 
-type StripeCustomer = {
-  id: string
-  object: 'customer'
-  metadata?: Record<string, string>
-  [key: string]: unknown
-}
+type RequestBodyEncoding = 'form' | 'json'
 
-type StripeList<T> = {
-  object: 'list' | 'search_result'
-  data: T[]
-  has_more?: boolean
-}
+type CustomObjectConfig = Config
+type CustomObjectStreamConfig = CustomObjectConfig['streams'][string]
 
 class StripeWriteError extends Error {
   constructor(
@@ -44,44 +30,38 @@ class StripeWriteError extends Error {
 }
 
 const DEFAULT_STRIPE_API_BASE = 'https://api.stripe.com'
-const SUPPORTED_STRIPE_OBJECT = 'customer'
+const SUPPORTED_CUSTOM_OBJECT = 'custom_object'
+const CUSTOM_OBJECT_API_VERSION = 'unsafe-development'
 const msg = createSourceMessageFactory<unknown, Record<string, unknown>, Record<string, unknown>>()
-
-type StripeObjectReadPaths = {
-  tableName: string
-  searchPath: string
-}
 
 function baseUrl(config: Config): string {
   return (config.base_url ?? DEFAULT_STRIPE_API_BASE).replace(/\/$/, '')
 }
 
-function unsupportedObjectError(config: Config): Error | undefined {
-  if (config.object === SUPPORTED_STRIPE_OBJECT) return undefined
-  return new Error(
-    `destination-stripe currently supports writing only Stripe Customers; object "${config.object}" is not supported`
-  )
-}
-
-async function resolveReadPaths(config: Config, fetchFn: FetchFn): Promise<StripeObjectReadPaths> {
-  const unsupported = unsupportedObjectError(config)
-  if (unsupported) throw unsupported
-
-  const resolved = await resolveOpenApiSpec({ apiVersion: config.api_version }, fetchFn)
-  const parser = new SpecParser()
-  const tableName = resolveTableName(config.object, OPENAPI_RESOURCE_TABLE_ALIASES)
-  const operation = parser
-    .discoverResourceOperations(resolved.spec)
-    .get(tableName)
-    ?.find((op) => op.methodName === 'search' && op.operation === 'get')
-
-  if (!operation) {
+function requireCustomObjectConfig(config: Config): CustomObjectConfig {
+  const raw = config as Config & {
+    object?: unknown
+    api_version?: unknown
+    write_mode?: unknown
+    streams?: unknown
+  }
+  if (raw.object !== SUPPORTED_CUSTOM_OBJECT) {
     throw new Error(
-      `OpenAPI spec for ${resolved.apiVersion} does not expose a Customer search operation`
+      `destination-stripe currently supports writing only Stripe Custom Objects; object "${String(raw.object)}" is not supported`
     )
   }
-
-  return { tableName, searchPath: operation.path }
+  if (raw.api_version !== CUSTOM_OBJECT_API_VERSION) {
+    throw new Error(
+      `api_version must be "${CUSTOM_OBJECT_API_VERSION}" for object: "custom_object"`
+    )
+  }
+  if (raw.write_mode !== 'create') {
+    throw new Error('write_mode must be "create" for object: "custom_object"')
+  }
+  if (!isRecord(raw.streams) || Object.keys(raw.streams).length === 0) {
+    throw new Error('streams is required for object: "custom_object"')
+  }
+  return config
 }
 
 function encodeFormData(params: Record<string, unknown>, prefix = ''): string {
@@ -147,7 +127,7 @@ async function requestJson<T>(
   method: string,
   path: string,
   params?: Record<string, unknown>,
-  opts?: { idempotencyKey?: string }
+  opts?: { idempotencyKey?: string; bodyEncoding?: RequestBodyEncoding; stripeVersion?: string }
 ): Promise<T> {
   const url = new URL(path, baseUrl(config))
   let body: string | undefined
@@ -157,13 +137,16 @@ async function requestJson<T>(
       if (value != null) url.searchParams.set(key, String(value))
     }
   } else if (params) {
-    body = encodeFormData(params)
+    body = opts?.bodyEncoding === 'json' ? JSON.stringify(params) : encodeFormData(params)
   }
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${config.api_key}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Stripe-Version': config.api_version,
+    'Stripe-Version': opts?.stripeVersion ?? config.api_version,
+  }
+  if (body !== undefined) {
+    headers['Content-Type'] =
+      opts?.bodyEncoding === 'json' ? 'application/json' : 'application/x-www-form-urlencoded'
   }
   if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey
 
@@ -217,40 +200,6 @@ function getPath(data: Record<string, unknown>, path: string): unknown {
   return current
 }
 
-function setStripeParam(params: Record<string, unknown>, stripeField: string, value: unknown) {
-  if (value == null) return
-  const metadataMatch = /^metadata\[(.+)\]$/.exec(stripeField)
-  if (metadataMatch) {
-    const metadata = (params.metadata ?? {}) as Record<string, string>
-    metadata[metadataMatch[1]!] = String(value)
-    params.metadata = metadata
-    return
-  }
-  params[stripeField] = value
-}
-
-function mappedParams(config: Config, data: Record<string, unknown>): Record<string, unknown> {
-  const params: Record<string, unknown> = {}
-  for (const [stripeField, sourceField] of Object.entries(config.fields)) {
-    setStripeParam(params, stripeField, getPath(data, sourceField))
-  }
-
-  const externalId = getPath(data, config.identity.external_id_field)
-  if (externalId != null) {
-    const metadata = (params.metadata ?? {}) as Record<string, string>
-    metadata[config.identity.metadata_key] = String(externalId)
-    metadata.reverse_etl_source = 'sync-engine'
-    params.metadata = metadata
-  }
-
-  return params
-}
-
-function stringValue(value: unknown): string | undefined {
-  if (value == null || value === '') return undefined
-  return String(value)
-}
-
 function streamFor(catalog: ConfiguredCatalog, name: string): Stream | undefined {
   return catalog.streams.find((configured) => configured.stream.name === name)?.stream
 }
@@ -267,111 +216,174 @@ function idempotencyKey(
   return `reverse-etl-${createHash('sha256').update(raw).digest('hex')}`
 }
 
-function stripeCustomerId(config: Config, data: Record<string, unknown>): string | undefined {
-  const field = config.identity.stripe_id_field
-  return field ? stringValue(getPath(data, field)) : undefined
+type CustomObjectDefinition = Record<string, unknown>
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
-async function findCustomerByExternalId(
-  config: Config,
-  fetchFn: FetchFn,
-  readPaths: StripeObjectReadPaths,
-  externalId: string
-): Promise<StripeCustomer | undefined> {
-  const query = `metadata['${config.identity.metadata_key}']:'${externalId.replace(/'/g, "\\'")}'`
-  const result = await requestJson<StripeList<StripeCustomer>>(
-    config,
-    fetchFn,
-    'GET',
-    readPaths.searchPath,
-    {
-      query,
-      limit: 2,
-    }
-  )
-  if (result.data.length > 1) {
-    throw new Error(
-      `Ambiguous Stripe Customer identity for metadata ${config.identity.metadata_key}=${externalId}`
+function objectRecords(value: unknown): CustomObjectDefinition[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function extractCustomObjectDefinitions(json: unknown): CustomObjectDefinition[] {
+  if (Array.isArray(json)) return objectRecords(json)
+  if (!isRecord(json)) return []
+
+  if (Array.isArray(json.data)) return objectRecords(json.data)
+  if (Array.isArray(json.object_definitions)) return objectRecords(json.object_definitions)
+  return []
+}
+
+function customObjectDefinitionPluralName(definition: CustomObjectDefinition): string | undefined {
+  const pluralName =
+    definition.api_name_plural ?? definition.plural_name ?? definition.pluralName ?? definition.name
+  return typeof pluralName === 'string' ? pluralName : undefined
+}
+
+function customObjectFieldName(field: unknown): string | undefined {
+  if (typeof field === 'string') return field
+  if (!isRecord(field)) return undefined
+  const name = field.name ?? field.key
+  return typeof name === 'string' ? name : undefined
+}
+
+function customObjectFieldNames(definition: CustomObjectDefinition): Set<string> | undefined {
+  const fields = definition.properties ?? definition.fields
+  if (fields == null) return undefined
+
+  if (Array.isArray(fields)) {
+    return new Set(
+      fields.map(customObjectFieldName).filter((name): name is string => Boolean(name))
     )
   }
-  return result.data[0]
+
+  if (isRecord(fields)) {
+    if (Array.isArray(fields.data)) {
+      return new Set(
+        fields.data.map(customObjectFieldName).filter((name): name is string => Boolean(name))
+      )
+    }
+    return new Set(Object.keys(fields))
+  }
+
+  return undefined
 }
 
-async function upsertCustomer(
-  config: Config,
+async function validateCustomObjectConfig(config: Config, fetchFn: FetchFn): Promise<void> {
+  const customConfig = requireCustomObjectConfig(config)
+  const json = await requestJson<unknown>(
+    customConfig,
+    fetchFn,
+    'GET',
+    '/v2/extend/object_definitions',
+    undefined,
+    { stripeVersion: CUSTOM_OBJECT_API_VERSION }
+  )
+  const definitions = extractCustomObjectDefinitions(json)
+  if (definitions.length === 0) {
+    throw new Error(
+      `No Stripe Custom Object definitions found; cannot validate configured custom object streams`
+    )
+  }
+
+  const definitionsByPluralName = new Map(
+    definitions
+      .map((definition) => [customObjectDefinitionPluralName(definition), definition] as const)
+      .filter((entry): entry is [string, CustomObjectDefinition] => entry[0] != null)
+  )
+
+  for (const [streamName, streamConfig] of Object.entries(customConfig.streams)) {
+    const definition = definitionsByPluralName.get(streamConfig.plural_name)
+    if (!definition) {
+      throw new Error(
+        `Stripe Custom Object definition "${streamConfig.plural_name}" for stream "${streamName}" was not found`
+      )
+    }
+
+    const knownFields = customObjectFieldNames(definition)
+    if (knownFields === undefined) continue
+
+    const unknownFields = Object.keys(streamConfig.field_mapping).filter(
+      (field) => !knownFields.has(field)
+    )
+    if (unknownFields.length > 0) {
+      throw new Error(
+        `Stripe Custom Object "${streamConfig.plural_name}" for stream "${streamName}" does not define mapped field(s): ${unknownFields.join(', ')}`
+      )
+    }
+  }
+}
+
+function customObjectFields(
+  streamConfig: CustomObjectStreamConfig,
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {}
+  for (const [customObjectField, sourceField] of Object.entries(streamConfig.field_mapping)) {
+    const value = getPath(data, sourceField)
+    if (value != null) fields[customObjectField] = value
+  }
+  return fields
+}
+
+function customObjectStreamConfig(
+  config: CustomObjectConfig,
+  streamName: string
+): CustomObjectStreamConfig {
+  const streamConfig = config.streams[streamName]
+  if (!streamConfig) {
+    throw new Error(`No Stripe Custom Object stream config found for stream "${streamName}"`)
+  }
+  return streamConfig
+}
+
+async function createCustomObject(
+  config: CustomObjectConfig,
+  streamConfig: CustomObjectStreamConfig,
   fetchFn: FetchFn,
   sleep: (ms: number) => Promise<void>,
-  readPaths: StripeObjectReadPaths,
   stream: Stream | undefined,
   streamName: string,
   data: Record<string, unknown>
-): Promise<StripeCustomer> {
-  const params = mappedParams(config, data)
-  const explicitCustomerId = stripeCustomerId(config, data)
-
-  // Customer writes stay explicit for the MVP. Future object support should derive
-  // create/update endpoints and writable params from OpenAPI operations directly.
-  if (explicitCustomerId) {
-    return await withRetry(
-      () =>
-        requestJson<StripeCustomer>(
-          config,
-          fetchFn,
-          'POST',
-          `/v1/customers/${encodeURIComponent(explicitCustomerId)}`,
-          params,
-          { idempotencyKey: idempotencyKey(stream, streamName, 'update', data) }
-        ),
-      { maxRetries: config.max_retries, sleep, label: `update customer ${explicitCustomerId}` }
-    )
-  }
-
-  const externalId = stringValue(getPath(data, config.identity.external_id_field))
-  if (!externalId) {
-    throw new Error(`Missing external identity field "${config.identity.external_id_field}"`)
-  }
-
-  const existing = await withRetry(
-    () => findCustomerByExternalId(config, fetchFn, readPaths, externalId),
+): Promise<Record<string, unknown>> {
+  const params = { fields: customObjectFields(streamConfig, data) }
+  const pluralName = encodeURIComponent(streamConfig.plural_name)
+  const idemKey = idempotencyKey(stream, streamName, 'create', data)
+  const record = await withRetry(
+    () =>
+      requestJson<Record<string, unknown>>(
+        config,
+        fetchFn,
+        'POST',
+        `/v2/extend/objects/${pluralName}`,
+        params,
+        {
+          bodyEncoding: 'json',
+          stripeVersion: CUSTOM_OBJECT_API_VERSION,
+          idempotencyKey: idemKey,
+        }
+      ),
     {
       maxRetries: config.max_retries,
       sleep,
-      label: `search customer ${externalId}`,
+      label: `create custom object ${streamConfig.plural_name}`,
     }
   )
-  if (existing) {
-    return await withRetry(
-      () =>
-        requestJson<StripeCustomer>(
-          config,
-          fetchFn,
-          'POST',
-          `/v1/customers/${encodeURIComponent(existing.id)}`,
-          params,
-          { idempotencyKey: idempotencyKey(stream, streamName, 'update', data) }
-        ),
-      { maxRetries: config.max_retries, sleep, label: `update customer ${existing.id}` }
-    )
+  if (typeof record.id !== 'string') {
+    throw new Error(`Stripe Custom Object create response did not include a string id`)
   }
-
-  if (!config.allow_create) {
-    throw new Error(
-      `No Stripe Customer found for external identity ${externalId}; allow_create is false`
-    )
-  }
-
-  return await withRetry(
-    () =>
-      requestJson<StripeCustomer>(config, fetchFn, 'POST', '/v1/customers', params, {
-        idempotencyKey: idempotencyKey(stream, streamName, 'create', data),
-      }),
-    { maxRetries: config.max_retries, sleep, label: `create customer ${externalId}` }
-  )
+  return record
 }
 
 function streamError(stream: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return msg.stream_status({ stream, status: 'error', error: message })
+}
+
+function connectionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return msg.connection_status({ status: 'failed', message })
 }
 
 export function createStripeDestination(deps: StripeDestinationDeps = {}): Destination<Config> {
@@ -386,8 +398,7 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
 
     async *check({ config }) {
       try {
-        await resolveReadPaths(config, fetchFn)
-        await requestJson(config, fetchFn, 'GET', '/v1/account')
+        await validateCustomObjectConfig(config, fetchFn)
         yield msg.connection_status({ status: 'succeeded' })
       } catch (err) {
         yield msg.connection_status({
@@ -399,27 +410,36 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
 
     async *write({ config, catalog }, $stdin) {
       const failedStreams = new Set<string>()
-      let readPaths: StripeObjectReadPaths | undefined
       let setupError: unknown
-
-      try {
-        readPaths = await resolveReadPaths(config, fetchFn)
-      } catch (err) {
-        setupError = err
-      }
+      let setupChecked = false
 
       for await (const input of $stdin) {
+        if (!setupChecked) {
+          setupChecked = true
+          try {
+            await validateCustomObjectConfig(config, fetchFn)
+          } catch (err) {
+            setupError = err
+            yield connectionError(err)
+            for (const configured of catalog.streams) {
+              failedStreams.add(configured.stream.name)
+              yield streamError(configured.stream.name, err)
+            }
+          }
+        }
+
         if (input.type === 'record') {
           const { stream, data } = input.record
           if (failedStreams.has(stream)) continue
 
           try {
             if (setupError) throw setupError
-            await upsertCustomer(
-              config,
+            const customConfig = requireCustomObjectConfig(config)
+            await createCustomObject(
+              customConfig,
+              customObjectStreamConfig(customConfig, stream),
               fetchFn,
               sleep,
-              readPaths!,
               streamFor(catalog, stream),
               stream,
               data as Record<string, unknown>
@@ -431,6 +451,12 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
             yield streamError(stream, err)
           }
         } else if (input.type === 'source_state') {
+          if (setupError) {
+            continue
+          }
+          if (input.source_state.state_type === 'global' && failedStreams.size > 0) {
+            continue
+          }
           if (
             input.source_state.state_type === 'stream' &&
             failedStreams.has(input.source_state.stream)

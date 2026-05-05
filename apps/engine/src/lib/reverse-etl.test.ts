@@ -33,13 +33,12 @@ function stripeResponse(json: unknown, init?: ResponseInit): Response {
 }
 
 describe('reverse ETL', () => {
-  it('syncs Postgres customer rows into Stripe Customer upserts through pipeline_sync_batch', async () => {
+  it('advances source_state through append-only Custom Object creates', async () => {
     const rows = [
       {
-        id: 'crm_123',
-        email: 'jenny@example.com',
-        name: 'Jenny Rosen',
-        plan: 'enterprise',
+        id: 'device_123',
+        name: 'living room tv',
+        time_from_harvest: '2 days',
         updated_at: '2026-01-01T00:00:00.000Z',
       },
     ]
@@ -52,10 +51,13 @@ describe('reverse ETL', () => {
           if (text.includes('information_schema.columns')) {
             return queryResult([
               { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
-              { column_name: 'email', data_type: 'text', is_nullable: 'YES' },
-              { column_name: 'name', data_type: 'text', is_nullable: 'YES' },
-              { column_name: 'plan', data_type: 'text', is_nullable: 'YES' },
-              { column_name: 'updated_at', data_type: 'timestamp with time zone', is_nullable: 'NO' },
+              { column_name: 'name', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'time_from_harvest', data_type: 'text', is_nullable: 'YES' },
+              {
+                column_name: 'updated_at',
+                data_type: 'timestamp with time zone',
+                is_nullable: 'NO',
+              },
             ])
           }
 
@@ -70,13 +72,23 @@ describe('reverse ETL', () => {
       sleep: async () => {},
       fetch: async (url, init) => {
         stripeRequests.push({ url: String(url), init })
-        if (String(url).includes('/v1/customers/search')) {
-          return stripeResponse({ object: 'search_result', data: [] })
+        if (String(url).endsWith('/v2/extend/object_definitions')) {
+          return stripeResponse({
+            data: [
+              {
+                id: 'cobjdef_matcha',
+                api_name_plural: 'matcha_objects',
+                properties: {
+                  name: { type: 'string' },
+                  time_from_harvest: { type: 'string' },
+                },
+              },
+            ],
+          })
         }
         return stripeResponse({
-          id: 'cus_123',
-          object: 'customer',
-          metadata: { crm_customer_id: 'crm_123' },
+          id: 'objrec_test_123',
+          object: 'v2.extend.objects.matcha_object',
         })
       },
     })
@@ -88,7 +100,7 @@ describe('reverse ETL', () => {
           type: 'postgres',
           postgres: {
             url: 'postgres://example',
-            table: 'crm_customers',
+            table: 'devices',
             primary_key: ['id'],
             cursor_field: 'updated_at',
             page_size: 100,
@@ -98,40 +110,342 @@ describe('reverse ETL', () => {
           type: 'stripe',
           stripe: {
             api_key: 'sk_test_123',
-            api_version: '2026-03-25.dahlia',
+            api_version: 'unsafe-development',
             base_url: 'https://stripe.test',
-            object: 'customer',
-            mode: 'upsert',
-            allow_create: true,
-            identity: {
-              external_id_field: 'id',
-              metadata_key: 'crm_customer_id',
-            },
-            fields: {
-              email: 'email',
-              name: 'name',
-              'metadata[plan]': 'plan',
+            object: 'custom_object',
+            write_mode: 'create',
+            streams: {
+              devices: {
+                plural_name: 'matcha_objects',
+                field_mapping: {
+                  name: 'name',
+                  time_from_harvest: 'time_from_harvest',
+                },
+              },
             },
           },
         },
-        streams: [{ name: 'crm_customers', sync_mode: 'incremental' }],
+        streams: [{ name: 'devices', sync_mode: 'incremental' }],
       },
-      { run_id: 'run_reverse_etl_test' }
+      { run_id: 'run_reverse_etl_custom_object_create_test' }
     )
 
-    expect(result.status).toBe('started')
-    expect(result.run_progress.derived.total_record_count).toBe(1)
-    expect(result.run_progress.derived.total_state_count).toBe(1)
-    expect(result.ending_state?.source.streams.crm_customers).toEqual({
+    expect(result.ending_state?.source.streams.devices).toEqual({
       cursor: '2026-01-01T00:00:00.000Z',
-      primary_key: ['crm_123'],
+      primary_key: ['device_123'],
     })
     expect(stripeRequests.map((request) => request.url)).toEqual([
-      'https://stripe.test/v1/customers/search?query=metadata%5B%27crm_customer_id%27%5D%3A%27crm_123%27&limit=2',
-      'https://stripe.test/v1/customers',
+      'https://stripe.test/v2/extend/object_definitions',
+      'https://stripe.test/v2/extend/objects/matcha_objects',
     ])
     expect(stripeRequests[1]!.init?.body).toBe(
-      'email=jenny%40example.com&name=Jenny%20Rosen&metadata%5Bplan%5D=enterprise&metadata%5Bcrm_customer_id%5D=crm_123&metadata%5Breverse_etl_source%5D=sync-engine'
+      JSON.stringify({ fields: { name: 'living room tv', time_from_harvest: '2 days' } })
     )
+  })
+
+  it('creates a new Custom Object record when the same source row changes twice', async () => {
+    let rows = [
+      {
+        id: 'device_123',
+        name: 'living room tv',
+        time_from_harvest: '2 days',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+    const stripeRequests: Array<{ url: string; init?: RequestInit }> = []
+
+    const source = createPostgresSource({
+      now: () => new Date('2026-05-03T00:00:00.000Z'),
+      createPool: () => ({
+        async query(text: string, values?: unknown[]) {
+          if (text.includes('information_schema.columns')) {
+            return queryResult([
+              { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'name', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'time_from_harvest', data_type: 'text', is_nullable: 'YES' },
+              {
+                column_name: 'updated_at',
+                data_type: 'timestamp with time zone',
+                is_nullable: 'NO',
+              },
+            ])
+          }
+
+          const cursor = values && values.length > 1 ? String(values[0]) : undefined
+          return queryResult(rows.filter((row) => !cursor || row.updated_at > cursor))
+        },
+        async end() {},
+      }),
+    })
+
+    const destination = createStripeDestination({
+      sleep: async () => {},
+      fetch: async (url, init) => {
+        stripeRequests.push({ url: String(url), init })
+        if (String(url).endsWith('/v2/extend/object_definitions')) {
+          return stripeResponse({
+            data: [
+              {
+                id: 'cobjdef_matcha',
+                api_name_plural: 'matcha_objects',
+                properties: {
+                  name: { type: 'string' },
+                  time_from_harvest: { type: 'string' },
+                },
+              },
+            ],
+          })
+        }
+        return stripeResponse({
+          id: `objrec_test_${stripeRequests.length}`,
+          object: 'v2.extend.objects.matcha_object',
+        })
+      },
+    })
+
+    const pipeline = {
+      source: {
+        type: 'postgres',
+        postgres: {
+          url: 'postgres://example',
+          table: 'devices',
+          primary_key: ['id'],
+          cursor_field: 'updated_at',
+          page_size: 100,
+        },
+      },
+      destination: {
+        type: 'stripe',
+        stripe: {
+          api_key: 'sk_test_123',
+          api_version: 'unsafe-development',
+          base_url: 'https://stripe.test',
+          object: 'custom_object',
+          write_mode: 'create',
+          streams: {
+            devices: {
+              plural_name: 'matcha_objects',
+              field_mapping: {
+                name: 'name',
+                time_from_harvest: 'time_from_harvest',
+              },
+            },
+          },
+        },
+      },
+      streams: [{ name: 'devices', sync_mode: 'incremental' as const }],
+    }
+
+    const engine = await createEngine(makeResolver(source, destination))
+    const first = await engine.pipeline_sync_batch(pipeline, {
+      run_id: 'run_reverse_etl_custom_object_create_twice_test',
+    })
+
+    rows = [
+      {
+        id: 'device_123',
+        name: 'living room tv',
+        time_from_harvest: '3 days',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    ]
+    const second = await engine.pipeline_sync_batch(pipeline, {
+      state: first.ending_state,
+      run_id: 'run_reverse_etl_custom_object_create_twice_test',
+    })
+
+    expect(first.ending_state?.source.streams.devices).toEqual({
+      cursor: '2026-01-01T00:00:00.000Z',
+      primary_key: ['device_123'],
+    })
+    expect(second.ending_state?.source.streams.devices).toEqual({
+      cursor: '2026-01-02T00:00:00.000Z',
+      primary_key: ['device_123'],
+    })
+    expect(stripeRequests.map((request) => request.url)).toEqual([
+      'https://stripe.test/v2/extend/object_definitions',
+      'https://stripe.test/v2/extend/objects/matcha_objects',
+      'https://stripe.test/v2/extend/object_definitions',
+      'https://stripe.test/v2/extend/objects/matcha_objects',
+    ])
+    expect(stripeRequests[1]!.init?.body).toBe(
+      JSON.stringify({ fields: { name: 'living room tv', time_from_harvest: '2 days' } })
+    )
+    expect(stripeRequests[3]!.init?.body).toBe(
+      JSON.stringify({ fields: { name: 'living room tv', time_from_harvest: '3 days' } })
+    )
+  })
+
+  it('withholds source_state when Custom Object create fails', async () => {
+    const rows = [
+      {
+        id: 'device_123',
+        name: 'living room tv',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+
+    const source = createPostgresSource({
+      now: () => new Date('2026-05-03T00:00:00.000Z'),
+      createPool: () => ({
+        async query(text: string, values?: unknown[]) {
+          if (text.includes('information_schema.columns')) {
+            return queryResult([
+              { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'name', data_type: 'text', is_nullable: 'NO' },
+              {
+                column_name: 'updated_at',
+                data_type: 'timestamp with time zone',
+                is_nullable: 'NO',
+              },
+            ])
+          }
+          const cursor = values && values.length > 1 ? String(values[0]) : undefined
+          return queryResult(rows.filter((row) => !cursor || row.updated_at > cursor))
+        },
+        async end() {},
+      }),
+    })
+
+    const destination = createStripeDestination({
+      sleep: async () => {},
+      fetch: async (url) => {
+        if (String(url).endsWith('/v2/extend/object_definitions')) {
+          return stripeResponse({
+            data: [
+              {
+                id: 'cobjdef_matcha',
+                api_name_plural: 'matcha_objects',
+                properties: { name: { type: 'string' } },
+              },
+            ],
+          })
+        }
+        return stripeResponse({ error: { message: 'custom object invalid' } }, { status: 400 })
+      },
+    })
+
+    const engine = await createEngine(makeResolver(source, destination))
+    const result = await engine.pipeline_sync_batch(
+      {
+        source: {
+          type: 'postgres',
+          postgres: {
+            url: 'postgres://example',
+            table: 'devices',
+            primary_key: ['id'],
+            cursor_field: 'updated_at',
+            page_size: 100,
+          },
+        },
+        destination: {
+          type: 'stripe',
+          stripe: {
+            api_key: 'sk_test_123',
+            api_version: 'unsafe-development',
+            base_url: 'https://stripe.test',
+            object: 'custom_object',
+            write_mode: 'create',
+            streams: {
+              devices: {
+                plural_name: 'matcha_objects',
+                field_mapping: {
+                  name: 'name',
+                },
+              },
+            },
+          },
+        },
+        streams: [{ name: 'devices', sync_mode: 'incremental' }],
+      },
+      { run_id: 'run_reverse_etl_custom_object_create_failure_test' }
+    )
+
+    expect(result.status).toBe('failed')
+    expect(result.ending_state?.source.streams.devices).toBeUndefined()
+  })
+
+  it('withholds source_state when Custom Object setup fails before records', async () => {
+    const source: Source = {
+      async *spec() {
+        yield { type: 'spec', spec: { config: {} } }
+      },
+      async *check() {
+        yield { type: 'connection_status', connection_status: { status: 'succeeded' } }
+      },
+      async *discover() {
+        yield {
+          type: 'catalog',
+          catalog: {
+            streams: [
+              {
+                name: 'devices',
+                primary_key: [['id']],
+                newer_than_field: 'updated_at',
+                json_schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    updated_at: { type: 'string' },
+                  },
+                },
+              },
+            ],
+          },
+        }
+      },
+      async *read() {
+        yield {
+          type: 'source_state',
+          source_state: {
+            state_type: 'stream',
+            stream: 'devices',
+            data: { cursor: '2026-01-01T00:00:00.000Z', primary_key: ['device_123'] },
+          },
+        }
+        yield {
+          type: 'source_state',
+          source_state: {
+            state_type: 'global',
+            data: { cursor: 'global_cursor_after_setup_failure' },
+          },
+        }
+      },
+    }
+    const destination = createStripeDestination({
+      fetch: async () => stripeResponse({ data: [] }),
+    })
+    const engine = await createEngine(makeResolver(source, destination))
+
+    const result = await engine.pipeline_sync_batch(
+      {
+        source: { type: 'state_only', state_only: {} },
+        destination: {
+          type: 'stripe',
+          stripe: {
+            api_key: 'sk_test_123',
+            api_version: 'unsafe-development',
+            base_url: 'https://stripe.test',
+            object: 'custom_object',
+            write_mode: 'create',
+            streams: {
+              devices: {
+                plural_name: 'matcha_objects',
+                field_mapping: {
+                  name: 'name',
+                },
+              },
+            },
+          },
+        },
+        streams: [{ name: 'devices', sync_mode: 'incremental' }],
+      },
+      { run_id: 'run_reverse_etl_custom_object_setup_failure_test' }
+    )
+
+    expect(result.status).toBe('failed')
+    expect(result.run_progress.derived.total_state_count).toBe(0)
+    expect(result.ending_state?.source.streams.devices).toBeUndefined()
+    expect(result.ending_state?.source.global).toEqual({})
   })
 })
