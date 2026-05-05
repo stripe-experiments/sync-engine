@@ -121,6 +121,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pipeline_handle_events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand events to the source
+         * @description Streams the supplied events into the source connector's `handle_events` hook and returns the derived NDJSON messages (records, logs, traces). Stateless — no checkpointing or time limits. Fails 400 if the source does not implement `handle_events`.
+         */
+        post: operations["pipeline_handle_events"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pipeline_write": {
         parameters: {
             query?: never;
@@ -1057,6 +1077,45 @@ export interface operations {
         };
         responses: {
             /** @description NDJSON stream of sync messages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": components["schemas"]["Message"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: unknown;
+                    };
+                };
+            };
+        };
+    };
+    pipeline_handle_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    pipeline: components["schemas"]["PipelineConfig"];
+                    /** @description Array of source_input messages wrapping the events to deliver to the source. Plain (un-wrapped) messages are forwarded as-is. */
+                    stdin: components["schemas"]["Message"][];
+                };
+            };
+        };
+        responses: {
+            /** @description NDJSON stream of messages emitted by handle_events */
             200: {
                 headers: {
                     [name: string]: unknown;

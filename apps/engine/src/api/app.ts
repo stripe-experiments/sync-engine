@@ -186,6 +186,15 @@ export async function createApp(resolver: ConnectorResolver) {
     }),
   })
 
+  const handleEventsRequestBody = z.object({
+    pipeline: TypedPipelineConfig,
+    stdin: z.array(MessageSchema).meta({
+      description:
+        'Array of source_input messages wrapping the events to deliver to the source. ' +
+        'Plain (un-wrapped) messages are forwarded as-is.',
+    }),
+  })
+
   const errorResponse = {
     description: 'Invalid params',
     content: {
@@ -404,6 +413,57 @@ export async function createApp(resolver: ConnectorResolver) {
     return ndjsonResponse(logApiStream('Engine API /pipeline_read', output, context, startedAt), {
       signal: ac.signal,
     })
+  })
+
+  const pipelineHandleEventsRoute = createRoute({
+    operationId: 'pipeline_handle_events',
+    method: 'post',
+    path: '/pipeline_handle_events',
+    tags: ['Stateless Sync API'],
+    summary: 'Hand events to the source',
+    description:
+      'Streams the supplied events into the source connector\'s `handle_events` hook ' +
+      'and returns the derived NDJSON messages (records, logs, traces). Stateless — ' +
+      'no checkpointing or time limits. Fails 400 if the source does not implement ' +
+      '`handle_events`.',
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: handleEventsRequestBody } },
+    },
+    responses: {
+      200: {
+        description: 'NDJSON stream of messages emitted by handle_events',
+        content: { 'application/x-ndjson': { schema: ndjsonRef.Message } },
+      },
+      400: errorResponse,
+    },
+  })
+  app.openapi(pipelineHandleEventsRoute, async (c) => {
+    const { pipeline, stdin } = c.req.valid('json')
+
+    const input = (async function* () {
+      for (const m of stdin) {
+        const msg = MessageSchema.parse(m)
+        yield msg.type === 'source_input' ? msg.source_input : msg
+      }
+    })()
+
+    const context = { path: '/pipeline_handle_events', ...syncRequestContext(pipeline) }
+    const startedAt = Date.now()
+    log.info(context, 'Engine API /pipeline_handle_events started')
+
+    const onDisconnect = () =>
+      log.warn(
+        { elapsed_ms: Date.now() - startedAt, event: 'SYNC_CLIENT_DISCONNECT' },
+        'SYNC_CLIENT_DISCONNECT'
+      )
+    const ac = createConnectionAbort(c, onDisconnect)
+
+    const output = engine.pipeline_handle_events(pipeline, input)
+    return ndjsonResponse(
+      logApiStream('Engine API /pipeline_handle_events', output, context, startedAt),
+      { signal: ac.signal }
+    )
   })
 
   const pipelineWriteRoute = createRoute({
