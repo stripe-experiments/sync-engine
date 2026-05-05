@@ -7,14 +7,6 @@ mdc: true
 
 ## Sync Engine
 
-- source / destination sync runtime
-- one protocol for backfill and realtime
-- pluggable connectors, reusable engine
-
----
-
-## sync engine is ...
-
 - a message-driven runtime for moving data between systems
 - transport agnostic
 - supports both pull (iterable) and push (events)
