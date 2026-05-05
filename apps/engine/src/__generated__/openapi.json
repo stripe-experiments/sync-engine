@@ -2123,7 +2123,7 @@
           "run_progress",
           "request_progress"
         ],
-        "description": "Terminal message signaling end of this request."
+        "description": "Deprecated terminal message signaling end of this request. Prefer explicit request/response results via pipeline_sync_batch."
       },
       "SyncState": {
         "type": "object",

@@ -39,7 +39,7 @@ export async function pipelineBackfill(
     operationCount++
 
     if (!result.eof.has_more) {
-      if (result.eof.run_progress.derived.status === 'failed') {
+      if (result.eof.status === 'failed') {
         const message = result.eof.run_progress.connection_status?.message ?? 'Sync failed'
         throw ApplicationFailure.nonRetryable(message, 'SyncFailed')
       }
