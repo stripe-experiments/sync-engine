@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { ConfiguredCatalog, Message } from '@stripe/sync-protocol'
+import { BUNDLED_API_VERSION } from '@stripe/sync-openapi'
 import { createStripeDestination } from './index.js'
 import spec, { configSchema } from './spec.js'
 
@@ -62,11 +63,41 @@ const customObjectConfig = configSchema.parse({
   },
 })
 
+const stripeObjectConfig = configSchema.parse({
+  api_key: 'sk_test_123',
+  api_version: BUNDLED_API_VERSION,
+  base_url: 'https://stripe.test',
+  object: 'stripe_object',
+  write_mode: 'create',
+  streams: {
+    customers: {
+      field_mapping: {
+        email: 'email',
+        name: 'name',
+      },
+    },
+  },
+})
+
 const catalog: ConfiguredCatalog = {
   streams: [
     {
       stream: {
         name: 'crm_customers',
+        primary_key: [['id']],
+        newer_than_field: 'updated_at',
+      },
+      sync_mode: 'incremental',
+      destination_sync_mode: 'append',
+    },
+  ],
+}
+
+const stripeObjectCatalog: ConfiguredCatalog = {
+  streams: [
+    {
+      stream: {
+        name: 'customers',
         primary_key: [['id']],
         newer_than_field: 'updated_at',
       },
@@ -111,7 +142,7 @@ describe('destination-stripe', () => {
         connection_status: {
           status: 'failed',
           message:
-            'destination-stripe currently supports writing only Stripe Custom Objects; object "invoice" is not supported',
+            'destination-stripe supports object: "custom_object" or "stripe_object"; object "invoice" is not supported',
         },
       },
       {
@@ -120,22 +151,31 @@ describe('destination-stripe', () => {
           stream: 'crm_customers',
           status: 'error',
           error:
-            'destination-stripe currently supports writing only Stripe Custom Objects; object "invoice" is not supported',
+            'destination-stripe supports object: "custom_object" or "stripe_object"; object "invoice" is not supported',
         },
       },
     ])
   })
 
-  it('rejects non-Custom Object config through the JSON Schema path', () => {
+  it('validates Custom Object and Stripe object config through the JSON Schema path', () => {
     const jsonSchemaConfig = z.fromJSONSchema(spec.config)
     const { streams: _streams, ...missingStreamsConfig } = customObjectConfig
 
     expect(jsonSchemaConfig.safeParse(customObjectConfig).success).toBe(true)
+    expect(jsonSchemaConfig.safeParse(stripeObjectConfig).success).toBe(true)
     for (const invalidConfig of [
       missingStreamsConfig,
       { ...customObjectConfig, api_version: '2026-03-25.dahlia' },
       { ...customObjectConfig, object: 'customer' },
       { ...customObjectConfig, write_mode: 'upsert' },
+      { ...stripeObjectConfig, api_version: 'unsafe-development' },
+      { ...stripeObjectConfig, object: 'customer' },
+      { ...stripeObjectConfig, streams: { customers: {} } },
+      {
+        ...stripeObjectConfig,
+        streams: { customers: { field_mapping: { email: 'email' } } },
+        mode: 'upsert',
+      },
       { ...customObjectConfig, identity: { external_id_field: 'id' } },
       { ...customObjectConfig, fields: { email: 'email' } },
       { ...customObjectConfig, plural_name: 'loyalty_cards' },
@@ -146,6 +186,91 @@ describe('destination-stripe', () => {
       expect(jsonSchemaConfig.safeParse(invalidConfig).success).toBe(false)
       expect(configSchema.safeParse(invalidConfig).success).toBe(false)
     }
+  })
+
+  it('creates a regular Stripe object with mapped form parameters', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    const destination = createStripeDestination({
+      sleep: async () => {},
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), init })
+        return response({ id: 'cus_123', object: 'customer' })
+      },
+    })
+
+    const messages = await collect(
+      destination.write({ config: stripeObjectConfig, catalog: stripeObjectCatalog }, [
+        {
+          type: 'record',
+          record: {
+            stream: 'customers',
+            data: {
+              id: 'crm_123',
+              email: 'jenny@example.com',
+              name: 'Jenny Rosen',
+              plan: 'enterprise',
+              updated_at: '2026-01-01T00:00:00.000Z',
+            },
+            emitted_at: '2026-05-03T00:00:00.000Z',
+          },
+        },
+        {
+          type: 'source_state',
+          source_state: {
+            state_type: 'stream',
+            stream: 'customers',
+            data: { cursor: '2026-01-01T00:00:00.000Z', primary_key: ['crm_123'] },
+          },
+        },
+      ])
+    )
+
+    expect(messages.map((message) => message.type)).toEqual(['record', 'source_state'])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.url).toBe('https://stripe.test/v1/customers')
+    expect(requests[0]!.init?.method).toBe('POST')
+    expect(Object.fromEntries(new URLSearchParams(String(requests[0]!.init?.body)))).toEqual({
+      email: 'jenny@example.com',
+      name: 'Jenny Rosen',
+    })
+    expect((requests[0]!.init?.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/x-www-form-urlencoded'
+    )
+    expect((requests[0]!.init?.headers as Record<string, string>)['Stripe-Version']).toBe(
+      BUNDLED_API_VERSION
+    )
+    expect((requests[0]!.init?.headers as Record<string, string>)['Idempotency-Key']).toMatch(
+      /^reverse-etl-/
+    )
+  })
+
+  it('fails regular Stripe object check for unknown mapped create parameters', async () => {
+    const destination = createStripeDestination({
+      fetch: async () => response({ id: 'unexpected' }),
+    })
+    const invalidConfig = configSchema.parse({
+      ...stripeObjectConfig,
+      streams: {
+        customers: {
+          field_mapping: {
+            not_a_customer_param: 'email',
+          },
+        },
+      },
+    })
+
+    const messages = await collect(destination.check({ config: invalidConfig }))
+
+    expect(messages).toEqual([
+      {
+        type: 'connection_status',
+        connection_status: {
+          status: 'failed',
+          message:
+            'Stripe object stream "customers" does not define create parameter(s): not_a_customer_param',
+        },
+      },
+    ])
   })
 
   it('checks Custom Object definitions with the unsafe-development version header', async () => {

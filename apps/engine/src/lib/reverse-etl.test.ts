@@ -33,6 +33,101 @@ function stripeResponse(json: unknown, init?: ResponseInit): Response {
 }
 
 describe('reverse ETL', () => {
+  it('advances source_state through insert-only regular Stripe object creates', async () => {
+    const rows = [
+      {
+        id: 'crm_123',
+        email: 'jenny@example.com',
+        full_name: 'Jenny Rosen',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+    const stripeRequests: Array<{ url: string; init?: RequestInit }> = []
+
+    const source = createPostgresSource({
+      now: () => new Date('2026-05-03T00:00:00.000Z'),
+      createPool: () => ({
+        async query(text: string, values?: unknown[]) {
+          if (text.includes('information_schema.columns')) {
+            return queryResult([
+              { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'email', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'full_name', data_type: 'text', is_nullable: 'NO' },
+              {
+                column_name: 'updated_at',
+                data_type: 'timestamp with time zone',
+                is_nullable: 'NO',
+              },
+            ])
+          }
+
+          const cursor = values && values.length > 1 ? String(values[0]) : undefined
+          return queryResult(rows.filter((row) => !cursor || row.updated_at > cursor))
+        },
+        async end() {},
+      }),
+    })
+
+    const destination = createStripeDestination({
+      sleep: async () => {},
+      fetch: async (url, init) => {
+        stripeRequests.push({ url: String(url), init })
+        return stripeResponse({
+          id: 'cus_123',
+          object: 'customer',
+        })
+      },
+    })
+
+    const engine = await createEngine(makeResolver(source, destination))
+    const result = await engine.pipeline_sync_batch(
+      {
+        source: {
+          type: 'postgres',
+          postgres: {
+            url: 'postgres://example',
+            table: 'customers',
+            primary_key: ['id'],
+            cursor_field: 'updated_at',
+            page_size: 100,
+          },
+        },
+        destination: {
+          type: 'stripe',
+          stripe: {
+            api_key: 'sk_test_123',
+            api_version: '2026-03-25.dahlia',
+            base_url: 'https://stripe.test',
+            object: 'stripe_object',
+            write_mode: 'create',
+            streams: {
+              customers: {
+                field_mapping: {
+                  email: 'email',
+                  name: 'full_name',
+                },
+              },
+            },
+          },
+        },
+        streams: [{ name: 'customers', sync_mode: 'incremental' }],
+      },
+      { run_id: 'run_reverse_etl_stripe_object_create_test' }
+    )
+
+    expect(result.ending_state?.source.streams.customers).toEqual({
+      cursor: '2026-01-01T00:00:00.000Z',
+      primary_key: ['crm_123'],
+    })
+    expect(stripeRequests.map((request) => request.url)).toEqual([
+      'https://stripe.test/v1/customers',
+    ])
+    expect(Object.fromEntries(new URLSearchParams(String(stripeRequests[0]!.init?.body)))).toEqual({
+      email: 'jenny@example.com',
+      name: 'Jenny Rosen',
+    })
+  })
+
   it('advances source_state through append-only Custom Object creates', async () => {
     const rows = [
       {
