@@ -19,7 +19,7 @@ import type {
   PipelineConfig,
   SyncOutput,
 } from '@stripe/sync-protocol'
-import { withAbortOnReturn } from '@stripe/sync-protocol'
+import { Message as MessageSchema, withAbortOnReturn } from '@stripe/sync-protocol'
 
 // openapi-typescript does not model NDJSON streaming responses correctly.
 // We use targeted casts on the POST calls for streaming endpoints.
@@ -61,6 +61,12 @@ export function createRemoteEngine(engineUrl: string): Engine {
       throw new Error(`Engine ${path} failed (${response.status}): ${text}`)
     }
     return response
+  }
+
+  function toRemoteInputMessage(input: unknown): Message {
+    const parsed = MessageSchema.safeParse(input)
+    if (parsed.success) return parsed.data
+    return { type: 'source_input', source_input: input }
   }
 
   return {
@@ -132,7 +138,7 @@ export function createRemoteEngine(engineUrl: string): Engine {
           let stdin: unknown[] | undefined
           if (input) {
             stdin = []
-            for await (const m of input) stdin.push(m)
+            for await (const m of input) stdin.push(toRemoteInputMessage(m))
           }
           const res = await post(
             '/pipeline_read',
@@ -174,7 +180,7 @@ export function createRemoteEngine(engineUrl: string): Engine {
           let stdin: unknown[] | undefined
           if (input) {
             stdin = []
-            for await (const m of input) stdin.push(m)
+            for await (const m of input) stdin.push(toRemoteInputMessage(m))
           }
           const res = await post(
             '/pipeline_sync',

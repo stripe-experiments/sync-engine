@@ -16,6 +16,7 @@ const engineMsg = createEngineMessageFactory()
 import { verifyWebhookSignature, WebhookSignatureError } from '@stripe/sync-source-stripe'
 import { ndjsonResponse } from '@stripe/sync-ts-cli/ndjson'
 import type { WorkflowClient } from '@temporalio/client'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import os from 'node:os'
 import { z } from 'zod'
 import type { Pipeline } from '../lib/createSchemas.js'
@@ -48,6 +49,31 @@ function configPayload(envelope: {
   [key: string]: unknown
 }): Record<string, unknown> {
   return (envelope[envelope.type] as Record<string, unknown>) ?? {}
+}
+
+function verifyMetronomeWebhookSignature(
+  body: string,
+  signature: string,
+  date: string,
+  secret: string
+) {
+  const timestamp = Date.parse(date)
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('invalid Metronome Date header')
+  }
+  if (Math.abs(Date.now() - timestamp) > 5 * 60 * 1000) {
+    throw new Error('stale Metronome webhook Date header')
+  }
+
+  const expected = createHmac('sha256', secret).update(`${date}\n${body}`).digest('hex')
+  const signatureBuffer = Buffer.from(signature, 'hex')
+  const expectedBuffer = Buffer.from(expected, 'hex')
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    throw new Error('Metronome webhook signature verification failed')
+  }
 }
 
 async function parseConnectorConfig(
@@ -937,9 +963,9 @@ export function createApp(options: AppOptions) {
       method: 'post',
       path: '/webhooks/{pipeline_id}',
       tags: ['Webhooks'],
-      summary: 'Ingest a Stripe webhook event',
+      summary: 'Ingest a source webhook event',
       description:
-        "Receives a raw Stripe webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
+        "Receives a raw Stripe or Metronome webhook event, verifies its signature using the pipeline's webhook secret, and enqueues it for processing by the active pipeline.",
       requestParams: { path: WebhookParam },
       responses: {
         200: {
@@ -957,10 +983,6 @@ export function createApp(options: AppOptions) {
         return c.text('pipeline not found', 404)
       }
 
-      if (pipeline.source.type !== 'stripe') {
-        return c.text('webhook ingress is only supported for stripe sources', 400)
-      }
-
       const sourceConfig = pipeline.source[pipeline.source.type] as
         | { webhook_secret?: string }
         | undefined
@@ -971,16 +993,35 @@ export function createApp(options: AppOptions) {
 
       // Verify webhook signature
       const body = await c.req.text()
-      const signature = c.req.header('stripe-signature') ?? ''
+      let sourceInput: unknown
       try {
-        const event = verifyWebhookSignature(body, signature, webhookSecret)
-        log.info(
-          { eventId: event.id, eventType: event.type, pipeline_id },
-          'webhook event ingested'
-        )
+        if (pipeline.source.type === 'stripe') {
+          const signature = c.req.header('stripe-signature') ?? ''
+          const event = verifyWebhookSignature(body, signature, webhookSecret)
+          sourceInput = event
+          log.info(
+            { eventId: event.id, eventType: event.type, pipeline_id, source: 'stripe' },
+            'webhook event ingested'
+          )
+        } else if (pipeline.source.type === 'metronome') {
+          const signature = c.req.header('metronome-webhook-signature') ?? ''
+          const date = c.req.header('date') ?? ''
+          verifyMetronomeWebhookSignature(body, signature, date, webhookSecret)
+          const event = JSON.parse(body) as { id?: string; type?: string }
+          sourceInput = event
+          log.info(
+            { eventId: event.id, eventType: event.type, pipeline_id, source: 'metronome' },
+            'webhook event ingested'
+          )
+        } else {
+          return c.text(`webhook ingress is not supported for ${pipeline.source.type} sources`, 400)
+        }
       } catch (err) {
         if (err instanceof WebhookSignatureError) {
           return c.text('webhook signature verification failed', 401)
+        }
+        if (pipeline.source.type === 'metronome') {
+          return c.text(err instanceof Error ? err.message : 'webhook verification failed', 401)
         }
         throw err
       }
@@ -992,7 +1033,7 @@ export function createApp(options: AppOptions) {
 
       temporal
         .getHandle(pipeline_id)
-        .signal('stripe_event', { body, headers: Object.fromEntries(c.req.raw.headers.entries()) })
+        .signal('source_input', sourceInput)
         .catch(() => {})
       return c.text('ok', 200)
     }

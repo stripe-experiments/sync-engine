@@ -291,6 +291,10 @@ export interface components {
             /** @constant */
             type: "stripe";
             stripe: components["schemas"]["SourceStripeConfig"];
+        } | {
+            /** @constant */
+            type: "metronome";
+            metronome: components["schemas"]["SourceMetronomeConfig"];
         };
         SourceStripeConfig: {
             /** @description Stripe API key (sk_test_... or sk_live_...) */
@@ -310,16 +314,16 @@ export interface components {
             base_url?: string;
             /**
              * Format: uri
-             * @description URL for managed webhook endpoint registration
+             * @description Public URL for managed Stripe webhook endpoint registration
              */
             webhook_url?: string;
-            /** @description Webhook signing secret (whsec_...) for signature verification */
+            /** @description Stripe webhook signing secret (whsec_...) for signature verification. Setup can fill this when it creates a new endpoint. */
             webhook_secret?: string;
             /** @description Enable WebSocket streaming for live events */
             websocket?: boolean;
             /** @description Enable events API polling for incremental sync after backfill */
             poll_events?: boolean;
-            /** @description Port for built-in webhook HTTP listener (e.g. 4242) */
+            /** @description Local port where this process listens for webhook HTTP POSTs (e.g. 4242) */
             webhook_port?: number;
             /** @description Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"]) */
             revalidate_objects?: string[];
@@ -327,6 +331,28 @@ export interface components {
             backfill_limit?: number;
             /** @description Override max requests per second (default: auto-derived from API key mode — 20 live, 10 test). */
             rate_limit?: number;
+        };
+        SourceMetronomeConfig: {
+            /** @description Metronome API bearer token */
+            api_key: string;
+            /**
+             * Format: uri
+             * @description Override the Metronome API base URL (default: https://api.metronome.com)
+             */
+            base_url?: string;
+            /**
+             * Format: uri
+             * @description Public HTTPS URL Metronome will POST webhook events to. For local demos, use a webhook.site URL and forward it to webhook_port.
+             */
+            webhook_url?: string;
+            /** @description Metronome webhook signing secret for HMAC-SHA256 signature verification */
+            webhook_secret?: string;
+            /** @description Local port where this process listens for webhook HTTP POSTs (e.g. 4243) */
+            webhook_port?: number;
+            /** @description Max requests per second (default: no limit) */
+            rate_limit?: number;
+            /** @description Max records to fetch per stream (useful for testing) */
+            backfill_limit?: number;
         };
         DestinationConfig: {
             /** @constant */
@@ -336,6 +362,10 @@ export interface components {
             /** @constant */
             type: "google_sheets";
             google_sheets: components["schemas"]["DestinationGoogleSheetsConfig"];
+        } | {
+            /** @constant */
+            type: "redis";
+            redis: components["schemas"]["DestinationRedisConfig"];
         };
         DestinationPostgresConfig: {
             /** @description Postgres connection string */
@@ -393,6 +423,27 @@ export interface components {
             /**
              * @description Rows per Sheets API append call
              * @default 50
+             */
+            batch_size: number;
+        };
+        DestinationRedisConfig: {
+            /** @description Redis connection URL (redis://host:port) */
+            url?: string;
+            /** @description Redis host (default: localhost) */
+            host?: string;
+            /** @description Redis port (default: 6379) */
+            port?: number;
+            /** @description Redis password */
+            password?: string;
+            /** @description Redis database number (default: 0) */
+            db?: number;
+            /** @description Enable TLS */
+            tls?: boolean;
+            /** @description Prefix for all Redis keys (default: empty) */
+            key_prefix?: string;
+            /**
+             * @description Records to buffer before flushing via pipeline
+             * @default 100
              */
             batch_size: number;
         };
@@ -650,11 +701,11 @@ export interface components {
             control: {
                 /** @constant */
                 control_type: "source_config";
-                source_config: components["schemas"]["SourceStripeConfig"];
+                source_config: components["schemas"]["SourceStripeConfig"] | components["schemas"]["SourceMetronomeConfig"];
             } | {
                 /** @constant */
                 control_type: "destination_config";
-                destination_config: components["schemas"]["DestinationPostgresConfig"] | components["schemas"]["DestinationGoogleSheetsConfig"];
+                destination_config: components["schemas"]["DestinationPostgresConfig"] | components["schemas"]["DestinationGoogleSheetsConfig"] | components["schemas"]["DestinationRedisConfig"];
             };
         };
         ProgressMessage: {

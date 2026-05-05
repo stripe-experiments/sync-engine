@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # demo-webhooksite.sh
 #
-# Demonstrates @webhooksite/cli for local Stripe webhook development.
+# Demonstrates @webhooksite/cli for local webhook development.
 #
 # Workflow:
 #   1. Create a free webhook.site token (public URL, no account needed)
-#   2. Register that URL as a Stripe webhook endpoint
+#   2. Register that URL with your source provider
 #   3. Run `whcli forward` to pipe incoming webhooks to your local service
 #
 # Usage:
@@ -46,12 +46,10 @@ echo "  Public URL: $WEBHOOK_URL"
 echo "  Inspect  : https://webhook.site/#!/view/${TOKEN_ID}"
 echo ""
 
-# ── Step 2: Show how to register with Stripe ──────────────────────────────────
-echo "To register this URL as a Stripe webhook (run in another terminal):"
+# ── Step 2: Show how to register with the provider ────────────────────────────
+echo "Register this URL with your source provider:"
 echo ""
-echo "  stripe webhook-endpoints create \\"
-echo "    --url '$WEBHOOK_URL' \\"
-echo "    --enabled-events 'customer.created,customer.updated,charge.succeeded'"
+echo "  $WEBHOOK_URL"
 echo ""
 echo "Or in your sync-engine pipeline config, set:"
 echo "  webhook_url: $WEBHOOK_URL"

@@ -969,6 +969,22 @@
               "type",
               "stripe"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "metronome"
+              },
+              "metronome": {
+                "$ref": "#/components/schemas/SourceMetronomeConfig"
+              }
+            },
+            "required": [
+              "type",
+              "metronome"
+            ]
           }
         ],
         "type": "object",
@@ -1061,11 +1077,11 @@
           "webhook_url": {
             "type": "string",
             "format": "uri",
-            "description": "URL for managed webhook endpoint registration"
+            "description": "Public URL for managed Stripe webhook endpoint registration"
           },
           "webhook_secret": {
             "type": "string",
-            "description": "Webhook signing secret (whsec_...) for signature verification"
+            "description": "Stripe webhook signing secret (whsec_...) for signature verification. Setup can fill this when it creates a new endpoint."
           },
           "websocket": {
             "type": "boolean",
@@ -1079,7 +1095,7 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
-            "description": "Port for built-in webhook HTTP listener (e.g. 4242)"
+            "description": "Local port where this process listens for webhook HTTP POSTs (e.g. 4242)"
           },
           "revalidate_objects": {
             "type": "array",
@@ -1099,6 +1115,51 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991,
             "description": "Override max requests per second (default: auto-derived from API key mode — 20 live, 10 test)."
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "additionalProperties": false
+      },
+      "SourceMetronomeConfig": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "description": "Metronome API bearer token"
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Override the Metronome API base URL (default: https://api.metronome.com)"
+          },
+          "webhook_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTPS URL Metronome will POST webhook events to. For local demos, use a webhook.site URL and forward it to webhook_port."
+          },
+          "webhook_secret": {
+            "type": "string",
+            "description": "Metronome webhook signing secret for HMAC-SHA256 signature verification"
+          },
+          "webhook_port": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Local port where this process listens for webhook HTTP POSTs (e.g. 4243)"
+          },
+          "rate_limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Max requests per second (default: no limit)"
+          },
+          "backfill_limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Max records to fetch per stream (useful for testing)"
           }
         },
         "required": [
@@ -1138,6 +1199,22 @@
             "required": [
               "type",
               "google_sheets"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "redis"
+              },
+              "redis": {
+                "$ref": "#/components/schemas/DestinationRedisConfig"
+              }
+            },
+            "required": [
+              "type",
+              "redis"
             ]
           }
         ],
@@ -1259,6 +1336,45 @@
         "required": [
           "refresh_token"
         ],
+        "additionalProperties": false
+      },
+      "DestinationRedisConfig": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Redis connection URL (redis://host:port)"
+          },
+          "host": {
+            "type": "string",
+            "description": "Redis host (default: localhost)"
+          },
+          "port": {
+            "type": "number",
+            "description": "Redis port (default: 6379)"
+          },
+          "password": {
+            "type": "string",
+            "description": "Redis password"
+          },
+          "db": {
+            "type": "number",
+            "description": "Redis database number (default: 0)"
+          },
+          "tls": {
+            "type": "boolean",
+            "description": "Enable TLS"
+          },
+          "key_prefix": {
+            "type": "string",
+            "description": "Prefix for all Redis keys (default: empty)"
+          },
+          "batch_size": {
+            "default": 100,
+            "type": "number",
+            "description": "Records to buffer before flushing via pipeline"
+          }
+        },
         "additionalProperties": false
       },
       "RecordMessage": {
@@ -1815,7 +1931,14 @@
                     "const": "source_config"
                   },
                   "source_config": {
-                    "$ref": "#/components/schemas/SourceStripeConfig"
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/SourceStripeConfig"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SourceMetronomeConfig"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -1837,6 +1960,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/DestinationGoogleSheetsConfig"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DestinationRedisConfig"
                       }
                     ]
                   }

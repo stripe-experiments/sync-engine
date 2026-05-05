@@ -3,6 +3,7 @@ import type { WorkflowClient } from '@temporalio/client'
 import { TestWorkflowEnvironment } from '@temporalio/testing'
 import { Worker } from '@temporalio/worker'
 import { createServer } from 'node:http'
+import { createHmac } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { z } from 'zod'
@@ -79,6 +80,63 @@ describe('GET /health', () => {
     const res = await app().request('/health')
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, hostname: expect.any(String) })
+  })
+})
+
+describe('POST /webhooks/{pipeline_id}', () => {
+  it('verifies Metronome webhooks and signals source_input', async () => {
+    const secret = 'test-metronome-webhook-secret'
+    const date = new Date().toUTCString()
+    const body = JSON.stringify({
+      id: 'evt_metronome_1',
+      type: 'credit.segment.end',
+      customer_id: 'cus_metronome_1',
+    })
+    const signature = createHmac('sha256', secret).update(`${date}\n${body}`).digest('hex')
+    const signal = vi.fn(async () => undefined)
+    const temporalClient = {
+      start: vi.fn(async () => undefined),
+      getHandle: vi.fn(() => ({
+        signal,
+        query: vi.fn(async () => ({})),
+        terminate: vi.fn(async () => undefined),
+      })),
+      list: vi.fn(async function* () {}),
+    } as unknown as WorkflowClient & { getHandle: ReturnType<typeof vi.fn> }
+    const pipelineStore = memoryPipelineStore()
+    await pipelineStore.set('pipe_metronome', {
+      id: 'pipe_metronome',
+      source: { type: 'metronome', metronome: { webhook_secret: secret } },
+      destination: { type: 'test', test: {} },
+      desired_status: 'active',
+      status: 'ready',
+    })
+    const metronomeResolver = await createConnectorResolver({
+      sources: { metronome: sourceTest },
+      destinations: { test: destinationTest },
+    })
+    const metronomeApp = createApp({
+      temporal: { client: temporalClient, taskQueue: 'test-webhooks' },
+      resolver: metronomeResolver,
+      pipelineStore,
+    })
+
+    const res = await metronomeApp.request('/webhooks/pipe_metronome', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        date,
+        'metronome-webhook-signature': signature,
+      },
+      body,
+    })
+
+    expect(res.status).toBe(200)
+    expect(signal).toHaveBeenCalledWith('source_input', {
+      id: 'evt_metronome_1',
+      type: 'credit.segment.end',
+      customer_id: 'cus_metronome_1',
+    })
   })
 })
 

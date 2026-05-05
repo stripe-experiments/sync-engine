@@ -66,16 +66,33 @@ describe('engine command wiring', () => {
     app.fetch.mockResolvedValue(new Response('ok'))
   })
 
-  it('builds the api command from the in-process app openapi spec', async () => {
+  it('does not build the api app for non-api commands', async () => {
     const { createProgram } = await import('../cli/command.js')
-    const program = await createProgram()
+    const program = await createProgram(['node', 'sync-engine', 'start'])
 
     expect(createConnectorResolver).toHaveBeenCalledWith(defaultConnectors, {
       path: true,
       npm: false,
       commandMap: {},
     })
+    expect(createApp).not.toHaveBeenCalled()
+    expect(app.request).not.toHaveBeenCalled()
+    expect(createCliFromSpec).not.toHaveBeenCalled()
+
+    expect(program.subCommands?.api).toBeDefined()
+    expect(program.subCommands?.start).toBeUndefined()
+    expect(createSyncCmd).toHaveBeenCalledOnce()
+    expect(startApiServer).not.toHaveBeenCalled()
+  })
+
+  it('builds the api command from the in-process app openapi spec only for api commands', async () => {
+    const { createProgram } = await import('../cli/command.js')
+    const program = await createProgram(['node', 'sync-engine', 'api'])
+
     expect(createApp).toHaveBeenCalledWith(resolver)
+    expect(app.request).toHaveBeenCalledWith('/openapi.json', {
+      headers: { 'x-sync-engine-internal-request': 'true' },
+    })
     expect(createCliFromSpec).toHaveBeenCalledOnce()
 
     const opts = createCliFromSpec.mock.calls[0][0]
@@ -84,6 +101,7 @@ describe('engine command wiring', () => {
     expect(app.fetch).toHaveBeenCalledOnce()
 
     expect(program.subCommands?.api).toBeDefined()
+    expect(program.subCommands?.start).toBeUndefined()
     expect(createSyncCmd).toHaveBeenCalledOnce()
     expect(startApiServer).not.toHaveBeenCalled()
   })

@@ -160,6 +160,16 @@ describe('buildPoolConfig', () => {
     )
   })
 
+  it('spec rejects configs without url, connection_string, or aws', () => {
+    const parse = () =>
+      configSchema.parse({
+        schema: 'stripe',
+        batch_size: 100,
+      })
+
+    expect(parse).toThrow('Either url/connection_string or aws config is required')
+  })
+
   it('spec rejects configs that mix url and aws', async () => {
     const parse = () =>
       configSchema.parse({

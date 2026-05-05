@@ -25,11 +25,13 @@ export const configSchema = z.object({
     .string()
     .url()
     .optional()
-    .describe('URL for managed webhook endpoint registration'),
+    .describe('Public URL for managed Stripe webhook endpoint registration'),
   webhook_secret: z
     .string()
     .optional()
-    .describe('Webhook signing secret (whsec_...) for signature verification'),
+    .describe(
+      'Stripe webhook signing secret (whsec_...) for signature verification. Setup can fill this when it creates a new endpoint.'
+    ),
   websocket: z.boolean().optional().describe('Enable WebSocket streaming for live events'),
   poll_events: z
     .boolean()
@@ -39,7 +41,7 @@ export const configSchema = z.object({
     .number()
     .int()
     .optional()
-    .describe('Port for built-in webhook HTTP listener (e.g. 4242)'),
+    .describe('Local port where this process listens for webhook HTTP POSTs (e.g. 4242)'),
   revalidate_objects: z
     .array(z.string())
     .optional()
