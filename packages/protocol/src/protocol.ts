@@ -756,7 +756,7 @@ export interface Source<
    */
   handle_events?(
     params: { config: TConfig; catalog: ConfiguredCatalog },
-    $stdin: AsyncIterable<TInput>
+    events: AsyncIterable<TInput>
   ): AsyncIterable<Message>
 
   /** Provision external resources (webhook endpoints, replication slots, etc.). */

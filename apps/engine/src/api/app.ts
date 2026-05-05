@@ -114,6 +114,7 @@ export async function createApp(resolver: ConnectorResolver) {
 
   const {
     PipelineConfig: TypedPipelineConfig,
+    SourceEvents,
     sourceConfigNames,
     destConfigNames,
   } = createConnectorSchemas(resolver)
@@ -188,10 +189,9 @@ export async function createApp(resolver: ConnectorResolver) {
 
   const handleEventsRequestBody = z.object({
     pipeline: TypedPipelineConfig,
-    stdin: z.array(MessageSchema).meta({
+    events: SourceEvents.meta({
       description:
-        'Array of source_input messages wrapping the events to deliver to the source. ' +
-        'Plain (un-wrapped) messages are forwarded as-is.',
+        'Events grouped by source connector type, e.g. { "stripe": [StripeEvent, ...] }.',
     }),
   })
 
@@ -439,12 +439,17 @@ export async function createApp(resolver: ConnectorResolver) {
     },
   })
   app.openapi(pipelineHandleEventsRoute, async (c) => {
-    const { pipeline, stdin } = c.req.valid('json')
+    const { pipeline, events } = c.req.valid('json')
+    const sourceEvents = (events as Record<string, unknown[]>)[pipeline.source.type]
+    if (!Array.isArray(sourceEvents)) {
+      throw new HTTPException(400, {
+        message: `events.${pipeline.source.type} is required for source ${pipeline.source.type}`,
+      })
+    }
 
     const input = (async function* () {
-      for (const m of stdin) {
-        const msg = MessageSchema.parse(m)
-        yield msg.type === 'source_input' ? msg.source_input : msg
+      for (const event of sourceEvents) {
+        yield event
       }
     })()
 

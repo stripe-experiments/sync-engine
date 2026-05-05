@@ -831,6 +831,38 @@ export interface components {
             type: "source_input";
             source_input: unknown;
         };
+        SourceStripeInput: {
+            /** @description Unique identifier for the object. */
+            id: string;
+            /** @constant */
+            object: "event";
+            /** @description The connected account that originates the event. */
+            account?: string;
+            api_version: string | null;
+            /** @description Time at which the object was created. Measured in seconds since the Unix epoch. */
+            created: number;
+            data: {
+                object: {
+                    [key: string]: unknown;
+                };
+                previous_attributes?: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode. */
+            livemode: boolean;
+            /** @description Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify. */
+            pending_webhooks: number;
+            request: {
+                id: string | null;
+                idempotency_key: string | null;
+            } | null;
+            /** @description Description of the event (for example, `invoice.created` or `charge.refunded`). */
+            type: string;
+        };
+        SourceEvents: {
+            stripe: components["schemas"]["SourceStripeInput"][];
+        };
         Message: components["schemas"]["RecordMessage"] | components["schemas"]["SourceStateMessage"] | components["schemas"]["CatalogMessage"] | components["schemas"]["LogMessage"] | components["schemas"]["SpecMessage"] | components["schemas"]["ConnectionStatusMessage"] | components["schemas"]["StreamStatusMessage"] | components["schemas"]["ControlMessage"] | components["schemas"]["ProgressMessage"] | components["schemas"]["EofMessage"] | components["schemas"]["SourceInputMessage"];
         DiscoverOutput: components["schemas"]["CatalogMessage"] | components["schemas"]["LogMessage"];
         DestinationOutput: components["schemas"]["Message"];
@@ -1109,8 +1141,8 @@ export interface operations {
             content: {
                 "application/json": {
                     pipeline: components["schemas"]["PipelineConfig"];
-                    /** @description Array of source_input messages wrapping the events to deliver to the source. Plain (un-wrapped) messages are forwarded as-is. */
-                    stdin: components["schemas"]["Message"][];
+                    /** @description Events grouped by source connector type, e.g. { "stripe": [StripeEvent, ...] }. */
+                    events: components["schemas"]["SourceEvents"];
                 };
             };
         };

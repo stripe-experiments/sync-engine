@@ -405,7 +405,7 @@ export function createStripeSource(
       )
     },
 
-    handle_events({ config, catalog }, $stdin) {
+    handle_events({ config, catalog }, events) {
       return withAbortOnReturn((signal) =>
         (async function* () {
           const apiVersion = config.api_version ?? BUNDLED_API_VERSION
@@ -429,8 +429,8 @@ export function createStripeSource(
             return
           }
 
-          for await (const input of $stdin) {
-            yield* processEventInput(input, config, catalog, registry, streamNames, accountId)
+          for await (const event of events) {
+            yield* processEventInput(event, config, catalog, registry, streamNames, accountId)
           }
         })()
       )

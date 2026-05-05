@@ -70,9 +70,9 @@ export const sourceTest = {
 
   async *handle_events(
     _params: { config: SourceTestConfig },
-    $stdin: AsyncIterable<unknown>
+    events: AsyncIterable<unknown>
   ): AsyncIterable<CoreMessage> {
-    for await (const msg of $stdin as AsyncIterable<CoreMessage>) {
+    for await (const msg of events as AsyncIterable<CoreMessage>) {
       yield msg
     }
   },

@@ -163,7 +163,7 @@ export interface Engine {
    */
   pipeline_handle_events(
     pipeline: PipelineConfig,
-    input: AsyncIterable<unknown>
+    events: AsyncIterable<unknown>
   ): AsyncIterable<Message>
 
   /**
@@ -593,7 +593,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
       )
     },
 
-    pipeline_handle_events(pipeline, input) {
+    pipeline_handle_events(pipeline, events) {
       return withAbortOnReturn(() =>
         (async function* (): AsyncGenerator<Message> {
           const srcConnector = await resolver.resolveSource(pipeline.source.type)
@@ -606,7 +606,7 @@ export async function createEngine(resolver: ConnectorResolver): Promise<Engine>
           const { filteredCatalog } = await discoverCatalog(engine, pipeline)
           const raw = srcConnector.handle_events(
             { config: srcSpec.config, catalog: filteredCatalog },
-            input
+            events
           )
           for await (const msg of raw) {
             yield Message.parse(msg)

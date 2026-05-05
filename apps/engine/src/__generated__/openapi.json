@@ -415,17 +415,14 @@
                   "pipeline": {
                     "$ref": "#/components/schemas/PipelineConfig"
                   },
-                  "stdin": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/Message"
-                    },
-                    "description": "Array of source_input messages wrapping the events to deliver to the source. Plain (un-wrapped) messages are forwarded as-is."
+                  "events": {
+                    "description": "Events grouped by source connector type, e.g. { \"stripe\": [StripeEvent, ...] }.",
+                    "$ref": "#/components/schemas/SourceEvents"
                   }
                 },
                 "required": [
                   "pipeline",
-                  "stdin"
+                  "events"
                 ]
               }
             }
@@ -2281,6 +2278,135 @@
         "required": [
           "type",
           "source_input"
+        ]
+      },
+      "SourceStripeInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the object."
+          },
+          "object": {
+            "type": "string",
+            "const": "event"
+          },
+          "account": {
+            "type": "string",
+            "description": "The connected account that originates the event."
+          },
+          "api_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created": {
+            "type": "number",
+            "description": "Time at which the object was created. Measured in seconds since the Unix epoch."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "object": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "previous_attributes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "object"
+            ],
+            "additionalProperties": false
+          },
+          "livemode": {
+            "type": "boolean",
+            "description": "Has the value `true` if the object exists in live mode or the value `false` if the object exists in test mode."
+          },
+          "pending_webhooks": {
+            "type": "number",
+            "description": "Number of webhooks that haven't been successfully delivered (for example, to return a 20x response) to the URLs you specify."
+          },
+          "request": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "idempotency_key": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "idempotency_key"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Description of the event (for example, `invoice.created` or `charge.refunded`)."
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "api_version",
+          "created",
+          "data",
+          "livemode",
+          "pending_webhooks",
+          "request",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "SourceEvents": {
+        "type": "object",
+        "properties": {
+          "stripe": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceStripeInput"
+            }
+          }
+        },
+        "required": [
+          "stripe"
         ]
       },
       "Message": {
