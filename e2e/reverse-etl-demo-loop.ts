@@ -81,6 +81,7 @@ import { createStripeDestination } from '../packages/destination-stripe/src/inde
 type DemoState = {
   customer?: SyncState
   device?: SyncState
+  product?: SyncState
 }
 
 type PipelineRunner = (
@@ -158,9 +159,50 @@ async function preparePostgres() {
       )
     `)
 
-    log('Demo tables are ready', { tables: ['crm_customers', 'devices'] })
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS my_products (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        updated_at timestamptz(3) NOT NULL DEFAULT date_trunc('milliseconds', clock_timestamp())
+      )
+    `)
+
+    log('Demo tables are ready', { tables: ['crm_customers', 'devices', 'my_products'] })
   } finally {
     await client.end()
+  }
+}
+
+function productPipeline(): PipelineConfig {
+  return {
+    source: {
+      type: 'postgres',
+      postgres: {
+        url: databaseUrl,
+        table: 'my_products',
+        stream: 'product',
+        primary_key: ['id'],
+        cursor_field: 'updated_at',
+        page_size: 100,
+      },
+    },
+    destination: {
+      type: 'stripe',
+      stripe: {
+        api_key: stripeApiKey,
+        api_version: stripeApiVersion,
+        object: 'standard_object',
+        write_mode: 'create',
+        streams: {
+          product: {
+            field_mapping: {
+              name: 'name',
+            },
+          },
+        },
+      },
+    },
+    streams: [{ name: 'product', sync_mode: 'incremental' }],
   }
 }
 
@@ -290,6 +332,7 @@ async function main() {
   await preparePostgres()
   const runner = await createRunner()
   const pipelines = {
+    product: productPipeline(),
     customer: customerPipeline(),
     device: devicePipeline(),
   }
@@ -311,6 +354,10 @@ async function main() {
       const deviceResult = await runner(pipelines.device, state.device)
       state = { ...state, device: deviceResult.ending_state }
       log('Device poll complete', streamSummary(deviceResult, 'devices'))
+
+      const productResult = await runner(pipelines.product, state.product)
+      state = { ...state, product: productResult.ending_state }
+      log('Product poll complete', streamSummary(productResult, 'product'))
 
       await saveState(state)
     } catch (err) {

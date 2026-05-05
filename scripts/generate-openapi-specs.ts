@@ -9,8 +9,10 @@ import { createApp, createConnectorResolver } from '../apps/engine/src/index.js'
 import { createApp as createServiceApp } from '../apps/service/src/api/app.js'
 import { memoryPipelineStore } from '../apps/service/src/lib/stores-memory.js'
 import sourceStripe from '../packages/source-stripe/src/index.js'
+import sourcePostgres from '../packages/source-postgres/src/index.js'
 import destinationPostgres from '../packages/destination-postgres/src/index.js'
 import destinationGoogleSheets from '../packages/destination-google-sheets/src/index.js'
+import destinationStripe from '../packages/destination-stripe/src/index.js'
 
 const [engineOut, serviceOut] = process.argv.slice(2)
 if (!engineOut || !serviceOut) {
@@ -19,10 +21,14 @@ if (!engineOut || !serviceOut) {
 }
 
 const resolver = await createConnectorResolver({
-  sources: { stripe: (sourceStripe as any).default ?? sourceStripe },
+  sources: {
+    stripe: (sourceStripe as any).default ?? sourceStripe,
+    postgres: (sourcePostgres as any).default ?? sourcePostgres,
+  },
   destinations: {
     postgres: (destinationPostgres as any).default ?? destinationPostgres,
     google_sheets: (destinationGoogleSheets as any).default ?? destinationGoogleSheets,
+    stripe: (destinationStripe as any).default ?? destinationStripe,
   },
 })
 
