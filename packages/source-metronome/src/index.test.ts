@@ -79,42 +79,42 @@ const CREDITS_CATALOG: ConfiguredCatalog = {
 }
 
 const LIVE_SHAPED_CUSTOMER = {
-  name: 'Acme Corp',
-  id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
-  customer_config: { salesforce_account_id: null },
-  external_id: 'acme-corp',
-  ingest_aliases: ['acme-corp'],
-  updated_at: '2026-05-01T00:19:13.002202+00:00',
+  name: 'Example Test Customer',
+  id: 'cus_test_live_shaped',
+  customer_config: { crm_account_id: null },
+  external_id: 'example-test-customer',
+  ingest_aliases: ['example-test-customer'],
+  updated_at: '2026-01-01T00:19:13.002202+00:00',
   archived_at: null,
-  created_at: '2026-04-30T17:05:59.008069+00:00',
+  created_at: '2026-01-01T17:05:59.008069+00:00',
   custom_fields: {},
 }
 
 const LIVE_SHAPED_CREDIT = {
-  id: '66fa37f1-3a61-4902-9c86-fe330b3bccd5',
+  id: 'credit_test_live_shaped',
   rate_type: 'LIST_RATE',
   product: {
-    id: '39fbd8e0-1806-418c-af27-ca12ce455cce',
-    name: 'Pro Plan Access',
+    id: 'product_test_access',
+    name: 'Example Plan Access',
   },
   priority: 1,
   access_schedule: {
     credit_type: {
-      id: '2714e483-4ff1-48e4-9e25-ac732e8f24f2',
-      name: 'USD (cents)',
+      id: 'credit_type_test_usd',
+      name: 'Test Credits',
     },
     schedule_items: [
       {
-        id: '62ca6737-009c-5694-8ea3-4ec64013f175',
+        id: 'schedule_item_test_1',
         amount: 1000000,
-        starting_at: '2026-03-29T00:00:00+00:00',
-        ending_before: '2026-04-30T23:00:00+00:00',
+        starting_at: '2026-01-01T00:00:00+00:00',
+        ending_before: '2026-02-01T00:00:00+00:00',
       },
     ],
   },
   balance: 0,
   custom_fields: {},
-  created_at: '2026-05-01T04:25:07.906000+00:00',
+  created_at: '2026-01-01T04:25:07.906000+00:00',
   type: 'CREDIT',
 }
 
@@ -254,7 +254,7 @@ describe('source-metronome', () => {
       const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
         makeResponse({
           data: [
-            { id: 'cus_1', name: 'Acme Corp', external_id: 'ext_1' },
+            { id: 'cus_1', name: 'Example Customer', external_id: 'ext_1' },
             { id: 'cus_2', name: 'Globex', external_id: 'ext_2' },
           ],
           next_page: null,
@@ -278,7 +278,7 @@ describe('source-metronome', () => {
         expect(records).toHaveLength(2)
         if (records[0].type !== 'record') throw new Error('expected record')
         expect(records[0].record.stream).toBe('customers')
-        expect(records[0].record.data).toMatchObject({ id: 'cus_1', name: 'Acme Corp' })
+        expect(records[0].record.data).toMatchObject({ id: 'cus_1', name: 'Example Customer' })
         expect(typeof records[0].record.data['_synced_at']).toBe('number')
 
         // source_state checkpoint
@@ -327,8 +327,8 @@ describe('source-metronome', () => {
         if (records[0].type !== 'record') throw new Error('expected record')
         expect(records[0].record.data).toMatchObject({
           id: LIVE_SHAPED_CUSTOMER.id,
-          customer_config: { salesforce_account_id: null },
-          ingest_aliases: ['acme-corp'],
+          customer_config: { crm_account_id: null },
+          ingest_aliases: ['example-test-customer'],
         })
 
         const secondUrl = fetchMock.mock.calls[1][0] as string
@@ -503,13 +503,13 @@ describe('source-metronome', () => {
           id: LIVE_SHAPED_CREDIT.id,
           customer_id: 'cus_credit',
           balance: 0,
-          product: { name: 'Pro Plan Access' },
+          product: { name: 'Example Plan Access' },
           access_schedule: {
-            credit_type: { name: 'USD (cents)' },
+            credit_type: { name: 'Test Credits' },
             schedule_items: [
               expect.objectContaining({
                 amount: 1000000,
-                starting_at: '2026-03-29T00:00:00+00:00',
+                starting_at: '2026-01-01T00:00:00+00:00',
               }),
             ],
           },

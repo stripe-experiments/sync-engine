@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end test: Metronome → source-metronome → destination-redis
 #
-# Proves the full pipeline works with real data:
+# Optional sandbox integration check for the full pipeline:
 #   1. Backfill documented Metronome customer balance streams to Redis
 #   2. Start webhook listener
 #   3. Simulate customer usage (send events to Metronome ingest API)
@@ -10,7 +10,7 @@
 #
 # Prerequisites:
 #   - METRONOME_API_TOKEN
-#   - METRONOME_CUSTOMER_ID — sandbox customer that receives ingest events / webhooks
+#   - METRONOME_CUSTOMER_ID — caller-provided sandbox customer for ingest/webhook checks
 #   - Redis (default localhost:56379 — matches compose.yml)
 #
 # Optional env:

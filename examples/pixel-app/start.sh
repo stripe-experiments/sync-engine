@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Loads optional Metronome/Redis env from parent investigation .env
-# (sync-engine/../.env) without printing values.
-# Override with ENV_FILE=/path/to/.env.
+# Loads optional local Metronome/Redis env without printing values.
+# Defaults to ../.env from the repo root; override with ENV_FILE=/path/to/.env.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

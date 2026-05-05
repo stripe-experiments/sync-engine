@@ -34,7 +34,7 @@ describe('Metronome webhook handling', () => {
     const body = JSON.stringify({
       id: 'evt_credit_create',
       type: 'credit.create',
-      customer_id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
+      customer_id: 'cus_test_webhook',
     })
     const date = new Date().toUTCString()
 
@@ -48,9 +48,9 @@ describe('Metronome webhook handling', () => {
     const body = JSON.stringify({
       id: 'evt_credit_edit',
       type: 'credit.edit',
-      customer_id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
+      customer_id: 'cus_test_webhook',
       properties: {
-        customer_id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
+        customer_id: 'cus_test_webhook',
       },
     })
     const date = new Date().toUTCString()
@@ -78,7 +78,7 @@ describe('Metronome webhook handling', () => {
       event: {
         id: 'evt_credit_edit',
         type: 'credit.edit',
-        customer_id: '1a6de34e-ec68-46b0-a1c3-bb3d49f66bb3',
+        customer_id: 'cus_test_webhook',
       },
     })
   })

@@ -102,6 +102,41 @@ async function* asIterable<T>(items: T[]): AsyncIterable<T> {
   for (const item of items) yield item
 }
 
+async function captureStreamingPost(run: (url: string) => Promise<void>): Promise<unknown[]> {
+  const bodies: unknown[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let captureServer: any
+  let url = ''
+
+  await new Promise<void>((resolve) => {
+    captureServer = serve(
+      {
+        port: 0,
+        async fetch(req) {
+          bodies.push(await req.json())
+          return new Response(JSON.stringify({ type: 'eof', eof: { has_more: false } }) + '\n', {
+            headers: { 'content-type': 'application/x-ndjson' },
+          })
+        },
+      },
+      (info) => {
+        url = `http://localhost:${(info as AddressInfo).port}`
+        resolve()
+      }
+    )
+  })
+
+  try {
+    await run(url)
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      captureServer.close((err: Error | null) => (err ? reject(err) : resolve()))
+    })
+  }
+
+  return bodies
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -167,6 +202,19 @@ describe('createRemoteEngine', () => {
       expect(nonLog).toHaveLength(1)
       expect(nonLog[0]).toMatchObject({ type: 'eof', eof: { has_more: false } })
     })
+
+    it('wraps raw input as source_input messages for remote HTTP', async () => {
+      const rawEvent = { id: 'evt_test_1', type: 'credit.segment.end' }
+
+      const bodies = await captureStreamingPost(async (url) => {
+        const engine = createRemoteEngine(url)
+        await collect(engine.pipeline_read(pipeline, undefined, asIterable([rawEvent])))
+      })
+
+      expect(bodies[0]).toMatchObject({
+        stdin: [{ type: 'source_input', source_input: rawEvent }],
+      })
+    })
   })
 
   describe('pipeline_write()', () => {
@@ -223,6 +271,23 @@ describe('createRemoteEngine', () => {
       const eofMsgs = output.filter((m) => m.type === 'eof')
       expect(eofMsgs).toHaveLength(1)
       expect(eofMsgs[0]).toMatchObject({ type: 'eof', eof: { has_more: false } })
+    })
+
+    it('wraps raw input and preserves protocol messages for remote HTTP', async () => {
+      const rawEvent = { id: 'evt_test_2', type: 'credit.edit' }
+      const state: Message = {
+        type: 'source_state',
+        source_state: { stream: 'customers', data: { cursor: 'cus_1' } },
+      }
+
+      const bodies = await captureStreamingPost(async (url) => {
+        const engine = createRemoteEngine(url)
+        await collect(engine.pipeline_sync(pipeline, undefined, asIterable([rawEvent, state])))
+      })
+
+      expect(bodies[0]).toMatchObject({
+        stdin: [{ type: 'source_input', source_input: rawEvent }, state],
+      })
     })
   })
 

@@ -14,7 +14,7 @@ docker compose --env-file ../.env -p demo -f demo/compose.metronome-redis.yml up
 In a second terminal, relay webhook.site deliveries into the local Sync Engine listener:
 
 ```sh
-cd /Users/kdhillon/stripe/metronome-redis-investigation/sync-engine
+cd sync-engine
 
 WEBHOOK_RELAY_INTERVAL_SECONDS=0.5 \
 ./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
@@ -23,7 +23,7 @@ WEBHOOK_RELAY_INTERVAL_SECONDS=0.5 \
 In a third terminal, start PixelDraw:
 
 ```sh
-cd /Users/kdhillon/stripe/metronome-redis-investigation/sync-engine/examples/pixel-app
+cd sync-engine/examples/pixel-app
 
 PORT=4000 npm start
 ```
@@ -56,7 +56,7 @@ open http://localhost:4000
 For a lightweight local check after code changes:
 
 ```sh
-cd /Users/kdhillon/stripe/metronome-redis-investigation/sync-engine/examples/pixel-app
+cd sync-engine/examples/pixel-app
 npm install
 node --check server.js
 ```
@@ -64,6 +64,6 @@ node --check server.js
 For the packaged sidecar check:
 
 ```sh
-cd /Users/kdhillon/stripe/metronome-redis-investigation/sync-engine
+cd sync-engine
 docker compose --env-file ../.env -p demo -f demo/compose.metronome-redis.yml config
 ```

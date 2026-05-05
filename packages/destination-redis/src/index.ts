@@ -37,6 +37,12 @@ function errorMessage(err: unknown): string {
   return err.message || (err as NodeJS.ErrnoException).code || err.constructor.name
 }
 
+type BufferedOperation = { op: 'set'; key: string; value: string } | { op: 'del'; key: string }
+
+function isSoftDeleted(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1
+}
+
 const destination = {
   async *spec() {
     yield { type: 'spec' as const, spec: defaultSpec }
@@ -109,11 +115,15 @@ const destination = {
         cs.stream.primary_key?.map((pk) => pk[0]) ?? ['id'],
       ])
     )
+    const streamSoftDeleteFields = new Map(
+      catalog.streams
+        .filter((cs) => cs.stream.soft_delete_field)
+        .map((cs) => [cs.stream.name, cs.stream.soft_delete_field!])
+    )
 
     const failedStreams = new Set<string>()
 
-    // Per-stream buffers: array of { key, value }
-    const streamBuffers = new Map<string, { key: string; value: string }[]>()
+    const streamBuffers = new Map<string, BufferedOperation[]>()
 
     /** Flush buffered records for a stream. Returns error message if failed. */
     const flushStream = async (streamName: string): Promise<string | undefined> => {
@@ -126,8 +136,12 @@ const destination = {
 
       try {
         const pipeline = redis.pipeline()
-        for (const { key, value } of buffer) {
-          pipeline.set(key, value)
+        for (const op of buffer) {
+          if (op.op === 'del') {
+            pipeline.del(op.key)
+          } else {
+            pipeline.set(op.key, op.value)
+          }
         }
         await pipeline.exec()
         log.debug(
@@ -176,9 +190,17 @@ const destination = {
           }
 
           const pk = streamKeyColumns.get(stream) ?? ['id']
-          const key = buildRecordKey(keyPrefix, stream, pk, data as Record<string, unknown>)
+          const recordData = data as Record<string, unknown>
+          const key = buildRecordKey(keyPrefix, stream, pk, recordData)
+          const softDeleteField = streamSoftDeleteFields.get(stream)
+          const deleteValue =
+            softDeleteField !== undefined ? recordData[softDeleteField] : recordData.deleted
           const buffer = streamBuffers.get(stream)!
-          buffer.push({ key, value: JSON.stringify(data) })
+          buffer.push(
+            isSoftDeleted(deleteValue)
+              ? { op: 'del', key }
+              : { op: 'set', key, value: JSON.stringify(data) }
+          )
 
           if (buffer.length >= batchSize) {
             const err = await flushStream(stream)

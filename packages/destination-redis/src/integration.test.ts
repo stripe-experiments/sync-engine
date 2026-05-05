@@ -88,6 +88,49 @@ describe.skipIf(!available)('destination-redis integration', () => {
     await r.quit()
   })
 
+  it('deletes records marked by the stream soft_delete_field', async () => {
+    const softDeleteCatalog = {
+      streams: [
+        {
+          stream: {
+            name: 'customers',
+            primary_key: [['id']],
+            newer_than_field: '_synced_at',
+            soft_delete_field: 'deleted',
+            json_schema: {},
+          },
+          sync_mode: 'full_refresh' as const,
+          destination_sync_mode: 'append_dedup' as const,
+        },
+      ],
+    }
+
+    const r = new Redis(REDIS_URL)
+    await r.set('test_sync:customers:cust_deleted', JSON.stringify({ id: 'cust_deleted' }))
+    await r.quit()
+
+    async function* input() {
+      yield {
+        type: 'record' as const,
+        record: {
+          stream: 'customers',
+          data: { id: 'cust_deleted', deleted: true, _synced_at: 1002 },
+          emitted_at: '2024-01-01T00:00:00.000Z',
+        },
+      }
+      yield {
+        type: 'source_state' as const,
+        source_state: { state_type: 'stream' as const, stream: 'customers', data: {} },
+      }
+    }
+
+    await collectAll(destination.write({ config, catalog: softDeleteCatalog }, input()))
+
+    const r2 = new Redis(REDIS_URL)
+    await expect(r2.get('test_sync:customers:cust_deleted')).resolves.toBeNull()
+    await r2.quit()
+  })
+
   it('teardown deletes prefixed keys', async () => {
     const r = new Redis(REDIS_URL)
     await r.set('test_sync:teardown_test:key1', 'val1')

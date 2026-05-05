@@ -174,7 +174,7 @@ Runs outside the Postgres demos: connectors `source-metronome` and `destination-
      ```sh
      ./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
      ```
-  4. In another terminal, run `sync-engine start`, choose `metronome`, enable live webhook sync, and enter the same webhook URL, signing secret, and local port `4244`.
+  4. In another terminal, run the Metronome Redis demo using `scripts/e2e-metronome-redis.sh` or the packaged Compose flow below.
 6. **End-to-end script** (`scripts/e2e-metronome-redis.sh`): requires `METRONOME_API_TOKEN`, `METRONOME_CUSTOMER_ID`, plus Redis — see comments in that script. Loads catalog from `demo/metronome-redis-mvp-catalog.json` (override with `CATALOG_PATH`).
 
 ### Packaged Redis Sidecar Demo

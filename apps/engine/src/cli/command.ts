@@ -5,7 +5,6 @@ import type { ConnectorResolver } from '../lib/index.js'
 import { startApiServer } from '../api/server.js'
 import { createApp } from '../api/app.js'
 import { createSyncCmd } from './sync.js'
-import { createStartCmd } from './start.js'
 import { createResolverFromFlags } from './resolver-flags.js'
 import { ENGINE_INTERNAL_REQUEST_HEADER } from '../request-context.js'
 
@@ -122,7 +121,6 @@ export async function createProgram(argv = process.argv) {
     },
     subCommands: {
       serve: createServeCmd(resolverPromise),
-      start: createStartCmd(resolverPromise),
       sync: createSyncCmd(resolverPromise),
       api: apiCommand,
     },
