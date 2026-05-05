@@ -5,12 +5,19 @@ transition: slide-left
 mdc: true
 ---
 
+## Sync Engine
+
+- source / destination sync runtime
+- one protocol for backfill and realtime
+- pluggable connectors, reusable engine
+
+---
+
 ## sync engine is ...
 
 - a message-driven runtime for moving data between systems
 - transport agnostic
 - supports both pull (iterable) and push (events)
-- designed to scale
 
 ---
 
@@ -47,33 +54,6 @@ mdc: true
     - the engine image entrypoint is `node --use-env-proxy dist/bin/serve.js`
     - running the container starts the stateless HTTP API server by default
     - the service image is a different entrypoint (`dist/bin/sync-service.js`)
-
----
-
-## developer workflow
-
-- forward proxy
-  - `source scripts/mitmweb-forward-proxy.sh`
-  - starts proxy on `127.0.0.1:9080`, UI on `127.0.0.1:9081`
-  - exports `HTTP_PROXY` / `HTTPS_PROXY`
-  - adds `NODE_OPTIONS=--use-env-proxy` because Node fetch otherwise bypasses the proxy
-- reverse proxy
-  - `scripts/mitmweb-reverse-proxy.sh http://localhost:3000`
-  - starts proxy on `127.0.0.1:9090`, UI on `127.0.0.1:9091`
-  - forwards traffic to a local engine listening on `:3000`
-- `--engine-mitm`
-  - `sync-service --engine-mitm` starts a local engine on `:3000`
-  - the service then points its engine traffic at `http://127.0.0.1:9090`
-  - this lets you inspect service → engine requests in the reverse proxy UI
-
-```mermaid
-flowchart LR
-  Shell["dev shell"] -->|"HTTP_PROXY / HTTPS_PROXY\nNODE_OPTIONS=--use-env-proxy"| Fwd["mitmweb forward\n:9080\nUI :9081"]
-  Fwd --> Ext["external HTTP APIs"]
-
-  Svc["sync-service --engine-mitm"] -->|"engine requests"| Rev["mitmweb reverse\n:9090\nUI :9091"]
-  Rev -->|"reverse to localhost:3000"| Eng["local engine\nserve.js\n:3000"]
-```
 
 ---
 
@@ -310,9 +290,7 @@ sequenceDiagram
 
 - let's try it out. echo source | cat destination
   ```bash
-  printf '%s\n' \
-    '{"type":"record","record":{"stream":"demo","data":{"id":"1"},"emitted_at":"2026-01-01T00:00:00.000Z"}}' \
-    | cat
+  ./demo/dummy-source.sh | cat
   ```
 - now add the engine in there, and we get to keep track of the progress of sync
   - the engine adds validation, routing, catalog enforcement, and checkpoint handling
@@ -464,6 +442,33 @@ POST /webhooks/{pipeline_id} {
 
   return ndjsonResponse(output)
 }
+```
+
+---
+
+## developer workflow
+
+- forward proxy
+  - `source scripts/mitmweb-forward-proxy.sh`
+  - starts proxy on `127.0.0.1:9080`, UI on `127.0.0.1:9081`
+  - exports `HTTP_PROXY` / `HTTPS_PROXY`
+  - adds `NODE_OPTIONS=--use-env-proxy` because Node fetch otherwise bypasses the proxy
+- reverse proxy
+  - `scripts/mitmweb-reverse-proxy.sh http://localhost:3000`
+  - starts proxy on `127.0.0.1:9090`, UI on `127.0.0.1:9091`
+  - forwards traffic to a local engine listening on `:3000`
+- `--engine-mitm`
+  - `sync-service --engine-mitm` starts a local engine on `:3000`
+  - the service then points its engine traffic at `http://127.0.0.1:9090`
+  - this lets you inspect service → engine requests in the reverse proxy UI
+
+```mermaid
+flowchart LR
+  Shell["dev shell"] -->|"HTTP_PROXY / HTTPS_PROXY\nNODE_OPTIONS=--use-env-proxy"| Fwd["mitmweb forward\n:9080\nUI :9081"]
+  Fwd --> Ext["external HTTP APIs"]
+
+  Svc["sync-service --engine-mitm"] -->|"engine requests"| Rev["mitmweb reverse\n:9090\nUI :9091"]
+  Rev -->|"reverse to localhost:3000"| Eng["local engine\nserve.js\n:3000"]
 ```
 
 ---

@@ -19,19 +19,19 @@ CONFIG="{\"connection_string\": \"$DATABASE_URL\", \"schema\": \"public\"}"
 
 if [ -t 0 ]; then
   # No pipe — use sample data
-  CATALOG='{"streams":[{"stream":{"name":"demo","primary_key":[["id"]]},"sync_mode":"full_refresh","destination_sync_mode":"append"}]}'
+  CATALOG='{"streams":[{"stream":{"name":"demo","primary_key":[["id"]],"newer_than_field":"_updated_at"},"sync_mode":"full_refresh","destination_sync_mode":"append"}]}'
   $DEST setup --config "$CONFIG" --catalog "$CATALOG"
   printf '%s\n' \
-    '{"type":"record","stream":"demo","data":{"id":"1","name":"Alice","email":"alice@example.com"},"emitted_at":"2024-01-01T00:00:00.000Z"}' \
-    '{"type":"record","stream":"demo","data":{"id":"2","name":"Bob","email":"bob@example.com"},"emitted_at":"2024-01-01T00:00:00.000Z"}' \
+    '{"type":"record","record":{"stream":"demo","data":{"id":"1","name":"Alice","email":"alice@example.com","_updated_at":1704067200},"emitted_at":"2024-01-01T00:00:00.000Z"}}' \
+    '{"type":"record","record":{"stream":"demo","data":{"id":"2","name":"Bob","email":"bob@example.com","_updated_at":1704067200},"emitted_at":"2024-01-01T00:00:00.000Z"}}' \
   | $DEST write --config "$CONFIG" --catalog "$CATALOG"
 else
   # Piped — buffer stdin, extract stream names, setup, then write
   DATA=$(cat)
   STREAMS=$(echo "$DATA" | node -e "
     let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
-      const names=[...new Set(d.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.type==='record').map(m=>m.stream))];
-      const catalog={streams:names.map(n=>({stream:{name:n,primary_key:[['id']]},sync_mode:'full_refresh',destination_sync_mode:'append'}))};
+      const names=[...new Set(d.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.type==='record').map(m=>m.record.stream))];
+      const catalog={streams:names.map(n=>({stream:{name:n,primary_key:[['id']],newer_than_field:'_updated_at'},sync_mode:'full_refresh',destination_sync_mode:'append'}))};
       console.log(JSON.stringify(catalog));
     })")
   echo "Streams: $(echo "$STREAMS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).streams.map(s=>s.stream.name).join(', ')))")" >&2

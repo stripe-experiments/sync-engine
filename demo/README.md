@@ -58,6 +58,22 @@ export STRIPE_API_KEY=sk_test_...
 
 You'll see a stream of JSON records — one per line — for each Stripe object.
 
+## Dummy protocol demo
+
+For presentation or protocol-only walkthroughs, there is also a zero-dependency dummy stream:
+
+```sh
+./demo/dummy-source.sh
+./demo/dummy-source-to-dummy-destination.sh
+```
+
+This prints a tiny NDJSON stream with:
+
+- two `record` messages
+- one trailing `source_state` message
+
+It is useful when you want to explain the wire protocol without needing Stripe or Postgres.
+
 ## Step 2: Write to Postgres
 
 The destination connector reads NDJSON from stdin and writes to Postgres:
