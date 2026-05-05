@@ -333,6 +333,8 @@ export interface components {
             rate_limit?: number;
         };
         SourcePostgresConfig: {
+            [key: string]: unknown;
+        } & ({
             /**
              * @description Schema containing the source table
              * @default public
@@ -456,7 +458,7 @@ export interface components {
             query: string;
             /** @description Stream name emitted in the catalog and records. */
             stream: string;
-        };
+        });
         DestinationConfig: {
             /** @constant */
             type: "postgres";

@@ -1334,252 +1334,261 @@
         "additionalProperties": false
       },
       "SourcePostgresConfig": {
-        "anyOf": [
+        "allOf": [
           {
             "type": "object",
-            "properties": {
-              "schema": {
-                "default": "public",
-                "type": "string",
-                "description": "Schema containing the source table"
-              },
-              "primary_key": {
-                "default": [
-                  "id"
-                ],
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Columns that uniquely identify a row in this stream"
-              },
-              "cursor_field": {
-                "type": "string",
-                "description": "Monotonic column used for incremental reads"
-              },
-              "page_size": {
-                "default": 100,
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "description": "Rows to read per page"
-              },
-              "ssl_ca_pem": {
-                "type": "string",
-                "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
-              },
-              "url": {
-                "type": "string",
-                "description": "Postgres connection string"
-              },
-              "connection_string": {
-                "type": "string",
-                "description": "Deprecated alias for url; prefer url"
-              },
-              "table": {
-                "type": "string",
-                "description": "Table to read from"
-              },
-              "query": {
-                "not": {}
-              },
-              "stream": {
-                "type": "string",
-                "description": "Stream name emitted in the catalog and records. Defaults to table name."
-              }
-            },
-            "required": [
-              "cursor_field",
-              "url",
-              "table"
-            ],
-            "additionalProperties": false
+            "properties": {},
+            "additionalProperties": {}
           },
           {
-            "type": "object",
-            "properties": {
-              "schema": {
-                "default": "public",
-                "type": "string",
-                "description": "Schema containing the source table"
-              },
-              "primary_key": {
-                "default": [
-                  "id"
-                ],
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "schema": {
+                    "default": "public",
+                    "type": "string",
+                    "description": "Schema containing the source table"
+                  },
+                  "primary_key": {
+                    "default": [
+                      "id"
+                    ],
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Columns that uniquely identify a row in this stream"
+                  },
+                  "cursor_field": {
+                    "type": "string",
+                    "description": "Monotonic column used for incremental reads"
+                  },
+                  "page_size": {
+                    "default": 100,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Rows to read per page"
+                  },
+                  "ssl_ca_pem": {
+                    "type": "string",
+                    "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Postgres connection string"
+                  },
+                  "connection_string": {
+                    "type": "string",
+                    "description": "Deprecated alias for url; prefer url"
+                  },
+                  "table": {
+                    "type": "string",
+                    "description": "Table to read from"
+                  },
+                  "query": {
+                    "not": {}
+                  },
+                  "stream": {
+                    "type": "string",
+                    "description": "Stream name emitted in the catalog and records. Defaults to table name."
+                  }
                 },
-                "description": "Columns that uniquely identify a row in this stream"
-              },
-              "cursor_field": {
-                "type": "string",
-                "description": "Monotonic column used for incremental reads"
-              },
-              "page_size": {
-                "default": 100,
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "description": "Rows to read per page"
-              },
-              "ssl_ca_pem": {
-                "type": "string",
-                "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
-              },
-              "url": {
-                "type": "string",
-                "description": "Postgres connection string"
-              },
-              "connection_string": {
-                "type": "string",
-                "description": "Deprecated alias for url; prefer url"
-              },
-              "table": {
-                "type": "string",
-                "description": "Table to read from"
-              },
-              "query": {
-                "not": {}
-              },
-              "stream": {
-                "type": "string",
-                "description": "Stream name emitted in the catalog and records. Defaults to table name."
-              }
-            },
-            "required": [
-              "cursor_field",
-              "connection_string",
-              "table"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "schema": {
-                "default": "public",
-                "type": "string",
-                "description": "Schema containing the source table"
-              },
-              "primary_key": {
-                "default": [
-                  "id"
+                "required": [
+                  "cursor_field",
+                  "url",
+                  "table"
                 ],
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "schema": {
+                    "default": "public",
+                    "type": "string",
+                    "description": "Schema containing the source table"
+                  },
+                  "primary_key": {
+                    "default": [
+                      "id"
+                    ],
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Columns that uniquely identify a row in this stream"
+                  },
+                  "cursor_field": {
+                    "type": "string",
+                    "description": "Monotonic column used for incremental reads"
+                  },
+                  "page_size": {
+                    "default": 100,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Rows to read per page"
+                  },
+                  "ssl_ca_pem": {
+                    "type": "string",
+                    "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Postgres connection string"
+                  },
+                  "connection_string": {
+                    "type": "string",
+                    "description": "Deprecated alias for url; prefer url"
+                  },
+                  "table": {
+                    "type": "string",
+                    "description": "Table to read from"
+                  },
+                  "query": {
+                    "not": {}
+                  },
+                  "stream": {
+                    "type": "string",
+                    "description": "Stream name emitted in the catalog and records. Defaults to table name."
+                  }
                 },
-                "description": "Columns that uniquely identify a row in this stream"
-              },
-              "cursor_field": {
-                "type": "string",
-                "description": "Monotonic column used for incremental reads"
-              },
-              "page_size": {
-                "default": 100,
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "description": "Rows to read per page"
-              },
-              "ssl_ca_pem": {
-                "type": "string",
-                "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
-              },
-              "url": {
-                "type": "string",
-                "description": "Postgres connection string"
-              },
-              "connection_string": {
-                "type": "string",
-                "description": "Deprecated alias for url; prefer url"
-              },
-              "table": {
-                "not": {}
-              },
-              "query": {
-                "type": "string",
-                "description": "SQL query to read from. Must expose the primary_key and cursor_field columns."
-              },
-              "stream": {
-                "type": "string",
-                "description": "Stream name emitted in the catalog and records."
-              }
-            },
-            "required": [
-              "cursor_field",
-              "url",
-              "query",
-              "stream"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "schema": {
-                "default": "public",
-                "type": "string",
-                "description": "Schema containing the source table"
-              },
-              "primary_key": {
-                "default": [
-                  "id"
+                "required": [
+                  "cursor_field",
+                  "connection_string",
+                  "table"
                 ],
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "schema": {
+                    "default": "public",
+                    "type": "string",
+                    "description": "Schema containing the source table"
+                  },
+                  "primary_key": {
+                    "default": [
+                      "id"
+                    ],
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Columns that uniquely identify a row in this stream"
+                  },
+                  "cursor_field": {
+                    "type": "string",
+                    "description": "Monotonic column used for incremental reads"
+                  },
+                  "page_size": {
+                    "default": 100,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Rows to read per page"
+                  },
+                  "ssl_ca_pem": {
+                    "type": "string",
+                    "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Postgres connection string"
+                  },
+                  "connection_string": {
+                    "type": "string",
+                    "description": "Deprecated alias for url; prefer url"
+                  },
+                  "table": {
+                    "not": {}
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "SQL query to read from. Must expose the primary_key and cursor_field columns."
+                  },
+                  "stream": {
+                    "type": "string",
+                    "description": "Stream name emitted in the catalog and records."
+                  }
                 },
-                "description": "Columns that uniquely identify a row in this stream"
+                "required": [
+                  "cursor_field",
+                  "url",
+                  "query",
+                  "stream"
+                ],
+                "additionalProperties": false
               },
-              "cursor_field": {
-                "type": "string",
-                "description": "Monotonic column used for incremental reads"
-              },
-              "page_size": {
-                "default": 100,
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "description": "Rows to read per page"
-              },
-              "ssl_ca_pem": {
-                "type": "string",
-                "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
-              },
-              "url": {
-                "type": "string",
-                "description": "Postgres connection string"
-              },
-              "connection_string": {
-                "type": "string",
-                "description": "Deprecated alias for url; prefer url"
-              },
-              "table": {
-                "not": {}
-              },
-              "query": {
-                "type": "string",
-                "description": "SQL query to read from. Must expose the primary_key and cursor_field columns."
-              },
-              "stream": {
-                "type": "string",
-                "description": "Stream name emitted in the catalog and records."
+              {
+                "type": "object",
+                "properties": {
+                  "schema": {
+                    "default": "public",
+                    "type": "string",
+                    "description": "Schema containing the source table"
+                  },
+                  "primary_key": {
+                    "default": [
+                      "id"
+                    ],
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Columns that uniquely identify a row in this stream"
+                  },
+                  "cursor_field": {
+                    "type": "string",
+                    "description": "Monotonic column used for incremental reads"
+                  },
+                  "page_size": {
+                    "default": 100,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Rows to read per page"
+                  },
+                  "ssl_ca_pem": {
+                    "type": "string",
+                    "description": "PEM-encoded CA certificate for SSL verification (required for verify-ca / verify-full with a private CA)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Postgres connection string"
+                  },
+                  "connection_string": {
+                    "type": "string",
+                    "description": "Deprecated alias for url; prefer url"
+                  },
+                  "table": {
+                    "not": {}
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "SQL query to read from. Must expose the primary_key and cursor_field columns."
+                  },
+                  "stream": {
+                    "type": "string",
+                    "description": "Stream name emitted in the catalog and records."
+                  }
+                },
+                "required": [
+                  "cursor_field",
+                  "connection_string",
+                  "query",
+                  "stream"
+                ],
+                "additionalProperties": false
               }
-            },
-            "required": [
-              "cursor_field",
-              "connection_string",
-              "query",
-              "stream"
-            ],
-            "additionalProperties": false
+            ]
           }
         ]
       },
