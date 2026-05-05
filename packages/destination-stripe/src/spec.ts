@@ -67,6 +67,12 @@ export type Config = z.infer<typeof configSchema>
 export type CustomObjectConfig = z.infer<typeof customObjectConfigSchema>
 export type StandardObjectConfig = z.infer<typeof standardObjectConfigSchema>
 
+const configJsonSchema = {
+  ...z.toJSONSchema(configSchema),
+  type: 'object',
+  properties: {},
+} as const
+
 export default {
-  config: z.toJSONSchema(configSchema),
+  config: configJsonSchema,
 } satisfies ConnectorSpecification
