@@ -1,0 +1,41 @@
+# Sync Engine Knowledge Transfer Outline
+
+- sync engine is ...
+- many deployment targets
+    - as a library (replit, supabasea)
+    - as cli (direct users, contributors)
+    - docker (kubernetes, internal stripe)
+- core of sync engine is the protocol
+    - walk through different message types and what they are for
+- 3 components and their roles
+    - source
+    - destination
+    - engine
+- transport agnostic
+    - in-memory
+    - stdin / out
+    - http
+- dummy source & destination, simply using the file system
+    - let's try it out. echo source | cat destination
+    - now add the engine in there, and we get to keep track of the progress of sync
+- source-stripe | dummy destination
+    - deep dive
+- dummy source | postgres destination
+    - deep dive into postgres
+- source-stripe | postgres destiination
+- Experimental
+    - When we started the sync engine, the vision is to become an ubiquitous utility to help user “get your data where you need it, in real time, with a consistent schema”
+    - https://docs.google.com/document/d/1S4ELi0jZfCWupoi1m8iS49XmecPHgLOapi0xojtRDeM/edit?tab=t.0#heading=h.ihr1ujskb3dc
+- source-metronome | destination-redis
+    - single seconds data sync latency 
+    - single ms query latency without relying on the internet
+- source-postgres | destination-stripe
+    - Sync both standard AND custom objects into Stripe
+    - standard
+        - customer
+        - products
+    - custom
+        - locations
+        - devices 
+
+        
