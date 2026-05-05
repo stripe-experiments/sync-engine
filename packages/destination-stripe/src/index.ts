@@ -6,7 +6,7 @@ import defaultSpec, {
   configSchema,
   type Config,
   type CustomObjectConfig,
-  type StripeObjectConfig,
+  type StandardObjectConfig,
 } from './spec.js'
 import { log } from './logger.js'
 
@@ -22,9 +22,9 @@ export type StripeDestinationDeps = {
 type RequestBodyEncoding = 'form' | 'json'
 
 type CustomObjectStreamConfig = CustomObjectConfig['streams'][string]
-type StripeObjectStreamConfig = StripeObjectConfig['streams'][string]
-type StripeObjectSetup = {
-  config: StripeObjectConfig
+type StandardObjectStreamConfig = StandardObjectConfig['streams'][string]
+type StandardObjectSetup = {
+  config: StandardObjectConfig
   createEndpoints: Map<string, CreateEndpoint>
 }
 
@@ -41,7 +41,7 @@ class StripeWriteError extends Error {
 
 const DEFAULT_STRIPE_API_BASE = 'https://api.stripe.com'
 const SUPPORTED_CUSTOM_OBJECT = 'custom_object'
-const SUPPORTED_STRIPE_OBJECT = 'stripe_object'
+const SUPPORTED_STANDARD_OBJECT = 'standard_object'
 const CUSTOM_OBJECT_API_VERSION = 'unsafe-development'
 const msg = createSourceMessageFactory<unknown, Record<string, unknown>, Record<string, unknown>>()
 
@@ -75,24 +75,24 @@ function requireCustomObjectConfig(config: Config): CustomObjectConfig {
   return config as CustomObjectConfig
 }
 
-function requireStripeObjectConfig(config: Config): StripeObjectConfig {
+function requireStandardObjectConfig(config: Config): StandardObjectConfig {
   const raw = config as Config & {
     object?: unknown
     write_mode?: unknown
     streams?: unknown
   }
-  if (raw.object !== SUPPORTED_STRIPE_OBJECT) {
+  if (raw.object !== SUPPORTED_STANDARD_OBJECT) {
     throw new Error(
-      `destination-stripe expected object: "stripe_object"; object "${String(raw.object)}" is not supported by this write path`
+      `destination-stripe expected object: "standard_object"; object "${String(raw.object)}" is not supported by this write path`
     )
   }
   if (raw.write_mode !== 'create') {
-    throw new Error('write_mode must be "create" for object: "stripe_object"')
+    throw new Error('write_mode must be "create" for object: "standard_object"')
   }
   if (!isRecord(raw.streams) || Object.keys(raw.streams).length === 0) {
-    throw new Error('streams is required for object: "stripe_object"')
+    throw new Error('streams is required for object: "standard_object"')
   }
-  return config as StripeObjectConfig
+  return config as StandardObjectConfig
 }
 
 function encodeFormData(params: Record<string, unknown>, prefix = ''): string {
@@ -346,15 +346,15 @@ async function validateCustomObjectConfig(config: Config, fetchFn: FetchFn): Pro
   }
 }
 
-async function validateStripeObjectConfig(
+async function validateStandardObjectConfig(
   config: Config,
   fetchFn: FetchFn
-): Promise<StripeObjectSetup> {
-  const stripeConfig = requireStripeObjectConfig(config)
-  const resolved = await resolveOpenApiSpec({ apiVersion: stripeConfig.api_version }, fetchFn)
+): Promise<StandardObjectSetup> {
+  const standardConfig = requireStandardObjectConfig(config)
+  const resolved = await resolveOpenApiSpec({ apiVersion: standardConfig.api_version }, fetchFn)
   const createEndpoints = new SpecParser().discoverCreateEndpoints(resolved.spec)
 
-  for (const [streamName, streamConfig] of Object.entries(stripeConfig.streams)) {
+  for (const [streamName, streamConfig] of Object.entries(standardConfig.streams)) {
     const endpoint = createEndpoints.get(streamName)
     if (!endpoint) {
       throw new Error(`Stripe create endpoint for stream "${streamName}" was not found`)
@@ -365,19 +365,19 @@ async function validateStripeObjectConfig(
     )
     if (unknownParams.length > 0) {
       throw new Error(
-        `Stripe object stream "${streamName}" does not define create parameter(s): ${unknownParams.join(', ')}`
+        `Standard object stream "${streamName}" does not define create parameter(s): ${unknownParams.join(', ')}`
       )
     }
   }
 
-  return { config: stripeConfig, createEndpoints }
+  return { config: standardConfig, createEndpoints }
 }
 
 type DestinationSetup =
   | { object: 'custom_object'; config: CustomObjectConfig }
   | {
-      object: 'stripe_object'
-      config: StripeObjectConfig
+      object: 'standard_object'
+      config: StandardObjectConfig
       createEndpoints: Map<string, CreateEndpoint>
     }
 
@@ -387,12 +387,12 @@ async function validateConfig(config: Config, fetchFn: FetchFn): Promise<Destina
     await validateCustomObjectConfig(config, fetchFn)
     return { object: 'custom_object', config: requireCustomObjectConfig(config) }
   }
-  if (object === SUPPORTED_STRIPE_OBJECT) {
-    const setup = await validateStripeObjectConfig(config, fetchFn)
-    return { object: 'stripe_object', ...setup }
+  if (object === SUPPORTED_STANDARD_OBJECT) {
+    const setup = await validateStandardObjectConfig(config, fetchFn)
+    return { object: 'standard_object', ...setup }
   }
   throw new Error(
-    `destination-stripe supports object: "custom_object" or "stripe_object"; object "${String(object)}" is not supported`
+    `destination-stripe supports object: "custom_object" or "standard_object"; object "${String(object)}" is not supported`
   )
 }
 
@@ -419,20 +419,20 @@ function customObjectStreamConfig(
   return streamConfig
 }
 
-function stripeObjectStreamConfig(
-  config: StripeObjectConfig,
+function standardObjectStreamConfig(
+  config: StandardObjectConfig,
   streamName: string
-): StripeObjectStreamConfig {
+): StandardObjectStreamConfig {
   const streamConfig = config.streams[streamName]
   if (!streamConfig) {
-    throw new Error(`No Stripe object stream config found for stream "${streamName}"`)
+    throw new Error(`No standard object stream config found for stream "${streamName}"`)
   }
   return streamConfig
 }
 
-function stripeObjectParams(
+function standardObjectParams(
   endpoint: CreateEndpoint,
-  streamConfig: StripeObjectStreamConfig,
+  streamConfig: StandardObjectStreamConfig,
   data: Record<string, unknown>
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {}
@@ -482,8 +482,8 @@ async function createCustomObject(
   return record
 }
 
-async function createStripeObject(
-  setup: Extract<DestinationSetup, { object: 'stripe_object' }>,
+async function createStandardObject(
+  setup: Extract<DestinationSetup, { object: 'standard_object' }>,
   fetchFn: FetchFn,
   sleep: (ms: number) => Promise<void>,
   stream: Stream | undefined,
@@ -494,9 +494,9 @@ async function createStripeObject(
   if (!endpoint) {
     throw new Error(`Stripe create endpoint for stream "${streamName}" was not found`)
   }
-  const params = stripeObjectParams(
+  const params = standardObjectParams(
     endpoint,
-    stripeObjectStreamConfig(setup.config, streamName),
+    standardObjectStreamConfig(setup.config, streamName),
     data
   )
   const idemKey = idempotencyKey(stream, streamName, 'create', data)
@@ -516,12 +516,12 @@ async function createStripeObject(
     {
       maxRetries: setup.config.max_retries,
       sleep,
-      label: `create Stripe object ${streamName}`,
+      label: `create standard object ${streamName}`,
     }
   )
   if (typeof record.id !== 'string') {
     throw new Error(
-      `Stripe object create response for stream "${streamName}" did not include a string id`
+      `Standard object create response for stream "${streamName}" did not include a string id`
     )
   }
   return record
@@ -598,7 +598,7 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
                 data as Record<string, unknown>
               )
             } else {
-              await createStripeObject(
+              await createStandardObject(
                 setup,
                 fetchFn,
                 sleep,

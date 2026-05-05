@@ -92,11 +92,11 @@ function customObjectFieldValue(record: Record<string, unknown>, field: string) 
 }
 
 async function preparePostgres(client: pg.Client) {
-  await client.query(`DROP TABLE IF EXISTS regular_stripe_object_e2e`)
+  await client.query(`DROP TABLE IF EXISTS standard_object_reverse_etl_e2e`)
   await client.query(`DROP TABLE IF EXISTS custom_object_reverse_etl_e2e`)
 
   await client.query(`
-    CREATE TABLE regular_stripe_object_e2e (
+    CREATE TABLE standard_object_reverse_etl_e2e (
       id text PRIMARY KEY,
       email text NOT NULL,
       full_name text NOT NULL,
@@ -114,7 +114,7 @@ async function preparePostgres(client: pg.Client) {
   `)
 
   await client.query(
-    `INSERT INTO regular_stripe_object_e2e
+    `INSERT INTO standard_object_reverse_etl_e2e
        (id, email, full_name, ignored_internal_note, updated_at)
      VALUES ($1, $2, $3, $4, date_trunc('milliseconds', clock_timestamp()))`,
     [
@@ -133,14 +133,14 @@ async function preparePostgres(client: pg.Client) {
 }
 
 async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine>>) {
-  log('Syncing Postgres table regular_stripe_object_e2e -> Stripe Customer')
+  log('Syncing Postgres table standard_object_reverse_etl_e2e -> Stripe Customer')
   const result = await engine.pipeline_sync_batch(
     {
       source: {
         type: 'postgres',
         postgres: {
           url: databaseUrl,
-          table: 'regular_stripe_object_e2e',
+          table: 'standard_object_reverse_etl_e2e',
           stream: 'customers',
           primary_key: ['id'],
           cursor_field: 'updated_at',
@@ -152,7 +152,7 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
         stripe: {
           api_key: stripeApiKey,
           api_version: stripeApiVersion,
-          object: 'stripe_object',
+          object: 'standard_object',
           write_mode: 'create',
           streams: {
             customers: {
@@ -306,7 +306,7 @@ async function main() {
         })
     }
 
-    await client.query(`DROP TABLE IF EXISTS regular_stripe_object_e2e`).catch(() => {})
+    await client.query(`DROP TABLE IF EXISTS standard_object_reverse_etl_e2e`).catch(() => {})
     await client.query(`DROP TABLE IF EXISTS custom_object_reverse_etl_e2e`).catch(() => {})
     await client.end()
   }

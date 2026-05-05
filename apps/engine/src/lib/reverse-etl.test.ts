@@ -33,7 +33,7 @@ function stripeResponse(json: unknown, init?: ResponseInit): Response {
 }
 
 describe('reverse ETL', () => {
-  it('advances source_state through insert-only regular Stripe object creates', async () => {
+  it('advances source_state through insert-only standard object creates', async () => {
     const rows = [
       {
         id: 'crm_123',
@@ -98,7 +98,7 @@ describe('reverse ETL', () => {
             api_key: 'sk_test_123',
             api_version: '2026-03-25.dahlia',
             base_url: 'https://stripe.test',
-            object: 'stripe_object',
+            object: 'standard_object',
             write_mode: 'create',
             streams: {
               customers: {
@@ -112,7 +112,7 @@ describe('reverse ETL', () => {
         },
         streams: [{ name: 'customers', sync_mode: 'incremental' }],
       },
-      { run_id: 'run_reverse_etl_stripe_object_create_test' }
+      { run_id: 'run_reverse_etl_standard_object_create_test' }
     )
 
     expect(result.ending_state?.source.streams.customers).toEqual({

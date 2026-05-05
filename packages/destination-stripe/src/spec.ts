@@ -11,7 +11,7 @@ const customObjectStreamConfigSchema = z
   })
   .strict()
 
-const stripeObjectStreamConfigSchema = z
+const standardObjectStreamConfigSchema = z
   .object({
     field_mapping: z
       .record(z.string(), z.string())
@@ -39,9 +39,7 @@ const customObjectConfigSchema = baseConfigSchema
     api_version: z
       .literal('unsafe-development')
       .describe('Stripe API version for Custom Object write requests'),
-    object: z
-      .literal('custom_object')
-      .describe('Stripe object type to write. Currently only Custom Objects are supported.'),
+    object: z.literal('custom_object').describe('Stripe object type to write.'),
     write_mode: z.literal('create').describe('Custom Objects are append-only create writes.'),
     streams: z
       .record(z.string(), customObjectStreamConfigSchema)
@@ -49,25 +47,25 @@ const customObjectConfigSchema = baseConfigSchema
   })
   .strict()
 
-const stripeObjectConfigSchema = baseConfigSchema
+const standardObjectConfigSchema = baseConfigSchema
   .extend({
     api_version: z.enum(SUPPORTED_API_VERSIONS).describe('Stripe API version for write requests'),
-    object: z.literal('stripe_object').describe('Write regular Stripe API resources.'),
-    write_mode: z.literal('create').describe('Regular Stripe objects are insert-only creates.'),
+    object: z.literal('standard_object').describe('Write standard Stripe API resources.'),
+    write_mode: z.literal('create').describe('Standard Stripe objects are insert-only creates.'),
     streams: z
-      .record(z.string(), stripeObjectStreamConfigSchema)
-      .describe('Per-source-stream Stripe object create configuration.'),
+      .record(z.string(), standardObjectStreamConfigSchema)
+      .describe('Per-source-stream standard Stripe object create configuration.'),
   })
   .strict()
 
 export const configSchema = z.discriminatedUnion('object', [
   customObjectConfigSchema,
-  stripeObjectConfigSchema,
+  standardObjectConfigSchema,
 ])
 
 export type Config = z.infer<typeof configSchema>
 export type CustomObjectConfig = z.infer<typeof customObjectConfigSchema>
-export type StripeObjectConfig = z.infer<typeof stripeObjectConfigSchema>
+export type StandardObjectConfig = z.infer<typeof standardObjectConfigSchema>
 
 export default {
   config: z.toJSONSchema(configSchema),

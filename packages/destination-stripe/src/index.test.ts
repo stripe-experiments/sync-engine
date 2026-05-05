@@ -63,11 +63,11 @@ const customObjectConfig = configSchema.parse({
   },
 })
 
-const stripeObjectConfig = configSchema.parse({
+const standardObjectConfig = configSchema.parse({
   api_key: 'sk_test_123',
   api_version: BUNDLED_API_VERSION,
   base_url: 'https://stripe.test',
-  object: 'stripe_object',
+  object: 'standard_object',
   write_mode: 'create',
   streams: {
     customers: {
@@ -93,7 +93,7 @@ const catalog: ConfiguredCatalog = {
   ],
 }
 
-const stripeObjectCatalog: ConfiguredCatalog = {
+const standardObjectCatalog: ConfiguredCatalog = {
   streams: [
     {
       stream: {
@@ -142,7 +142,7 @@ describe('destination-stripe', () => {
         connection_status: {
           status: 'failed',
           message:
-            'destination-stripe supports object: "custom_object" or "stripe_object"; object "invoice" is not supported',
+            'destination-stripe supports object: "custom_object" or "standard_object"; object "invoice" is not supported',
         },
       },
       {
@@ -151,28 +151,28 @@ describe('destination-stripe', () => {
           stream: 'crm_customers',
           status: 'error',
           error:
-            'destination-stripe supports object: "custom_object" or "stripe_object"; object "invoice" is not supported',
+            'destination-stripe supports object: "custom_object" or "standard_object"; object "invoice" is not supported',
         },
       },
     ])
   })
 
-  it('validates Custom Object and Stripe object config through the JSON Schema path', () => {
+  it('validates Custom Object and standard object config through the JSON Schema path', () => {
     const jsonSchemaConfig = z.fromJSONSchema(spec.config)
     const { streams: _streams, ...missingStreamsConfig } = customObjectConfig
 
     expect(jsonSchemaConfig.safeParse(customObjectConfig).success).toBe(true)
-    expect(jsonSchemaConfig.safeParse(stripeObjectConfig).success).toBe(true)
+    expect(jsonSchemaConfig.safeParse(standardObjectConfig).success).toBe(true)
     for (const invalidConfig of [
       missingStreamsConfig,
       { ...customObjectConfig, api_version: '2026-03-25.dahlia' },
       { ...customObjectConfig, object: 'customer' },
       { ...customObjectConfig, write_mode: 'upsert' },
-      { ...stripeObjectConfig, api_version: 'unsafe-development' },
-      { ...stripeObjectConfig, object: 'customer' },
-      { ...stripeObjectConfig, streams: { customers: {} } },
+      { ...standardObjectConfig, api_version: 'unsafe-development' },
+      { ...standardObjectConfig, object: 'customer' },
+      { ...standardObjectConfig, streams: { customers: {} } },
       {
-        ...stripeObjectConfig,
+        ...standardObjectConfig,
         streams: { customers: { field_mapping: { email: 'email' } } },
         mode: 'upsert',
       },
@@ -188,7 +188,7 @@ describe('destination-stripe', () => {
     }
   })
 
-  it('creates a regular Stripe object with mapped form parameters', async () => {
+  it('creates a standard object with mapped form parameters', async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const destination = createStripeDestination({
       sleep: async () => {},
@@ -199,7 +199,7 @@ describe('destination-stripe', () => {
     })
 
     const messages = await collect(
-      destination.write({ config: stripeObjectConfig, catalog: stripeObjectCatalog }, [
+      destination.write({ config: standardObjectConfig, catalog: standardObjectCatalog }, [
         {
           type: 'record',
           record: {
@@ -244,12 +244,12 @@ describe('destination-stripe', () => {
     )
   })
 
-  it('fails regular Stripe object check for unknown mapped create parameters', async () => {
+  it('fails standard object check for unknown mapped create parameters', async () => {
     const destination = createStripeDestination({
       fetch: async () => response({ id: 'unexpected' }),
     })
     const invalidConfig = configSchema.parse({
-      ...stripeObjectConfig,
+      ...standardObjectConfig,
       streams: {
         customers: {
           field_mapping: {
@@ -267,7 +267,7 @@ describe('destination-stripe', () => {
         connection_status: {
           status: 'failed',
           message:
-            'Stripe object stream "customers" does not define create parameter(s): not_a_customer_param',
+            'Standard object stream "customers" does not define create parameter(s): not_a_customer_param',
         },
       },
     ])
