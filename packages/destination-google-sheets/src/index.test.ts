@@ -2059,7 +2059,7 @@ describe('enum constraints on any column', () => {
     // be missing entirely from the written row.
 
     const PROBLEMATIC_DESCRIPTION =
-      '><svg/onload=confirm(1);> krpandayashutosh39@gmail.com03D22BF{"custom_fields":null,"default_payment_method":null,"default_shared_payment_token":null,"footer":null,"rendering_options":null}'
+      '><svg/onload=confirm(1);> test@gmail.com03D22BF{"custom_fields":null,"default_payment_method":null,"default_shared_payment_token":null,"footer":null,"rendering_options":null}'
 
     it('rowsToTsv strips double-quotes so the pasteData parser cannot enter quoted-field mode', () => {
       const row = ['before', PROBLEMATIC_DESCRIPTION, 'after1', 'after2', 'after3', 'after4', 'after5', 'after6']
