@@ -459,7 +459,7 @@ export interface components {
             /** @description Latest full sync checkpoint emitted by the engine. Includes source, destination, and sync-run state for the next request. */
             sync_state?: components["schemas"]["SyncState"];
         };
-        /** @description Terminal message signaling end of this request. */
+        /** @description Deprecated terminal message signaling end of this request. Prefer explicit request/response results via pipeline_sync_batch. */
         EofPayload: {
             /** @description Terminal run status derived from stream outcomes. */
             status: components["schemas"]["RunStatus"];

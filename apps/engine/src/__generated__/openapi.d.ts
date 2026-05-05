@@ -755,7 +755,7 @@ export interface components {
             type: "eof";
             eof: components["schemas"]["EofPayload"];
         };
-        /** @description Terminal message signaling end of this request. */
+        /** @description Deprecated terminal message signaling end of this request. Prefer explicit request/response results via pipeline_sync_batch. */
         EofPayload: {
             /** @description Terminal run status derived from stream outcomes. */
             status: components["schemas"]["RunStatus"];

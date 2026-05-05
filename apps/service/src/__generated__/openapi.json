@@ -1838,7 +1838,7 @@
           "request_progress"
         ],
         "additionalProperties": false,
-        "description": "Terminal message signaling end of this request."
+        "description": "Deprecated terminal message signaling end of this request. Prefer explicit request/response results via pipeline_sync_batch."
       }
     }
   }
