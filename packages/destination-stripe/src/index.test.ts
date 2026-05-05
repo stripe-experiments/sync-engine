@@ -157,6 +157,40 @@ describe('destination-stripe', () => {
     ])
   })
 
+  it('rejects unsupported Stripe objects before reading stdin', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    const destination = createStripeDestination({
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), init })
+        return response({ id: 'unexpected' })
+      },
+    })
+    const invoiceConfig = { ...customObjectConfig, object: 'invoice' } as typeof customObjectConfig
+
+    const messages = await collect(destination.write({ config: invoiceConfig, catalog }, []))
+
+    expect(requests).toEqual([])
+    expect(messages).toEqual([
+      {
+        type: 'connection_status',
+        connection_status: {
+          status: 'failed',
+          message:
+            'destination-stripe supports object: "custom_object" or "standard_object"; object "invoice" is not supported',
+        },
+      },
+      {
+        type: 'stream_status',
+        stream_status: {
+          stream: 'crm_customers',
+          status: 'error',
+          error:
+            'destination-stripe supports object: "custom_object" or "standard_object"; object "invoice" is not supported',
+        },
+      },
+    ])
+  })
+
   it('validates Custom Object and standard object config through the JSON Schema path', () => {
     const jsonSchemaConfig = z.fromJSONSchema(spec.config)
     const { streams: _streams, ...missingStreamsConfig } = customObjectConfig
@@ -398,6 +432,66 @@ describe('destination-stripe', () => {
     ])
   })
 
+  it('fails setup when a selected Custom Object stream is unmapped', async () => {
+    const destination = createStripeDestination({
+      fetch: async () =>
+        response({
+          data: [
+            customObjectDefinitions().data[0],
+            {
+              id: 'cobjdef_456',
+              api_name_plural: 'account_cards',
+              api_name_singular: 'account_card',
+              properties: { label: { type: 'string' } },
+            },
+          ],
+        }),
+    })
+    const multiStreamCatalog: ConfiguredCatalog = {
+      streams: [
+        ...catalog.streams,
+        {
+          stream: {
+            name: 'crm_accounts',
+            primary_key: [['id']],
+            newer_than_field: 'updated_at',
+          },
+          sync_mode: 'incremental',
+          destination_sync_mode: 'append',
+        },
+      ],
+    }
+
+    const messages = await collect(
+      destination.write({ config: customObjectConfig, catalog: multiStreamCatalog }, [
+        {
+          type: 'source_state',
+          source_state: {
+            state_type: 'stream',
+            stream: 'crm_accounts',
+            data: { cursor: '2026-01-01T00:00:00.000Z' },
+          },
+        },
+      ])
+    )
+
+    const error = 'No Stripe Custom Object stream config found for stream "crm_accounts"'
+    expect(messages).toEqual([
+      {
+        type: 'connection_status',
+        connection_status: { status: 'failed', message: error },
+      },
+      {
+        type: 'stream_status',
+        stream_status: { stream: 'crm_customers', status: 'error', error },
+      },
+      {
+        type: 'stream_status',
+        stream_status: { stream: 'crm_accounts', status: 'error', error },
+      },
+    ])
+  })
+
   it('creates a Custom Object with JSON fields and passes source_state after success', async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const destination = createStripeDestination({
@@ -535,6 +629,44 @@ describe('destination-stripe', () => {
         },
       },
     ])
+  })
+
+  it('retries retryable non-JSON Stripe errors', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    let sleeps = 0
+    const destination = createStripeDestination({
+      sleep: async () => {
+        sleeps += 1
+      },
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), init })
+        if (String(url).endsWith('/v2/extend/object_definitions')) {
+          return response(customObjectDefinitions())
+        }
+        if (
+          requests.filter((request) => request.url.endsWith('/v2/extend/objects/loyalty_cards'))
+            .length === 1
+        ) {
+          return new Response('temporary upstream failure', {
+            status: 500,
+            headers: { 'content-type': 'text/plain' },
+          })
+        }
+        return response({ id: 'co_123', object: 'v2.extend.object' })
+      },
+    })
+
+    const messages = await collect(
+      destination.write({ config: customObjectConfig, catalog }, [inputMessages()[0]!])
+    )
+
+    expect(messages.map((message) => message.type)).toEqual(['record'])
+    expect(requests.map((request) => request.url)).toEqual([
+      'https://stripe.test/v2/extend/object_definitions',
+      'https://stripe.test/v2/extend/objects/loyalty_cards',
+      'https://stripe.test/v2/extend/objects/loyalty_cards',
+    ])
+    expect(sleeps).toBe(1)
   })
 
   it('withholds global source_state after any Custom Object write failure', async () => {

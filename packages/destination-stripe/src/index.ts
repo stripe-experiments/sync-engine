@@ -3,7 +3,6 @@ import type { ConfiguredCatalog, Destination, Stream } from '@stripe/sync-protoc
 import { createSourceMessageFactory } from '@stripe/sync-protocol'
 import { resolveOpenApiSpec, SpecParser, type CreateEndpoint } from '@stripe/sync-openapi'
 import defaultSpec, {
-  configSchema,
   type Config,
   type CustomObjectConfig,
   type StandardObjectConfig,
@@ -135,6 +134,10 @@ function errorMessageFromJson(json: unknown): string {
   return 'Stripe request failed'
 }
 
+function parseJson(text: string): unknown {
+  return JSON.parse(text)
+}
+
 function retryAfterMs(headers: Record<string, string>): number | undefined {
   const value = headers['retry-after']
   if (!value) return undefined
@@ -184,7 +187,17 @@ async function requestJson<T>(
   const response = await fetchFn(url, { method, headers, body })
   const responseHeaders = headersToRecord(response.headers)
   const text = await response.text()
-  const json = text ? JSON.parse(text) : {}
+  let json: unknown = {}
+  if (text) {
+    try {
+      json = parseJson(text)
+    } catch (err) {
+      if (!response.ok) {
+        throw new StripeWriteError(text, response.status, responseHeaders)
+      }
+      throw err
+    }
+  }
 
   if (!response.ok) {
     throw new StripeWriteError(errorMessageFromJson(json), response.status, responseHeaders)
@@ -396,6 +409,21 @@ async function validateConfig(config: Config, fetchFn: FetchFn): Promise<Destina
   )
 }
 
+function validateCatalogStreams(setup: DestinationSetup, catalog: ConfiguredCatalog): void {
+  for (const configured of catalog.streams) {
+    const streamName = configured.stream.name
+    if (setup.object === 'custom_object') {
+      customObjectStreamConfig(setup.config, streamName)
+    } else {
+      standardObjectStreamConfig(setup.config, streamName)
+      const endpoint = setup.createEndpoints.get(streamName)
+      if (!endpoint) {
+        throw new Error(`Stripe create endpoint for stream "${streamName}" was not found`)
+      }
+    }
+  }
+}
+
 function customObjectFields(
   streamConfig: CustomObjectStreamConfig,
   data: Record<string, unknown>
@@ -563,23 +591,20 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
       const failedStreams = new Set<string>()
       let setupError: unknown
       let setup: DestinationSetup | undefined
-      let setupChecked = false
+
+      try {
+        setup = await validateConfig(config, fetchFn)
+        validateCatalogStreams(setup, catalog)
+      } catch (err) {
+        setupError = err
+        yield connectionError(err)
+        for (const configured of catalog.streams) {
+          failedStreams.add(configured.stream.name)
+          yield streamError(configured.stream.name, err)
+        }
+      }
 
       for await (const input of $stdin) {
-        if (!setupChecked) {
-          setupChecked = true
-          try {
-            setup = await validateConfig(config, fetchFn)
-          } catch (err) {
-            setupError = err
-            yield connectionError(err)
-            for (const configured of catalog.streams) {
-              failedStreams.add(configured.stream.name)
-              yield streamError(configured.stream.name, err)
-            }
-          }
-        }
-
         if (input.type === 'record') {
           const { stream, data } = input.record
           if (failedStreams.has(stream)) continue

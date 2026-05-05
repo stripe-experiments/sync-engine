@@ -83,12 +83,14 @@ function jsonTypeForPostgresType(dataType: string): Record<string, unknown> {
       return { type: 'boolean' }
     case 'smallint':
     case 'integer':
-    case 'bigint':
       return { type: 'integer' }
+    case 'bigint':
+      return { type: 'string' }
     case 'real':
     case 'double precision':
-    case 'numeric':
       return { type: 'number' }
+    case 'numeric':
+      return { type: 'string' }
     case 'json':
     case 'jsonb':
       return { type: 'object' }
@@ -121,8 +123,20 @@ async function discoverTableSchema(
     [config.schema, config.table]
   )
 
+  if (result.rows.length === 0) {
+    throw new Error(
+      `Table "${config.schema}.${config.table}" was not found or has no visible columns`
+    )
+  }
+
   const properties = Object.fromEntries(
-    result.rows.map((row) => [row.column_name, jsonTypeForPostgresType(row.data_type)])
+    result.rows.map((row) => {
+      const schema = jsonTypeForPostgresType(row.data_type)
+      return [
+        row.column_name,
+        row.is_nullable === 'YES' ? { anyOf: [schema, { type: 'null' }] } : schema,
+      ]
+    })
   )
   const required = result.rows
     .filter((row) => row.is_nullable === 'NO')

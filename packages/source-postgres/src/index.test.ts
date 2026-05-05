@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import type { ConfiguredCatalog } from '@stripe/sync-protocol'
 import { createPostgresSource } from './index.js'
-import { configSchema } from './spec.js'
+import spec, { configSchema } from './spec.js'
 
 async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = []
@@ -20,6 +21,42 @@ function queryResult<T extends Record<string, unknown>>(rows: T[]) {
 }
 
 describe('source-postgres', () => {
+  it('validates config constraints through the JSON Schema path', () => {
+    const jsonSchemaConfig = z.fromJSONSchema(spec.config)
+    const validTableConfig = {
+      url: 'postgres://example',
+      table: 'crm_customers',
+      cursor_field: 'updated_at',
+    }
+    const validQueryConfig = {
+      url: 'postgres://example',
+      query: 'SELECT * FROM crm_customers',
+      stream: 'crm_customers',
+      cursor_field: 'updated_at',
+    }
+
+    expect(jsonSchemaConfig.safeParse(validTableConfig).success).toBe(true)
+    expect(jsonSchemaConfig.safeParse(validQueryConfig).success).toBe(true)
+    for (const invalidConfig of [
+      { table: 'crm_customers', cursor_field: 'updated_at' },
+      {
+        url: 'postgres://example',
+        table: 'crm_customers',
+        query: 'SELECT * FROM crm_customers',
+        stream: 'crm_customers',
+        cursor_field: 'updated_at',
+      },
+      {
+        url: 'postgres://example',
+        query: 'SELECT * FROM crm_customers',
+        cursor_field: 'updated_at',
+      },
+    ]) {
+      expect(jsonSchemaConfig.safeParse(invalidConfig).success).toBe(false)
+      expect(configSchema.safeParse(invalidConfig).success).toBe(false)
+    }
+  })
+
   it('discovers a configured table as one stream', async () => {
     const config = configSchema.parse({
       url: 'postgres://example',
@@ -63,7 +100,7 @@ describe('source-postgres', () => {
                 type: 'object',
                 properties: {
                   id: { type: 'string' },
-                  email: { type: 'string' },
+                  email: { anyOf: [{ type: 'string' }, { type: 'null' }] },
                   updated_at: { type: 'string' },
                 },
                 required: ['id', 'updated_at'],
@@ -75,6 +112,77 @@ describe('source-postgres', () => {
         },
       },
     ])
+  })
+
+  it('discovers pg wire types and nullable values accurately', async () => {
+    const config = configSchema.parse({
+      url: 'postgres://example',
+      table: 'orders',
+      primary_key: ['id'],
+      cursor_field: 'updated_at',
+    })
+
+    const source = createPostgresSource({
+      createPool: () => ({
+        async query(text: string) {
+          if (text.includes('information_schema.columns')) {
+            return queryResult([
+              { column_name: 'id', data_type: 'text', is_nullable: 'NO' },
+              { column_name: 'amount_cents', data_type: 'bigint', is_nullable: 'NO' },
+              { column_name: 'ratio', data_type: 'numeric', is_nullable: 'YES' },
+              {
+                column_name: 'updated_at',
+                data_type: 'timestamp with time zone',
+                is_nullable: 'NO',
+              },
+            ])
+          }
+          return queryResult([])
+        },
+        async end() {},
+      }),
+    })
+
+    const messages = await collect(source.discover({ config }))
+
+    expect(messages[0]).toMatchObject({
+      type: 'catalog',
+      catalog: {
+        streams: [
+          {
+            json_schema: {
+              properties: {
+                amount_cents: { type: 'string' },
+                ratio: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              },
+              required: ['id', 'amount_cents', 'updated_at'],
+            },
+          },
+        ],
+      },
+    })
+  })
+
+  it('fails discovery when a configured table has no visible columns', async () => {
+    const config = configSchema.parse({
+      url: 'postgres://example',
+      schema: 'public',
+      table: 'missing_table',
+      primary_key: ['id'],
+      cursor_field: 'updated_at',
+    })
+    const source = createPostgresSource({
+      createPool: () => ({
+        async query() {
+          return queryResult([])
+        },
+        async end() {},
+      }),
+    })
+
+    await expect(collect(source.discover({ config }))).rejects.toThrow(
+      'Table "public.missing_table" was not found or has no visible columns'
+    )
   })
 
   it('reads pages and emits source_state after each page', async () => {
