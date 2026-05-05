@@ -4,8 +4,9 @@
  * What must be running:
  * - A local Postgres database reachable by DATABASE_URL.
  * - Stripe Custom Objects must be enabled for the API key/account.
- * - The Custom Object definition named by DEMO_CUSTOM_OBJECT_PLURAL must exist
- *   and define `name` and `time_from_harvest` fields.
+ * - The Device Custom Object definition named by DEMO_CUSTOM_OBJECT_PLURAL must
+ *   exist and define `name`, `device_id`, `device_type`, `city`, and `customer_id`
+ *   fields.
  *
  * Example setup:
  *   docker run --rm -d --name reverse-etl-e2e-pg \
@@ -14,7 +15,7 @@
  * Example run:
  *   STRIPE_API_KEY=sk_test_... \
  *   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55439/postgres \
- *   DEMO_CUSTOM_OBJECT_PLURAL=matcha_objects \
+ *   DEMO_CUSTOM_OBJECT_PLURAL=devices \
  *   pnpm --filter @stripe/sync-e2e exec tsx --conditions bun reverse-etl-e2e.ts
  *
  * The script creates disposable Postgres tables, syncs one row to a regular
@@ -32,7 +33,7 @@ import { createStripeDestination } from '../packages/destination-stripe/src/inde
 const databaseUrl =
   process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:55439/postgres'
 const stripeApiKey = process.env.STRIPE_API_KEY
-const customObjectPluralName = process.env.DEMO_CUSTOM_OBJECT_PLURAL ?? 'matcha_objects'
+const customObjectPluralName = process.env.DEMO_CUSTOM_OBJECT_PLURAL ?? 'devices'
 const stripeApiVersion = '2026-03-25.dahlia'
 const customObjectApiVersion = 'unsafe-development'
 const runId = `reverse_etl_e2e_${Date.now()}`
@@ -92,11 +93,11 @@ function customObjectFieldValue(record: Record<string, unknown>, field: string) 
 }
 
 async function preparePostgres(client: pg.Client) {
-  await client.query(`DROP TABLE IF EXISTS standard_object_reverse_etl_e2e`)
-  await client.query(`DROP TABLE IF EXISTS custom_object_reverse_etl_e2e`)
+  await client.query(`DROP TABLE IF EXISTS crm_customers`)
+  await client.query(`DROP TABLE IF EXISTS devices`)
 
   await client.query(`
-    CREATE TABLE standard_object_reverse_etl_e2e (
+    CREATE TABLE crm_customers (
       id text PRIMARY KEY,
       email text NOT NULL,
       full_name text NOT NULL,
@@ -105,16 +106,18 @@ async function preparePostgres(client: pg.Client) {
     )
   `)
   await client.query(`
-    CREATE TABLE custom_object_reverse_etl_e2e (
-      id text PRIMARY KEY,
+    CREATE TABLE devices (
+      device_id text PRIMARY KEY,
       name text NOT NULL,
-      time_from_harvest text NOT NULL,
+      device_type text,
+      city text NOT NULL,
+      customer_id text NOT NULL,
       updated_at timestamptz(3) NOT NULL
     )
   `)
 
   await client.query(
-    `INSERT INTO standard_object_reverse_etl_e2e
+    `INSERT INTO crm_customers
        (id, email, full_name, ignored_internal_note, updated_at)
      VALUES ($1, $2, $3, $4, date_trunc('milliseconds', clock_timestamp()))`,
     [
@@ -125,22 +128,22 @@ async function preparePostgres(client: pg.Client) {
     ]
   )
   await client.query(
-    `INSERT INTO custom_object_reverse_etl_e2e
-       (id, name, time_from_harvest, updated_at)
-     VALUES ($1, $2, $3, date_trunc('milliseconds', clock_timestamp()))`,
-    ['custom_object_row_1', `Sync Engine Matcha ${runId}`, '2 days']
+    `INSERT INTO devices
+       (device_id, name, device_type, city, customer_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5, date_trunc('milliseconds', clock_timestamp()))`,
+    [`device_${runId}`, `Sync Engine Device ${runId}`, 'reader', 'San Francisco', 'customer_row_1']
   )
 }
 
 async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine>>) {
-  log('Syncing Postgres table standard_object_reverse_etl_e2e -> Stripe Customer')
+  log('Syncing Postgres table crm_customers -> Stripe Customer')
   const result = await engine.pipeline_sync_batch(
     {
       source: {
         type: 'postgres',
         postgres: {
           url: databaseUrl,
-          table: 'standard_object_reverse_etl_e2e',
+          table: 'crm_customers',
           stream: 'customer',
           primary_key: ['id'],
           cursor_field: 'updated_at',
@@ -197,18 +200,16 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
 }
 
 async function syncCustomObject(engine: Awaited<ReturnType<typeof createEngine>>) {
-  log(
-    `Syncing Postgres table custom_object_reverse_etl_e2e -> Custom Object ${customObjectPluralName}`
-  )
+  log(`Syncing Postgres table devices -> Custom Object ${customObjectPluralName}`)
   const result = await engine.pipeline_sync_batch(
     {
       source: {
         type: 'postgres',
         postgres: {
           url: databaseUrl,
-          table: 'custom_object_reverse_etl_e2e',
-          stream: 'custom_object_reverse_etl_e2e',
-          primary_key: ['id'],
+          table: 'devices',
+          stream: 'devices',
+          primary_key: ['device_id'],
           cursor_field: 'updated_at',
           page_size: 100,
         },
@@ -221,17 +222,20 @@ async function syncCustomObject(engine: Awaited<ReturnType<typeof createEngine>>
           object: 'custom_object',
           write_mode: 'create',
           streams: {
-            custom_object_reverse_etl_e2e: {
+            devices: {
               plural_name: customObjectPluralName,
               field_mapping: {
                 name: 'name',
-                time_from_harvest: 'time_from_harvest',
+                device_id: 'device_id',
+                device_type: 'device_type',
+                city: 'city',
+                customer_id: 'customer_id',
               },
             },
           },
         },
       },
-      streams: [{ name: 'custom_object_reverse_etl_e2e', sync_mode: 'incremental' }],
+      streams: [{ name: 'devices', sync_mode: 'incremental' }],
     },
     { run_id: `${runId}_custom_object` }
   )
@@ -243,22 +247,33 @@ async function syncCustomObject(engine: Awaited<ReturnType<typeof createEngine>>
   )
   const records = Array.isArray(list.data) ? (list.data as Record<string, unknown>[]) : []
   const object = records.find(
-    (record) => customObjectFieldValue(record, 'name') === `Sync Engine Matcha ${runId}`
+    (record) => customObjectFieldValue(record, 'device_id') === `device_${runId}`
   )
   if (!object || typeof object.id !== 'string') {
-    throw new Error(`Could not find created Custom Object named Sync Engine Matcha ${runId}`)
+    throw new Error(`Could not find created Device Custom Object with device_id device_${runId}`)
   }
-  if (customObjectFieldValue(object, 'time_from_harvest') !== '2 days') {
-    throw new Error(
-      `Created Custom Object time_from_harvest did not match: ${String(customObjectFieldValue(object, 'time_from_harvest'))}`
-    )
+  const expectedDeviceFields = {
+    name: `Sync Engine Device ${runId}`,
+    device_id: `device_${runId}`,
+    device_type: 'reader',
+    city: 'San Francisco',
+    customer_id: 'customer_row_1',
+  }
+  for (const [field, expected] of Object.entries(expectedDeviceFields)) {
+    const actual = customObjectFieldValue(object, field)
+    if (actual !== expected) {
+      throw new Error(`Created Device Custom Object ${field} did not match: ${String(actual)}`)
+    }
   }
 
-  log('Verified Custom Object', {
+  log('Verified Device Custom Object', {
     id: object.id,
     name: customObjectFieldValue(object, 'name'),
-    time_from_harvest: customObjectFieldValue(object, 'time_from_harvest'),
-    ending_state: result.ending_state?.source.streams.custom_object_reverse_etl_e2e,
+    device_id: customObjectFieldValue(object, 'device_id'),
+    device_type: customObjectFieldValue(object, 'device_type'),
+    city: customObjectFieldValue(object, 'city'),
+    customer_id: customObjectFieldValue(object, 'customer_id'),
+    ending_state: result.ending_state?.source.streams.devices,
   })
   return object.id
 }
@@ -306,8 +321,8 @@ async function main() {
         })
     }
 
-    await client.query(`DROP TABLE IF EXISTS standard_object_reverse_etl_e2e`).catch(() => {})
-    await client.query(`DROP TABLE IF EXISTS custom_object_reverse_etl_e2e`).catch(() => {})
+    await client.query(`DROP TABLE IF EXISTS crm_customers`).catch(() => {})
+    await client.query(`DROP TABLE IF EXISTS devices`).catch(() => {})
     await client.end()
   }
 }
