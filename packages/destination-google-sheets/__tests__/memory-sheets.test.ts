@@ -49,10 +49,10 @@ describe('createMemorySheets', () => {
 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: id,
-      requestBody: { requests: [{ addSheet: { properties: { title: 'customers' } } }] },
+      requestBody: { requests: [{ addSheet: { properties: { title: 'customer' } } }] },
     })
 
-    expect(getData(id, 'customers')).toEqual([])
+    expect(getData(id, 'customer')).toEqual([])
   })
 
   it('batchUpdate addSheet — rejects duplicate tab names', async () => {
@@ -175,6 +175,35 @@ describe('createMemorySheets', () => {
       ['a', 'b'],
       ['1', '2'],
     ])
+  })
+
+  it('pasteData — drops one trailing empty cell like Google Sheets', async () => {
+    const { sheets, getData } = createMemorySheets()
+
+    const { data } = await sheets.spreadsheets.create({
+      requestBody: { properties: { title: 'T' } },
+    })
+    const id = data.spreadsheetId!
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: id })
+    const sheetId = meta.data.sheets![0].properties!.sheetId!
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          {
+            pasteData: {
+              coordinate: { sheetId, rowIndex: 0, columnIndex: 0 },
+              data: '\x1f\x1f\x1f',
+              delimiter: '\x1f',
+              type: 'PASTE_VALUES',
+            },
+          },
+        ],
+      },
+    })
+
+    expect(getData(id, 'Sheet1')).toEqual([['', '', '']])
   })
 
   it('get — throws on non-existent spreadsheet', async () => {

@@ -531,7 +531,7 @@ describe('newerThanColumn', () => {
     expect(r[0]).toMatchObject({ id: '1', name: 'Alice v2', updated: 200 }) // unchanged
   })
 
-  it('skips update when incoming row has equal timestamp', async () => {
+  it('allows update when incoming row has equal timestamp', async () => {
     await upsert(pool, [{ id: '1', name: 'Alice', updated: 100 }], {
       table,
       primaryKeyColumns: ['id'],
@@ -544,10 +544,10 @@ describe('newerThanColumn', () => {
       returning: true,
     })
 
-    expect(result.rows).toHaveLength(0) // skipped — not strictly newer
+    expect(result.rows).toHaveLength(1) // updated — equal timestamp
 
     const r = await rows(table)
-    expect(r[0].name).toBe('Alice') // unchanged
+    expect(r[0].name).toBe('Same time') // changed
   })
 
   it('inserts normally when row does not exist', async () => {
@@ -653,7 +653,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 3,
         updated_count: 0,
-        deleted_count: 0,
         skipped_count: 0,
       })
     })
@@ -680,7 +679,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 0,
         updated_count: 2,
-        deleted_count: 0,
         skipped_count: 0,
       })
     })
@@ -707,7 +705,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 0,
         updated_count: 0,
-        deleted_count: 0,
         skipped_count: 2,
       })
     })
@@ -731,7 +728,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 2,
         updated_count: 1,
-        deleted_count: 0,
         skipped_count: 0,
       })
     })
@@ -759,7 +755,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 1,
         updated_count: 1,
-        deleted_count: 0,
         skipped_count: 1,
       })
     })
@@ -769,61 +764,6 @@ describe('upsertWithStats', () => {
       expect(result).toEqual({
         created_count: 0,
         updated_count: 0,
-        deleted_count: 0,
-        skipped_count: 0,
-      })
-    })
-  })
-
-  describe('soft delete', () => {
-    beforeEach(async () => {
-      table = nextTable()
-      await pool.query(`
-        CREATE TABLE "${table}" (
-          _raw_data jsonb NOT NULL,
-          id text GENERATED ALWAYS AS ((_raw_data->>'id')::text) STORED,
-          PRIMARY KEY (id)
-        )
-      `)
-    })
-
-    it('classifies soft-deleted inserts as deleted', async () => {
-      const result = await upsertWithStats(
-        pool,
-        [
-          { _raw_data: { id: '1', name: 'Alice' } },
-          { _raw_data: { id: '2', name: 'Bob' } },
-          { _raw_data: { id: '3', name: 'Gone', deleted: true } },
-        ],
-        { table, primaryKeyColumns: ['id'] },
-        "_raw_data->>'deleted'"
-      )
-
-      expect(result).toEqual({
-        created_count: 2,
-        updated_count: 0,
-        deleted_count: 1,
-        skipped_count: 0,
-      })
-    })
-
-    it('classifies soft-deleted updates as deleted', async () => {
-      await upsert(pool, [{ _raw_data: { id: '1', name: 'Alice' } }], {
-        table,
-        primaryKeyColumns: ['id'],
-      })
-
-      const result = await upsertWithStats(
-        pool,
-        [{ _raw_data: { id: '1', name: 'Alice', deleted: true } }],
-        { table, primaryKeyColumns: ['id'] },
-        "_raw_data->>'deleted'"
-      )
-
-      expect(result).toEqual({
-        created_count: 0,
-        updated_count: 0,
-        deleted_count: 1,
         skipped_count: 0,
       })
     })

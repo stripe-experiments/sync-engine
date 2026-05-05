@@ -87,6 +87,7 @@ describe('reverse ETL', () => {
           postgres: {
             url: 'postgres://example',
             table: 'customers',
+            stream: 'customer',
             primary_key: ['id'],
             cursor_field: 'updated_at',
             page_size: 100,
@@ -101,7 +102,7 @@ describe('reverse ETL', () => {
             object: 'standard_object',
             write_mode: 'create',
             streams: {
-              customers: {
+              customer: {
                 field_mapping: {
                   email: 'email',
                   name: 'full_name',
@@ -110,12 +111,12 @@ describe('reverse ETL', () => {
             },
           },
         },
-        streams: [{ name: 'customers', sync_mode: 'incremental' }],
+        streams: [{ name: 'customer', sync_mode: 'incremental' }],
       },
       { run_id: 'run_reverse_etl_standard_object_create_test' }
     )
 
-    expect(result.ending_state?.source.streams.customers).toEqual({
+    expect(result.ending_state?.source.streams.customer).toEqual({
       cursor: '2026-01-01T00:00:00.000Z',
       primary_key: ['crm_123'],
     })

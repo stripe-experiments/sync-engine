@@ -176,9 +176,9 @@ type TypedGlobalStatePayload<TGlobalState> = {
  *
  * @example
  *   const msg = createSourceMessageFactory<StreamState, { events_cursor: number }>()
- *   yield msg.record({ stream: 'customers', data: { id: 'cus_1' }, emitted_at: ts })
- *   yield msg.stream_status({ stream: 'customers', status: 'error', error: 'boom' })
- *   yield msg.source_state({ state_type: 'stream', stream: 'customers', data: { remaining: [] } })
+ *   yield msg.record({ stream: 'customer', data: { id: 'cus_1' }, emitted_at: ts })
+ *   yield msg.stream_status({ stream: 'customer', status: 'error', error: 'boom' })
+ *   yield msg.source_state({ state_type: 'stream', stream: 'customer', data: { remaining: [] } })
  *   yield msg.source_state({ state_type: 'global', data: { events_cursor: 123 } })
  *   yield msg.connection_status({ status: 'failed', message: 'bad key' })
  */
@@ -188,7 +188,7 @@ export function createSourceMessageFactory<
   TRecordData extends Record<string, unknown>,
 >() {
   return {
-    record(payload: { stream: string; data: TRecordData; emitted_at: string }): RecordMessage {
+    record(payload: { stream: string; data: TRecordData; emitted_at: string, recordDeleted?: boolean }): RecordMessage {
       return { type: 'record', record: payload }
     },
 

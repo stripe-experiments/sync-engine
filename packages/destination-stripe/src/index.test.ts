@@ -70,7 +70,7 @@ const standardObjectConfig = configSchema.parse({
   object: 'standard_object',
   write_mode: 'create',
   streams: {
-    customers: {
+    customer: {
       field_mapping: {
         email: 'email',
         name: 'name',
@@ -97,7 +97,7 @@ const standardObjectCatalog: ConfiguredCatalog = {
   streams: [
     {
       stream: {
-        name: 'customers',
+        name: 'customer',
         primary_key: [['id']],
         newer_than_field: 'updated_at',
       },
@@ -170,10 +170,10 @@ describe('destination-stripe', () => {
       { ...customObjectConfig, write_mode: 'upsert' },
       { ...standardObjectConfig, api_version: 'unsafe-development' },
       { ...standardObjectConfig, object: 'customer' },
-      { ...standardObjectConfig, streams: { customers: {} } },
+      { ...standardObjectConfig, streams: { customer: {} } },
       {
         ...standardObjectConfig,
-        streams: { customers: { field_mapping: { email: 'email' } } },
+        streams: { customer: { field_mapping: { email: 'email' } } },
         mode: 'upsert',
       },
       { ...customObjectConfig, identity: { external_id_field: 'id' } },
@@ -203,7 +203,7 @@ describe('destination-stripe', () => {
         {
           type: 'record',
           record: {
-            stream: 'customers',
+            stream: 'customer',
             data: {
               id: 'crm_123',
               email: 'jenny@example.com',
@@ -218,7 +218,7 @@ describe('destination-stripe', () => {
           type: 'source_state',
           source_state: {
             state_type: 'stream',
-            stream: 'customers',
+            stream: 'customer',
             data: { cursor: '2026-01-01T00:00:00.000Z', primary_key: ['crm_123'] },
           },
         },
@@ -251,7 +251,7 @@ describe('destination-stripe', () => {
     const invalidConfig = configSchema.parse({
       ...standardObjectConfig,
       streams: {
-        customers: {
+        customer: {
           field_mapping: {
             not_a_customer_param: 'email',
           },
@@ -267,7 +267,7 @@ describe('destination-stripe', () => {
         connection_status: {
           status: 'failed',
           message:
-            'Standard object stream "customers" does not define create parameter(s): not_a_customer_param',
+            'Standard object stream "customer" does not define create parameter(s): not_a_customer_param',
         },
       },
     ])

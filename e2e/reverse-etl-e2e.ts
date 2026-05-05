@@ -141,7 +141,7 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
         postgres: {
           url: databaseUrl,
           table: 'standard_object_reverse_etl_e2e',
-          stream: 'customers',
+          stream: 'customer',
           primary_key: ['id'],
           cursor_field: 'updated_at',
           page_size: 100,
@@ -155,7 +155,7 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
           object: 'standard_object',
           write_mode: 'create',
           streams: {
-            customers: {
+            customer: {
               field_mapping: {
                 email: 'email',
                 name: 'full_name',
@@ -164,7 +164,7 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
           },
         },
       },
-      streams: [{ name: 'customers', sync_mode: 'incremental' }],
+      streams: [{ name: 'customer', sync_mode: 'incremental' }],
     },
     { run_id: `${runId}_customer` }
   )
@@ -191,7 +191,7 @@ async function syncStripeCustomer(engine: Awaited<ReturnType<typeof createEngine
     id: customer.id,
     email: customer.email,
     name: customer.name,
-    ending_state: result.ending_state?.source.streams.customers,
+    ending_state: result.ending_state?.source.streams.customer,
   })
   return customer.id
 }
