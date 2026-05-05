@@ -737,13 +737,16 @@ export interface StreamBatchOps {
 
 // `pasteData` column delimiter. Unit Separator (U+001F) — a control char
 // that won't naturally appear in Stripe data. Row separator is always `\n`
-// (not configurable), so any `\n`, `\r`, or U+001F inside cells must be
-// sanitized or the paste parser misaligns columns.
+// (not configurable), so any `\n`, `\r`, U+001F, or `"` inside cells must be
+// sanitized or the paste parser misaligns columns. The Sheets API applies
+// RFC 4180-like quoting semantics even with a custom delimiter: an unescaped
+// `"` mid-value causes the parser to enter quoted-field mode and absorb
+// subsequent \x1f delimiters as content, dropping columns from the row.
 export const PASTE_COL_DELIMITER = '\x1f'
-const PASTE_SANITIZE_RE = /[\n\r\x1f]/g
+const PASTE_SANITIZE_RE = /[\n\r\x1f"]/g
 
 function sanitizeForPaste(value: string): string {
-  return value.replace(PASTE_SANITIZE_RE, ' ')
+  return value.replace(PASTE_SANITIZE_RE, (ch) => (ch === '"' ? "'" : ' '))
 }
 
 export function rowsToTsv(rows: string[][]): string {
