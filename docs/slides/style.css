@@ -1,7 +1,13 @@
 /* Constrain all mermaid diagrams to fit within slide bounds */
 .slidev-layout .mermaid svg {
-  max-height: 320px !important;
+  max-height: 240px !important;
   max-width: 100% !important;
   height: auto !important;
   width: auto !important;
+}
+
+/* Allow every slide to scroll vertically when content overflows. */
+.slidev-layout {
+  overflow-y: auto !important;
+  scrollbar-gutter: stable;
 }
