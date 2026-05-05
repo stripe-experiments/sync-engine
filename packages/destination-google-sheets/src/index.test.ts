@@ -11,8 +11,10 @@ import {
 import {
   applyBatch,
   MAX_CELLS_PER_SPREADSHEET,
+  PASTE_COL_DELIMITER,
   readEnumValidations,
   readSheet,
+  rowsToTsv,
   type StreamBatchOps,
 } from './writer.js'
 import { createMemorySheets } from '../__tests__/memory-sheets.js'
@@ -373,7 +375,9 @@ describe('destination-google-sheets', () => {
 
     const id = getSpreadsheetIds()[0]
     const rows = stripUpdatedAt(getData(id, 'types')!)
-    expect(rows[1]).toEqual(['hello', '42', 'true', '', '{"nested":true}'])
+    // Double-quotes are replaced with single-quotes to prevent the pasteData
+    // CSV parser from treating them as quoting characters (see sanitizeForPaste).
+    expect(rows[1]).toEqual(['hello', '42', 'true', '', "{'nested':true}"])
   })
 
   it('readSheet helper — reads back data through the fake client', async () => {
@@ -2048,5 +2052,67 @@ describe('enum constraints on any column', () => {
     expect(
       out.find((m) => m.type === 'connection_status' && m.connection_status.status === 'failed')
     ).toBeUndefined()
+  })
+
+  describe('character escaping — pasteData CSV parser safety', () => {
+    // The Google Sheets pasteData API applies RFC 4180-like quoting semantics even
+    // when using a custom delimiter (U+001F). An unescaped `"` inside a cell value
+    // causes the server-side parser to enter quoted-field mode and absorb subsequent
+    // \x1f delimiters as content, dropping the columns that follow from the row.
+    // Regression: a customer whose description contained JSON with double-quoted keys
+    // (e.g. `{"custom_fields":null,...}`) caused the 6 columns after description to
+    // be missing entirely from the written row.
+
+    const PROBLEMATIC_DESCRIPTION =
+      '><svg/onload=confirm(1);> test@gmail.com03D22BF{"custom_fields":null,"default_payment_method":null,"default_shared_payment_token":null,"footer":null,"rendering_options":null}'
+
+    it('rowsToTsv strips double-quotes so the pasteData parser cannot enter quoted-field mode', () => {
+      const row = ['before', PROBLEMATIC_DESCRIPTION, 'after1', 'after2', 'after3', 'after4', 'after5', 'after6']
+      const tsv = rowsToTsv([row])
+
+      // No raw double-quotes in the output — they would trigger CSV quoting mode.
+      expect(tsv).not.toContain('"')
+
+      // All 8 cells must still be delimited correctly.
+      const cells = tsv.split(PASTE_COL_DELIMITER)
+      expect(cells).toHaveLength(8)
+    })
+
+    it('description with double-quoted JSON preserves all columns in the written row', async () => {
+      const { sheets, getData, getSpreadsheetIds } = createMemorySheets()
+      const dest = createDestination(sheets)
+
+      await collect(
+        dest.write(
+          { config: cfg(), catalog },
+          toAsyncIter([
+            record('customers', {
+              id: 'cus_test',
+              name: 'Test Customer',
+              email: 'test@example.com',
+              description: PROBLEMATIC_DESCRIPTION,
+              balance: 0,
+              currency: 'usd',
+              delinquent: false,
+            }),
+          ])
+        )
+      )
+
+      const id = getSpreadsheetIds()[0]
+      const rows = stripUpdatedAt(getData(id, 'customers')!)
+      expect(rows).toHaveLength(2)
+      const [headers, dataRow] = rows
+
+      // Data row must have the same cell count as the header row — the description
+      // value must not have caused adjacent columns to be dropped.
+      expect(dataRow).toHaveLength(headers.length)
+
+      const descIdx = (headers as string[]).indexOf('description')
+      expect(descIdx).toBeGreaterThanOrEqual(0)
+      // Double-quotes are replaced with single-quotes to preserve readability.
+      expect(String(dataRow[descIdx])).toContain("'custom_fields'")
+      expect(String(dataRow[descIdx])).not.toContain('"')
+    })
   })
 })
