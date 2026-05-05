@@ -57,16 +57,6 @@ export type NestedEndpoint = {
   supportsPagination: boolean
 }
 
-/** A Stripe operation advertised on a resource schema via `x-stripeOperations`. */
-export type ResourceOperation = {
-  tableName: string
-  resourceId: string
-  methodName: string
-  methodType: string
-  operation: string
-  path: string
-}
-
 type ColumnAccumulator = {
   type: ScalarType
   nullable: boolean
@@ -318,57 +308,6 @@ export class SpecParser {
       })
     }
     return nested
-  }
-
-  /**
-   * Discover resource operations from Stripe's `x-stripeOperations` schema metadata.
-   * This covers read APIs that are not list-shaped, such as `/v1/customers/search`.
-   */
-  discoverResourceOperations(
-    spec: OpenApiSpec,
-    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
-  ): Map<string, ResourceOperation[]> {
-    const operations = new Map<string, ResourceOperation[]>()
-    const schemas = spec.components?.schemas
-    if (!schemas) return operations
-
-    for (const schema of Object.values(schemas)) {
-      if (!schema || '$ref' in schema) continue
-
-      const resourceId = schema['x-resourceId']
-      const rawOperations = schema['x-stripeOperations']
-      if (!resourceId || typeof resourceId !== 'string' || !Array.isArray(rawOperations)) {
-        continue
-      }
-
-      const tableName = resolveTableName(resourceId, aliases)
-      const parsed = rawOperations.flatMap((operation): ResourceOperation[] => {
-        if (
-          !operation.method_name ||
-          !operation.method_type ||
-          !operation.operation ||
-          !operation.path
-        ) {
-          return []
-        }
-
-        return [
-          {
-            tableName,
-            resourceId,
-            methodName: operation.method_name,
-            methodType: operation.method_type,
-            operation: operation.operation,
-            path: operation.path,
-          },
-        ]
-      })
-
-      if (parsed.length === 0) continue
-      operations.set(tableName, [...(operations.get(tableName) ?? []), ...parsed])
-    }
-
-    return operations
   }
 
   /**
