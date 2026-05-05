@@ -8,8 +8,9 @@ mdc: true
 ## sync engine is ...
 
 - a message-driven runtime for moving data between systems
-- built around typed async iterables and NDJSON-compatible envelopes
-- designed so sources, destinations, engine logic, and orchestration stay separate
+- transport agnostic
+- supports both pull (iterable) and push (events)
+- designed to scale
 
 ---
 
@@ -309,16 +310,33 @@ sequenceDiagram
   - HTTP retries are separate: `429`, `5xx`, and retryable network errors back off and honor `Retry-After`
 
 ---
+layout: two-cols
+---
 
 ## source-stripe: binary subdivision
 
+<div class="binary-subdivision-copy">
+
 - only used when the Stripe endpoint supports created-time filtering
-- fetch one page for a time range, then use the oldest timestamp on that page as the boundary
-- keep the boundary slice with the existing cursor
-- split the older remainder into equal time windows with `cursor = null`
-- `streamingSubdivide` runs those child ranges as a concurrent work queue
-- if a child still has more data, split again; otherwise it completes
-- if created filters are not supported, the source falls back to sequential pagination
+- oldest record on the fetched page becomes the boundary
+- boundary slice keeps the cursor
+- older remainder is split into equal time slices with `cursor = null`
+- `streamingSubdivide` runs child ranges as a concurrent work queue
+- if a child still has more data, split again
+- if created filters are unsupported, fall back to sequential pagination
+- density intuition:
+  ```text
+  [Jan ------------------------------- Apr)
+  sparse     sparse     dense dense dense
+                           ^
+                        boundary
+  ```
+
+</div>
+
+::right::
+
+<div class="binary-subdivision-diagram">
 
 ```mermaid
 flowchart TD
@@ -341,25 +359,7 @@ flowchart TD
   M -->|No| D
 ```
 
-- density intuition
-  ```text
-  [Jan ---------------------------------------------- Apr)
-  sparse        sparse        dense dense dense dense
-                                ^
-                          oldest record on first page
-                          becomes boundary
-  ```
-- shape of the split
-  ```text
-  before:
-    [Jan ----------------------------- Apr)
-
-  after first dense page:
-    [Jan -------- older remainder -----][boundary cursor]
-
-  next round:
-    [older A][older B][boundary cursor]
-  ```
+</div>
 
 ---
 

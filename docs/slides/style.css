@@ -6,8 +6,33 @@
   width: auto !important;
 }
 
+/* Some diagrams need a hard container cap because Mermaid can ignore svg sizing. */
+.slidev-layout .binary-subdivision-diagram {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.slidev-layout .binary-subdivision-diagram .mermaid {
+  width: 100%;
+}
+
+.slidev-layout .binary-subdivision-diagram .mermaid,
+.slidev-layout .binary-subdivision-diagram .mermaid svg {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 360px !important;
+  max-width: 100% !important;
+}
+
+.slidev-layout .binary-subdivision-copy {
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 /* Allow every slide to scroll vertically when content overflows. */
 .slidev-layout {
   overflow-y: auto !important;
+  overflow-x: hidden !important;
   scrollbar-gutter: stable;
 }
