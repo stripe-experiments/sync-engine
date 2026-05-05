@@ -40,17 +40,18 @@ export function applyConnectorShorthand(
   const shorthandConfigs = new Map<string, Record<string, unknown>>()
   const connectorByPrefix = new Map(connectorNames.map((name) => [normalizeCliKey(name), name]))
 
+  // Shorthand keys are scoped to a side: `<source|destination>.<connector>.<path...>`.
+  // This makes the side explicit so connector names that exist on both sides
+  // (e.g. `postgres`, `stripe`) are unambiguous.
   for (const [rawKey, rawValue] of Object.entries(args)) {
-    const dotIndex = rawKey.indexOf('.')
-    if (dotIndex === -1) continue
+    const segments = rawKey.split('.')
+    if (segments.length < 3) continue
+    if (normalizeCliKey(segments[0]!) !== bodyKey) continue
 
-    const connector = connectorByPrefix.get(normalizeCliKey(rawKey.slice(0, dotIndex)))
+    const connector = connectorByPrefix.get(normalizeCliKey(segments[1]!))
     if (!connector) continue
 
-    const path = rawKey
-      .slice(dotIndex + 1)
-      .split('.')
-      .map((segment) => normalizeCliKey(segment))
+    const path = segments.slice(2).map((segment) => normalizeCliKey(segment))
     if (path.length === 0) continue
 
     const config = shorthandConfigs.get(connector) ?? {}
@@ -107,8 +108,10 @@ export function applyConnectorShorthand(
 }
 
 /**
- * Extracts connector override objects from CLI args (e.g. --postgres.url → destination override).
- * Returns `{ source?, destination? }` suitable for merging into pipeline configs or POST bodies.
+ * Extracts connector override objects from CLI args.
+ * Recognizes scoped shorthand of the form `--source.<connector>.<path>` and
+ * `--destination.<connector>.<path>`. Returns `{ source?, destination? }`
+ * suitable for merging into pipeline configs or POST bodies.
  */
 export function extractConnectorOverrides(
   args: Record<string, unknown>,
@@ -116,35 +119,44 @@ export function extractConnectorOverrides(
 ): { source?: Record<string, unknown>; destination?: Record<string, unknown> } {
   const result: { source?: Record<string, unknown>; destination?: Record<string, unknown> } = {}
 
-  const allConnectors = [...options.sources, ...options.destinations]
-  const connectorByPrefix = new Map(allConnectors.map((name) => [normalizeCliKey(name), name]))
-  const sourceSet = new Set(options.sources.map(normalizeCliKey))
+  const sourceByPrefix = new Map(options.sources.map((name) => [normalizeCliKey(name), name]))
+  const destinationByPrefix = new Map(
+    options.destinations.map((name) => [normalizeCliKey(name), name])
+  )
 
-  assertNoDottedUnknownFlags(args, allConnectors)
+  assertNoDottedUnknownFlags(args, options)
 
-  const grouped = new Map<string, Record<string, unknown>>()
-
-  for (const [rawKey, rawValue] of Object.entries(args)) {
-    const dotIndex = rawKey.indexOf('.')
-    if (dotIndex === -1) continue
-
-    const connector = connectorByPrefix.get(normalizeCliKey(rawKey.slice(0, dotIndex)))
-    if (!connector) continue
-
-    const path = rawKey
-      .slice(dotIndex + 1)
-      .split('.')
-      .map((segment) => normalizeCliKey(segment))
-    if (path.length === 0) continue
-
-    const config = grouped.get(connector) ?? {}
-    setNestedValue(config, path, parseCliValue(rawValue))
-    grouped.set(connector, config)
+  const grouped: {
+    source: Map<string, Record<string, unknown>>
+    destination: Map<string, Record<string, unknown>>
+  } = {
+    source: new Map(),
+    destination: new Map(),
   }
 
-  for (const [connectorName, config] of grouped) {
-    const bodyKey = sourceSet.has(normalizeCliKey(connectorName)) ? 'source' : 'destination'
-    result[bodyKey] = { type: connectorName, [connectorName]: config }
+  for (const [rawKey, rawValue] of Object.entries(args)) {
+    const segments = rawKey.split('.')
+    if (segments.length < 3) continue
+
+    const side = normalizeCliKey(segments[0]!) as ConnectorBodyKey
+    if (side !== 'source' && side !== 'destination') continue
+
+    const lookup = side === 'source' ? sourceByPrefix : destinationByPrefix
+    const connector = lookup.get(normalizeCliKey(segments[1]!))
+    if (!connector) continue
+
+    const path = segments.slice(2).map((segment) => normalizeCliKey(segment))
+    if (path.length === 0) continue
+
+    const config = grouped[side].get(connector) ?? {}
+    setNestedValue(config, path, parseCliValue(rawValue))
+    grouped[side].set(connector, config)
+  }
+
+  for (const side of ['source', 'destination'] as const) {
+    for (const [connectorName, config] of grouped[side]) {
+      result[side] = { type: connectorName, [connectorName]: config }
+    }
   }
 
   return result
@@ -196,32 +208,36 @@ export function mergeConnectorOverrides(
 
 export function assertNoDottedUnknownFlags(
   args: Record<string, unknown>,
-  knownConnectors: string[]
+  options: { sources: string[]; destinations: string[] }
 ) {
-  const known = new Set(knownConnectors.map(normalizeCliKey))
+  const sources = new Set(options.sources.map(normalizeCliKey))
+  const destinations = new Set(options.destinations.map(normalizeCliKey))
+
   for (const rawKey of Object.keys(args)) {
-    const dotIndex = rawKey.indexOf('.')
-    if (dotIndex === -1) continue
-    const prefix = normalizeCliKey(rawKey.slice(0, dotIndex))
-    if (!known.has(prefix)) {
+    const segments = rawKey.split('.')
+    if (segments.length < 2) continue
+
+    const side = normalizeCliKey(segments[0]!)
+    if (side !== 'source' && side !== 'destination') {
       throw new Error(
-        `Unknown connector flag --${rawKey}: "${prefix}" is not a known connector. ` +
-          `Available connectors: ${knownConnectors.join(', ')}`
+        `Unknown connector flag --${rawKey}: must start with "source." or "destination.".`
       )
     }
-  }
-}
 
-export function assertNoAmbiguousConnectorNames(sources: string[], destinations: string[]) {
-  const sourceNames = new Map(sources.map((name) => [normalizeCliKey(name), name]))
-  const overlaps = destinations
-    .filter((name) => sourceNames.has(normalizeCliKey(name)))
-    .map((name) => `${sourceNames.get(normalizeCliKey(name))} / ${name}`)
+    if (segments.length < 3) {
+      throw new Error(`Unknown connector flag --${rawKey}: expected --${side}.<connector>.<field>.`)
+    }
 
-  if (overlaps.length > 0) {
-    throw new Error(
-      `Connector names cannot exist in both source and destination sets: ${overlaps.join(', ')}`
-    )
+    const connector = normalizeCliKey(segments[1]!)
+    const known = side === 'source' ? sources : destinations
+    if (!known.has(connector)) {
+      throw new Error(
+        `Unknown connector flag --${rawKey}: "${connector}" is not a known ${side} connector. ` +
+          `Available ${side} connectors: ${
+            side === 'source' ? options.sources.join(', ') : options.destinations.join(', ')
+          }`
+      )
+    }
   }
 }
 
@@ -229,8 +245,6 @@ export function wrapPipelineConnectorShorthand(
   command: CommandDef,
   options: { sources: string[]; destinations: string[] }
 ): CommandDef {
-  assertNoAmbiguousConnectorNames(options.sources, options.destinations)
-
   const args = { ...((command.args ?? {}) as Record<string, unknown>) } as Record<string, any>
   if (args.source && typeof args.source === 'object') {
     args.source = { ...args.source, required: false }
@@ -283,7 +297,7 @@ export function wrapPipelineConnectorShorthand(
         }
       }
 
-      assertNoDottedUnknownFlags(resolvedArgs, [...options.sources, ...options.destinations])
+      assertNoDottedUnknownFlags(resolvedArgs, options)
       const argsWithSource = applyConnectorShorthand(resolvedArgs, 'source', options.sources)
       const argsWithDestination = applyConnectorShorthand(
         argsWithSource,

@@ -191,7 +191,7 @@ export interface ConnectorResolver {
   destinations(): ReadonlyMap<string, ResolvedConnector<Destination>>
 }
 
-/** Convert a connector's spec() async iterable output to a Zod object schema + raw JSON Schema. */
+/** Convert a connector's spec() async iterable output to a Zod schema + raw JSON Schema. */
 async function configSchemaFromSpec(connector: {
   spec(): AsyncIterable<{ type: string; [k: string]: unknown }>
 }): Promise<{
@@ -208,8 +208,9 @@ async function configSchemaFromSpec(connector: {
   // rawConfigJsonSchema is clean for injection into OpenAPI 3.1 component schemas.
   const { $schema: _unused, ...rawConfigJsonSchema } = specPayload.config
   const schema = z.fromJSONSchema(rawConfigJsonSchema)
-  // fromJSONSchema({}) returns ZodAny — fall back to empty object for composability
-  const configSchema = schema instanceof z.ZodObject ? schema : z.object({})
+  // fromJSONSchema({}) returns ZodAny. Use an empty object only for that
+  // unconstrained shape; preserve unions such as source-postgres anyOf configs.
+  const configSchema = schema instanceof z.ZodAny ? z.object({}) : schema
   let rawInputJsonSchema: Record<string, unknown> | undefined
   if (specPayload.source_input) {
     const { $schema: _unused2, ...inputSchema } = specPayload.source_input

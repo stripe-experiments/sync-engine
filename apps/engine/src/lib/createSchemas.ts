@@ -46,6 +46,14 @@ const StreamConfig = z.object({
     .describe('Cap backfill to this many records, then mark the stream complete.'),
 })
 
+function schemaFromJsonSchema(jsonSchema: Record<string, unknown>): z.ZodType {
+  const schema = z.fromJSONSchema(jsonSchema)
+  // fromJSONSchema({}) returns ZodAny. Use an empty object only for that truly
+  // unconstrained shape; keep unions/intersections intact so validation does
+  // not strip connector payloads such as source-postgres anyOf configs.
+  return schema instanceof z.ZodAny ? z.object({}) : schema
+}
+
 /**
  * Build typed Zod schemas with `.meta({ id })` annotations from registered connectors.
  *
@@ -58,16 +66,14 @@ const StreamConfig = z.object({
 export function createConnectorSchemas(resolver: ConnectorResolver) {
   // Build inner config schemas and envelope variants in one pass per role
   const sources = [...resolver.sources()].map(([name, r]) => {
-    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const config = (base instanceof z.ZodObject ? base : z.object({})).meta({
+    const config = schemaFromJsonSchema(r.rawConfigJsonSchema).meta({
       id: connectorSchemaName(name, 'Source'),
     })
     return { name, config, variant: z.object({ type: z.literal(name), [name]: config }) }
   })
 
   const destinations = [...resolver.destinations()].map(([name, r]) => {
-    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const config = (base instanceof z.ZodObject ? base : z.object({})).meta({
+    const config = schemaFromJsonSchema(r.rawConfigJsonSchema).meta({
       id: connectorSchemaName(name, 'Destination'),
     })
     return { name, config, variant: z.object({ type: z.literal(name), [name]: config }) }
@@ -93,8 +99,7 @@ export function createConnectorSchemas(resolver: ConnectorResolver) {
   const inputSchemas = [...resolver.sources()]
     .filter(([, r]) => r.rawInputJsonSchema != null)
     .map(([name, r]) => {
-      const base = z.fromJSONSchema(r.rawInputJsonSchema!)
-      return (base instanceof z.ZodObject ? base : z.object({})).meta({
+      return schemaFromJsonSchema(r.rawInputJsonSchema!).meta({
         id: connectorInputSchemaName(name),
       })
     })

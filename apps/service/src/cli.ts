@@ -8,8 +8,10 @@ import { createPrettyFormatter } from './cli/pretty-output.js'
 import { serve } from '@hono/node-server'
 import { createConnectorResolver, startApiServer, type ApiServerHandle } from '@stripe/sync-engine'
 import sourceStripe from '@stripe/sync-source-stripe'
+import sourcePostgres from '@stripe/sync-source-postgres'
 import destinationPostgres from '@stripe/sync-destination-postgres'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
+import destinationStripe from '@stripe/sync-destination-stripe'
 import { createApp } from './api/app.js'
 import {
   wrapPipelineConnectorShorthand,
@@ -26,8 +28,12 @@ import { log } from './logger.js'
 const defaultDataDir = process.env.DATA_DIR ?? `${homedir()}/.stripe-sync`
 
 const resolverPromise = createConnectorResolver({
-  sources: { stripe: sourceStripe },
-  destinations: { postgres: destinationPostgres, google_sheets: destinationGoogleSheets },
+  sources: { stripe: sourceStripe, postgres: sourcePostgres },
+  destinations: {
+    postgres: destinationPostgres,
+    google_sheets: destinationGoogleSheets,
+    stripe: destinationStripe,
+  },
 })
 
 async function buildCliSpec() {
