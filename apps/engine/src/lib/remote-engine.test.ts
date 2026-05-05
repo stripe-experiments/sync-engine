@@ -277,7 +277,7 @@ describe('createRemoteEngine', () => {
       const rawEvent = { id: 'evt_test_2', type: 'credit.edit' }
       const state: Message = {
         type: 'source_state',
-        source_state: { stream: 'customers', data: { cursor: 'cus_1' } },
+        source_state: { stream: 'customer', data: { cursor: 'cus_1' } },
       }
 
       const bodies = await captureStreamingPost(async (url) => {
