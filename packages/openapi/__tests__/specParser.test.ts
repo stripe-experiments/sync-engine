@@ -4,16 +4,16 @@ import { minimalStripeOpenApiSpec } from './fixtures/minimalSpec'
 import type { OpenApiSpec } from '../../types'
 
 describe('SpecParser', () => {
-  it('parses aliased resources into deterministic tables and column types', () => {
+  it('parses resources into deterministic tables and column types', () => {
     const parser = new SpecParser()
     const parsed = parser.parse(minimalStripeOpenApiSpec, {
-      allowedTables: ['checkout_session', 'customer', 'early_fraud_warning'],
+      allowedTables: ['checkout_session', 'customer', 'radar_early_fraud_warning'],
     })
 
     expect(parsed.tables.map((table) => table.tableName)).toEqual([
       'checkout_session',
       'customer',
-      'early_fraud_warning',
+      'radar_early_fraud_warning',
     ])
 
     const customers = parsed.tables.find((table) => table.tableName === 'customer')
@@ -709,14 +709,14 @@ describe('SpecParser', () => {
 
       const tableNames = parsed.tables.map((t) => t.tableName)
       expect(tableNames).toEqual([
-        'active_entitlement',
         'checkout_session',
         'customer',
-        'early_fraud_warning',
-        'feature',
+        'entitlements_active_entitlement',
+        'entitlements_feature',
         'plan',
         'price',
         'product',
+        'radar_early_fraud_warning',
         'subscription_item',
         'v2_core_account',
         'v2_core_event_destination',
@@ -828,11 +828,11 @@ describe('SpecParser', () => {
       expect(tableNames).toContain('customer')
     })
 
-    it('resolves table name aliases from x-resourceId during discovery', () => {
+    it('derives table names from x-resourceId via dot-to-underscore', () => {
       const parser = new SpecParser()
       const parsed = parser.parse(minimalStripeOpenApiSpec)
 
-      const earlyFraud = parsed.tables.find((t) => t.tableName === 'early_fraud_warning')
+      const earlyFraud = parsed.tables.find((t) => t.tableName === 'radar_early_fraud_warning')
       expect(earlyFraud).toBeDefined()
       expect(earlyFraud?.resourceId).toBe('radar.early_fraud_warning')
 
@@ -853,7 +853,7 @@ describe('SpecParser.discoverSyncableTables', () => {
     expect(tables).toContain('product')
     expect(tables).toContain('plan')
     expect(tables).toContain('checkout_session')
-    expect(tables).toContain('early_fraud_warning')
+    expect(tables).toContain('radar_early_fraud_warning')
   })
 
   it('excludes resources that are listable but have no webhook events', () => {

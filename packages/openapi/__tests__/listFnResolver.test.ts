@@ -28,8 +28,8 @@ describe('SpecParser.discoverListEndpoints', () => {
       supportsStartingAfter: true,
       supportsEndingBefore: true,
     })
-    expect(endpoints.get('early_fraud_warning')).toEqual({
-      tableName: 'early_fraud_warning',
+    expect(endpoints.get('radar_early_fraud_warning')).toEqual({
+      tableName: 'radar_early_fraud_warning',
       resourceId: 'radar.early_fraud_warning',
       apiPath: '/v1/radar/early_fraud_warnings',
       supportsCreatedFilter: true,

@@ -7,7 +7,6 @@ import type {
   ParsedOpenApiSpec,
   ScalarType,
 } from './types.js'
-import { OPENAPI_RESOURCE_TABLE_ALIASES } from './runtimeMappings.js'
 
 const SCHEMA_REF_PREFIX = '#/components/schemas/'
 const CRUD_SUFFIXES = ['.created', '.updated', '.deleted'] as const
@@ -22,16 +21,12 @@ const RESERVED_COLUMNS = new Set([
   'deleted',
 ])
 
-export { OPENAPI_RESOURCE_TABLE_ALIASES }
-
 /**
  * Resolve a Stripe x-resourceId to a canonical table name.
  * Singular, snake_cased, with version namespace dots converted to underscores.
+ * Optional `aliases` map allows callers to override specific resourceIds.
  */
-export function resolveTableName(
-  resourceId: string,
-  aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
-): string {
+export function resolveTableName(resourceId: string, aliases: Record<string, string> = {}): string {
   const alias = aliases[resourceId]
   if (alias) return alias
   return resourceId.toLowerCase().replace(/[.]/g, '_')
@@ -105,7 +100,7 @@ export class SpecParser {
       throw new Error('OpenAPI spec is missing components.schemas')
     }
 
-    const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.resourceAliases ?? {}) }
+    const aliases = options.resourceAliases ?? {}
     const excluded = new Set(options.excludedTables ?? [])
     const allowedTables = options.allowedTables
       ? new Set(options.allowedTables.filter((t) => !excluded.has(t)))
@@ -198,7 +193,7 @@ export class SpecParser {
       excluded?: ReadonlySet<string>
     } = {}
   ): ParsedOpenApiSpec {
-    const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.aliases ?? {}) }
+    const aliases = options.aliases ?? {}
     const syncableTables = this.discoverSyncableTables(spec, {
       aliases,
       excluded: options.excluded,
@@ -220,7 +215,7 @@ export class SpecParser {
       excluded?: ReadonlySet<string>
     } = {}
   ): Set<string> {
-    const aliases = { ...OPENAPI_RESOURCE_TABLE_ALIASES, ...(options.aliases ?? {}) }
+    const aliases = options.aliases ?? {}
     const excluded = options.excluded ?? new Set<string>()
     const listableIds = this.discoverListableResourceIds(spec, { includeNested: true })
     const webhookIds = this.discoverWebhookUpdatableResourceIds(spec, listableIds)
@@ -240,7 +235,7 @@ export class SpecParser {
    */
   discoverListEndpoints(
     spec: OpenApiSpec,
-    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+    aliases: Record<string, string> = {}
   ): Map<string, ListEndpoint> {
     const endpoints = new Map<string, ListEndpoint>()
     for (const raw of this.iterListPaths(spec)) {
@@ -270,7 +265,7 @@ export class SpecParser {
   discoverNestedEndpoints(
     spec: OpenApiSpec,
     topLevelEndpoints: Map<string, ListEndpoint>,
-    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+    aliases: Record<string, string> = {}
   ): NestedEndpoint[] {
     const topLevelByPath = new Map<string, ListEndpoint>()
     for (const endpoint of topLevelEndpoints.values()) {
@@ -304,7 +299,7 @@ export class SpecParser {
    */
   discoverCreateEndpoints(
     spec: OpenApiSpec,
-    aliases: Record<string, string> = OPENAPI_RESOURCE_TABLE_ALIASES
+    aliases: Record<string, string> = {}
   ): Map<string, CreateEndpoint> {
     const endpoints = new Map<string, CreateEndpoint>()
     for (const raw of this.iterListPaths(spec)) {

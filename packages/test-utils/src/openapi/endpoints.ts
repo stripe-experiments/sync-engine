@@ -3,7 +3,6 @@ import {
   isV2Path,
   resolveOpenApiSpec,
   SpecParser,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
   parsedTableToJsonSchema,
   type ListEndpoint,
   type OpenApiOperationObject,
@@ -54,9 +53,7 @@ export async function resolveEndpointSet(options: {
 
   const jsonSchemaMap = new Map<string, Record<string, unknown>>()
   try {
-    const parsed = parser.parse(resolved.spec, {
-      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-    })
+    const parsed = parser.parse(resolved.spec)
     for (const table of parsed.tables) {
       jsonSchemaMap.set(table.tableName, parsedTableToJsonSchema(table))
     }

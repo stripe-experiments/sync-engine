@@ -28,7 +28,7 @@ export async function* processWebhookInput(
   const signature = (input.headers['stripe-signature'] as string) ?? ''
   const event = verifyWebhookSignature(input.body, signature, config.webhook_secret)
   log.info({ eventId: event.id, eventType: event.type }, 'webhook signature verified')
-  yield* processStripeEvent(event, config, catalog, registry, streamNames, accountId)
+  yield* processStripeEvent(event, catalog, registry, streamNames, accountId)
 }
 
 // MARK: - LiveInput queue
@@ -83,7 +83,6 @@ export function createInputQueue() {
   }
 
   async function* drain(
-    config: Config,
     catalog: ConfiguredCatalog,
     registry: Record<string, ResourceConfig>,
     streamNames: Set<string>,
@@ -93,7 +92,6 @@ export function createInputQueue() {
       const queued = queue.shift()!
       yield* processStripeEvent(
         queued.data as StripeEvent,
-        config,
         catalog,
         registry,
         streamNames,

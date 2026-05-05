@@ -40,10 +40,6 @@ export const configSchema = z.object({
     .int()
     .optional()
     .describe('Port for built-in webhook HTTP listener (e.g. 4242)'),
-  revalidate_objects: z
-    .array(z.string())
-    .optional()
-    .describe('Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"])'),
   backfill_limit: z
     .number()
     .int()

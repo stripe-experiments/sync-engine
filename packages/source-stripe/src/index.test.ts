@@ -1553,7 +1553,10 @@ describe('StripeSource', () => {
 
     it('entitlement summary event yields individual entitlement records', async () => {
       const registry: Record<string, ResourceConfig> = {
-        active_entitlement: makeConfig({ order: 1, tableName: 'active_entitlement' }),
+        entitlements_active_entitlement: makeConfig({
+          order: 1,
+          tableName: 'entitlements_active_entitlement',
+        }),
       }
 
       vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
@@ -1587,7 +1590,10 @@ describe('StripeSource', () => {
       })
 
       const messages = await collect(
-        source.read({ config, catalog: catalog({ name: 'active_entitlement' }) }, toIter(event))
+        source.read(
+          { config, catalog: catalog({ name: 'entitlements_active_entitlement' }) },
+          toIter(event)
+        )
       )
 
       // 2 entitlement records + 1 state
@@ -1595,7 +1601,7 @@ describe('StripeSource', () => {
       expect(messages[0]).toMatchObject({
         type: 'record',
         record: {
-          stream: 'active_entitlement',
+          stream: 'entitlements_active_entitlement',
           data: {
             id: 'ent_1',
             feature: 'feat_premium',
@@ -1607,7 +1613,7 @@ describe('StripeSource', () => {
       expect(messages[1]).toMatchObject({
         type: 'record',
         record: {
-          stream: 'active_entitlement',
+          stream: 'entitlements_active_entitlement',
           data: {
             id: 'ent_2',
             feature: 'feat_basic',
@@ -1618,84 +1624,11 @@ describe('StripeSource', () => {
       })
       expect(messages[2]).toMatchObject({
         type: 'source_state',
-        source_state: { stream: 'active_entitlement', data: { eventId: 'evt_ent_1' } },
+        source_state: {
+          stream: 'entitlements_active_entitlement',
+          data: { eventId: 'evt_ent_1' },
+        },
       })
-    })
-
-    it('revalidation re-fetches from Stripe API when object is not in final state', async () => {
-      const retrieveFn = vi.fn().mockResolvedValueOnce({
-        id: 'sub_1',
-        object: 'subscription',
-        status: 'active',
-        extra: 'revalidated',
-      })
-
-      const registry: Record<string, ResourceConfig> = {
-        subscription: makeConfig({
-          order: 1,
-          tableName: 'subscription',
-          retrieveFn: retrieveFn as ResourceConfig['retrieveFn'],
-          isFinalState: (s: { status: string }) => s.status === 'canceled',
-        }),
-      }
-
-      vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
-      const event = makeEvent({
-        id: 'evt_reval_1',
-        type: 'customer.subscription.updated',
-        created: 1700000000,
-        dataObject: { id: 'sub_1', object: 'subscription', status: 'active' },
-      })
-
-      const messages = await collect(
-        source.read(
-          {
-            config: { ...config, revalidate_objects: ['subscription'] },
-            catalog: catalog({ name: 'subscription' }),
-          },
-          toIter(event)
-        )
-      )
-
-      expect(retrieveFn).toHaveBeenCalledWith('sub_1')
-      const records = messages.filter((m): m is RecordMessage => m.type === 'record')
-      expect(records[0].record.data).toMatchObject({ id: 'sub_1', extra: 'revalidated' })
-    })
-
-    it('revalidation skips re-fetch when object is in final state', async () => {
-      const retrieveFn = vi.fn()
-
-      const registry: Record<string, ResourceConfig> = {
-        subscription: makeConfig({
-          order: 1,
-          tableName: 'subscription',
-          retrieveFn: retrieveFn as ResourceConfig['retrieveFn'],
-          isFinalState: (s: { status: string }) => s.status === 'canceled',
-        }),
-      }
-
-      vi.mocked(buildResourceRegistry).mockReturnValue(registry as any)
-      const event = makeEvent({
-        id: 'evt_reval_2',
-        type: 'customer.subscription.deleted',
-        created: 1700000000,
-        dataObject: { id: 'sub_1', object: 'subscription', status: 'canceled' },
-      })
-
-      const messages = await collect(
-        source.read(
-          {
-            config: { ...config, revalidate_objects: ['subscription'] },
-            catalog: catalog({ name: 'subscription' }),
-          },
-          toIter(event)
-        )
-      )
-
-      // Should NOT re-fetch because isFinalState returns true
-      expect(retrieveFn).not.toHaveBeenCalled()
-      const records = messages.filter((m): m is RecordMessage => m.type === 'record')
-      expect(records[0].record.data).toMatchObject({ id: 'sub_1', status: 'canceled' })
     })
 
     it('preview objects (no id) produce no output', async () => {

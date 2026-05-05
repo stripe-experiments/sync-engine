@@ -1,5 +1,4 @@
 import type { ListFn, RetrieveFn, ParsedResourceTable } from '@stripe/sync-openapi'
-import type { RevalidateEntityName } from './resourceRegistry.js'
 
 /**
  * Simple logger interface compatible with both pino and console
@@ -24,9 +23,6 @@ export type BaseResourceConfig = {
   sync?: boolean
   /** Resource types that must be backfilled before this one (e.g. price depends on product) */
   dependencies?: readonly string[]
-  /** Function to check if an entity is in a final state and doesn't need revalidation */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  isFinalState?: (entity: any) => boolean
 }
 
 export type ResourceConfig = BaseResourceConfig & {
@@ -49,5 +45,3 @@ export type ResourceConfig = BaseResourceConfig & {
   /** For nested resources, the parent path parameter name */
   parentParamName?: string
 }
-
-export type RevalidateEntity = RevalidateEntityName

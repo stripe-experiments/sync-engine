@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from '@stripe/sync-openapi'
+import { SpecParser } from '@stripe/sync-openapi'
 import { buildResourceRegistry } from './resourceRegistry.js'
 import { catalogFromOpenApi } from './catalog.js'
 import { resolveOpenApiSpec, BUNDLED_API_VERSION } from '@stripe/sync-openapi'
@@ -10,9 +10,7 @@ describe('catalogFromOpenApi stream list', () => {
 
   it('default: only tables with webhook events', async () => {
     const { spec, apiVersion } = await resolved
-    const parsed = parser.parse(spec, {
-      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-    })
+    const parsed = parser.parse(spec)
     const allowedTables = new Set(parsed.tables.map((t) => t.tableName))
     const registry = buildResourceRegistry(
       spec,
@@ -31,9 +29,7 @@ describe('catalogFromOpenApi stream list', () => {
 
   it('every stream in the catalog has supports_realtime_sync = true', async () => {
     const { spec, apiVersion } = await resolved
-    const parsed = parser.parse(spec, {
-      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-    })
+    const parsed = parser.parse(spec)
     const allowedTables = new Set(parsed.tables.map((t) => t.tableName))
     const registry = buildResourceRegistry(
       spec,
@@ -54,7 +50,6 @@ describe('catalogFromOpenApi stream list', () => {
     const { spec, apiVersion } = await resolved
     const allRegistry = buildResourceRegistry(spec, 'sk_test_fake', apiVersion)
     const parsed = parser.parse(spec, {
-      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
       allowedTables: Object.values(allRegistry).map((r) => r.tableName),
     })
     const registry = buildResourceRegistry(
@@ -74,9 +69,7 @@ describe('catalogFromOpenApi stream list', () => {
 
   it('every stream has json_schema (no ghost tables)', async () => {
     const { spec, apiVersion } = await resolved
-    const parsed = parser.parse(spec, {
-      resourceAliases: OPENAPI_RESOURCE_TABLE_ALIASES,
-    })
+    const parsed = parser.parse(spec)
     const allowedTables = new Set(parsed.tables.map((t) => t.tableName))
     const registry = buildResourceRegistry(
       spec,

@@ -6,14 +6,7 @@ import type {
   NestedEndpoint,
   ParsedResourceTable,
 } from '@stripe/sync-openapi'
-import {
-  SpecParser,
-  buildListFn,
-  buildRetrieveFn,
-  isV2Path,
-  resolveTableName,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-} from '@stripe/sync-openapi'
+import { SpecParser, buildListFn, buildRetrieveFn, isV2Path } from '@stripe/sync-openapi'
 import { tracedFetch } from './transport.js'
 import { withHttpRetry } from './retry.js'
 
@@ -73,18 +66,10 @@ export const DEFAULT_SYNC_OBJECTS: readonly string[] = [
   'tax_id',
   'credit_note',
   'dispute',
-  'early_fraud_warning',
+  'radar_early_fraud_warning',
   'refund',
   'checkout_session',
 ]
-
-export const REVALIDATE_ENTITIES = [
-  ...DEFAULT_SYNC_OBJECTS,
-  'radar.early_fraud_warning',
-  'subscription_schedule',
-  'entitlements',
-] as const
-export type RevalidateEntityName = (typeof REVALIDATE_ENTITIES)[number]
 
 /**
  * Build a ResourceConfig for every listable resource discovered in the OpenAPI spec.
@@ -195,20 +180,6 @@ export function buildResourceRegistry(
   return registry
 }
 
-export const STRIPE_OBJECT_TO_SYNC_OBJECT_ALIASES: Record<string, string> = {
-  'checkout.session': 'checkout_session',
-  'radar.early_fraud_warning': 'early_fraud_warning',
-  'entitlements.active_entitlement': 'active_entitlement',
-  'entitlements.feature': 'active_entitlement',
-}
-
-export function normalizeStripeObjectName(stripeObjectName: string): string {
-  return resolveTableName(stripeObjectName, {
-    ...OPENAPI_RESOURCE_TABLE_ALIASES,
-    ...STRIPE_OBJECT_TO_SYNC_OBJECT_ALIASES,
-  })
-}
-
 export const PREFIX_RESOURCE_MAP: Record<string, string> = {
   cus_: 'customer',
   gcus_: 'customer',
@@ -224,10 +195,10 @@ export const PREFIX_RESOURCE_MAP: Record<string, string> = {
   pi_: 'payment_intent',
   txi_: 'tax_id',
   cn_: 'credit_note',
-  issfr_: 'early_fraud_warning',
+  issfr_: 'radar_early_fraud_warning',
   prv_: 'review',
   re_: 'refund',
-  feat_: 'active_entitlement',
+  feat_: 'entitlements_active_entitlement',
   cs_: 'checkout_session',
 }
 
