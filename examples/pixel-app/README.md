@@ -7,8 +7,12 @@ From the `sync-engine` repo root:
 ```sh
 docker compose -p demo -f demo/compose.metronome-redis.yml down --remove-orphans
 
+docker compose -p demo -f demo/compose.metronome-redis.yml up -d redis
+
+export METRONOME_API_TOKEN="…"
 METRONOME_WEBHOOK_URL="https://webhook.site/<token>" \
-docker compose --env-file ../.env -p demo -f demo/compose.metronome-redis.yml up --build
+REDIS_URL=redis://localhost:56379 \
+WEBHOOK_PORT=4244 ./scripts/run-metronome-redis-pipeline.sh
 ```
 
 In a second terminal, relay webhook.site deliveries into the local Sync Engine listener:
@@ -65,5 +69,5 @@ For the packaged sidecar check:
 
 ```sh
 cd sync-engine
-docker compose --env-file ../.env -p demo -f demo/compose.metronome-redis.yml config
+docker compose -p demo -f demo/compose.metronome-redis.yml config
 ```

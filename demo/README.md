@@ -42,7 +42,7 @@ GOOGLE_SPREADSHEET_ID=...         # optional — creates a new spreadsheet if om
 Any of these work:
 
 - **Docker:** `docker run -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17`
-→ `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres`
+  → `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres`
 - **Supabase / Neon / etc.** — any hosted Postgres
 - **Stripe Projects:** [projects.dev](https://projects.dev)
 
@@ -133,16 +133,14 @@ outbound WebSocket connection.
 
 ## All demos
 
-
 | Script                       | What it does                                         | Required env vars                |
 | ---------------------------- | ---------------------------------------------------- | -------------------------------- |
 | `read-from-stripe.sh`        | Read from Stripe, output NDJSON to stdout            | `STRIPE_API_KEY`                 |
 | `write-to-postgres.sh`       | Write NDJSON (stdin or sample data) to Postgres      | `DATABASE_URL`                   |
-| `write-to-sheets.sh`         | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_`*                       |
+| `write-to-sheets.sh`         | Write NDJSON (stdin or sample data) to Google Sheets | `GOOGLE_`\*                      |
 | `stripe-to-postgres.sh`      | Stripe → Postgres via the engine                     | `STRIPE_API_KEY`, `DATABASE_URL` |
-| `stripe-to-google-sheets.sh` | Stripe → Google Sheets via the engine                | `STRIPE_API_KEY`, `GOOGLE_`*     |
+| `stripe-to-google-sheets.sh` | Stripe → Google Sheets via the engine                | `STRIPE_API_KEY`, `GOOGLE_`\*    |
 | `stripe-to-postgres-live.sh` | Stripe → Postgres with live WebSocket streaming      | `STRIPE_API_KEY`, `DATABASE_URL` |
-
 
 ### TypeScript API
 
@@ -162,36 +160,41 @@ Runs outside the Postgres demos: connectors `source-metronome` and `destination-
 2. **Redis sidecar**: either run `docker compose up redis -d` (listens on `localhost:56379` per `compose.yml`) or use the packaged demo Compose file below.
 3. **Catalog**: `./packages/source-metronome` publishes stream definitions (`discover`). Curated MVP streams use documented Metronome endpoints: customers, contracts, balances (page snapshots), net_balance, credits, commits, entitlements, and supporting reference streams.
 4. **Pipe locally**:
-  ```sh
-   export METRONOME_API_TOKEN=...
-   npx tsx --conditions bun packages/source-metronome/src/bin.ts discover --config "{\"api_key\":\"$METRONOME_API_TOKEN\"}"
-  ```
-   Example read → write with a narrowed catalog JSON (matching your configured streams’ primary keys):
-5. **Live webhook demo with webhook.site**:
-  1. Open [webhook.site](https://webhook.site) and copy your unique URL, e.g. `https://webhook.site/<token>`.
-  2. Register that URL in Metronome and copy the Metronome signing secret.
-  3. Start the local relay in one terminal:
-     ```sh
-     ./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
-     ```
-  4. In another terminal, run the Metronome Redis demo using `scripts/e2e-metronome-redis.sh` or the packaged Compose flow below.
-6. **End-to-end script** (`scripts/e2e-metronome-redis.sh`): requires `METRONOME_API_TOKEN`, `METRONOME_CUSTOMER_ID`, plus Redis — see comments in that script. Loads catalog from `demo/metronome-redis-mvp-catalog.json` (override with `CATALOG_PATH`).
 
-### Packaged Redis Sidecar Demo
+```sh
+ export METRONOME_API_TOKEN=...
+ npx tsx --conditions bun packages/source-metronome/src/bin.ts discover --config "{\"api_key\":\"$METRONOME_API_TOKEN\"}"
+```
+
+Example read → write with a narrowed catalog JSON (matching your configured streams’ primary keys): 5. **Live webhook demo with webhook.site**:
+
+1. Open [webhook.site](https://webhook.site) and copy your unique URL, e.g. `https://webhook.site/<token>`.
+2. Register that URL in Metronome and copy the Metronome signing secret.
+3. Start the local relay in one terminal:
+   ```sh
+   ./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
+   ```
+4. In another terminal, run the Metronome Redis demo using `scripts/e2e-metronome-redis.sh` or the local Redis sidecar flow below.
+5. **End-to-end script** (`scripts/e2e-metronome-redis.sh`): requires `METRONOME_API_TOKEN`, `METRONOME_CUSTOMER_ID`, plus Redis — see comments in that script. Loads catalog from `demo/metronome-redis-mvp-catalog.json` (override with `CATALOG_PATH`).
+
+### Redis Sidecar Demo
 
 This is the cleanest story for the Metronome demo:
 
 ```sh
+docker compose -p demo -f demo/compose.metronome-redis.yml up -d redis
+
+export METRONOME_API_TOKEN="…"
 export METRONOME_WEBHOOK_URL="https://webhook.site/<token>"
-docker compose --env-file ../.env -f demo/compose.metronome-redis.yml up --build
+REDIS_URL=redis://localhost:56379 WEBHOOK_PORT=4244 ./scripts/run-metronome-redis-pipeline.sh
 ```
 
-That starts:
+That starts Redis in Docker and runs the Sync Engine pipeline from your local checkout:
 
 - `redis`: local read-model sidecar on `localhost:56379`
-- `sync-engine`: Metronome source → Redis destination pipeline, webhook listener on `localhost:4244`
+- local `sync-engine`: Metronome source → Redis destination pipeline, webhook listener on `localhost:4244`
 
-For webhook.site, forward public Metronome deliveries into the local `sync-engine` container:
+For webhook.site, forward public Metronome deliveries into the local webhook listener:
 
 ```sh
 ./scripts/webhook-relay.sh <token> http://127.0.0.1:4244
@@ -205,28 +208,31 @@ Demonstrates the full loop visually: Redis holds Metronome-synced `net_balance` 
 
 From **sync-engine** root:
 
-1. **Redis + Sync Engine pipeline** — either use the packaged Compose command above, or run the components manually:
-  ```sh
-   export METRONOME_API_TOKEN="…"
-   METRONOME_WEBHOOK_URL="https://webhook.site/<token>" \
-   WEBHOOK_PORT=4244 ./scripts/run-metronome-redis-pipeline.sh
-  ```
-   Uses the same MVP catalog file as `e2e-metronome-redis.sh`. After backfill you should see webhook listener logs. For webhook.site, run `./scripts/webhook-relay.sh <token> http://127.0.0.1:4244` in another terminal so Metronome deliveries are forwarded to the local listener.
-2. **PixelDraw** —
-  ```sh
-   cd examples/pixel-app
-   npm ci   # or npm install once
-   npm start
-  ```
-   `start.sh` auto-sources `sync-engine/../.env` if present (`ENV_FILE=/path/to/.env` to override); never commit tokens. PixelDraw reads Redis and sends usage to Metronome; it does not do direct Metronome balance reads.
-3. **Prove live update** — create or edit a credit in Metronome for the demo customer. Metronome emits `credit.create` / `credit.edit`; Sync Engine refreshes Metronome state and writes Redis; PixelDraw auto-updates from Redis within a few seconds.
-4. Optional **automated E2E** (flushes Redis DB 0) — `METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh`.
+1. **Redis + Sync Engine pipeline** — start Redis with Compose, then run the pipeline locally:
+
+```sh
+ docker compose -p demo -f demo/compose.metronome-redis.yml up -d redis
+
+ export METRONOME_API_TOKEN="…"
+ METRONOME_WEBHOOK_URL="https://webhook.site/<token>" \
+ REDIS_URL=redis://localhost:56379 \
+ WEBHOOK_PORT=4244 ./scripts/run-metronome-redis-pipeline.sh
+```
+
+Uses the same MVP catalog file as `e2e-metronome-redis.sh`. After backfill you should see webhook listener logs. For webhook.site, run `./scripts/webhook-relay.sh <token> http://127.0.0.1:4244` in another terminal so Metronome deliveries are forwarded to the local listener. 2. **PixelDraw** —
+
+```sh
+ cd examples/pixel-app
+ npm ci   # or npm install once
+ npm start
+```
+
+`start.sh` auto-sources `sync-engine/../.env` if present (`ENV_FILE=/path/to/.env` to override); never commit tokens. PixelDraw reads Redis and sends usage to Metronome; it does not do direct Metronome balance reads. 3. **Prove live update** — create or edit a credit in Metronome for the demo customer. Metronome emits `credit.create` / `credit.edit`; Sync Engine refreshes Metronome state and writes Redis; PixelDraw auto-updates from Redis within a few seconds. 4. Optional **automated E2E** (flushes Redis DB 0) — `METRONOME_API_TOKEN=… METRONOME_CUSTOMER_ID=… ./scripts/e2e-metronome-redis.sh`.
 
 ## Utilities
 
-
-| Script              | What it does                                     |
-| ------------------- | ------------------------------------------------ |
-| `reset-postgres.sh` | Drop all tables and non-system schemas           |
-| `webhooksite.sh`    | Create a webhook.site URL and forward with `whcli` |
+| Script              | What it does                                                                    |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `reset-postgres.sh` | Drop all tables and non-system schemas                                          |
+| `webhooksite.sh`    | Create a webhook.site URL and forward with `whcli`                              |
 | `webhook-relay.sh`  | Poll an existing webhook.site URL and forward Stripe/Metronome webhooks locally |
