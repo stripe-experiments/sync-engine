@@ -701,6 +701,11 @@ export type TeardownOutput = z.infer<typeof TeardownOutput>
 //
 // Every method returns AsyncIterable<Message> — everything is a stream.
 
+export interface StaleRecordsBatch {
+  stream: string
+  ids: string[]
+}
+
 /**
  * Reads data from an upstream system by emitting messages.
  *
@@ -742,6 +747,15 @@ export interface Source<
       state?: { streams: Record<string, TSourceState>; global: Record<string, unknown> }
     },
     $stdin?: AsyncIterable<TInput>
+  ): AsyncIterable<Message>
+
+  /**
+   * Verify whether stale records still exist in the source system.
+   * Yields RecordMessage with recordDeleted: true for any that are missing.
+   */
+  verifyRecords?(
+    params: { config: TConfig; catalog: ConfiguredCatalog },
+    $stdin: AsyncIterable<StaleRecordsBatch>
   ): AsyncIterable<Message>
 
   /** Provision external resources (webhook endpoints, replication slots, etc.). */
@@ -786,6 +800,18 @@ export interface Destination<TConfig extends Record<string, unknown> = Record<st
     params: { config: TConfig; catalog: ConfiguredCatalog },
     $stdin: AsyncIterable<DestinationInput>
   ): AsyncIterable<DestinationOutput>
+
+  /**
+   * Get batches of IDs for records that weren't updated in the current sync run.
+   * `filter` (e.g. `{ _account_id: 'acct_X' }`) scopes the query so multi-tenant
+   * schemas only return records owned by the caller.
+   */
+  getStaleRecords?(params: {
+    config: TConfig
+    catalog: ConfiguredCatalog
+    syncRunStartedAt: string
+    filter?: Record<string, string>
+  }): AsyncIterable<StaleRecordsBatch>
 
   /** Provision downstream resources (schemas, tables, etc.). */
   setup?(params: { config: TConfig; catalog: ConfiguredCatalog }): AsyncIterable<SetupOutput>

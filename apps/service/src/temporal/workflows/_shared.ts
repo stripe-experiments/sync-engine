@@ -19,6 +19,12 @@ export const { pipelineSync } = proxyActivities<SyncActivities>({
   retry: retryPolicy,
 })
 
+export const { reconcileCleanup } = proxyActivities<SyncActivities>({
+  startToCloseTimeout: '1h', // Could take a while due to rate limiting
+  heartbeatTimeout: '2m',
+  retry: retryPolicy,
+})
+
 export const { discoverCatalog } = proxyActivities<SyncActivities>({
   startToCloseTimeout: '10m',
   heartbeatTimeout: '2m',

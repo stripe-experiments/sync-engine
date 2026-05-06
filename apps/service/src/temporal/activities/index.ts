@@ -4,6 +4,7 @@ import { createDiscoverCatalogActivity } from './discover-catalog.js'
 import { createPipelineSetupActivity } from './pipeline-setup.js'
 import { createPipelineSyncActivity } from './pipeline-sync.js'
 import { createPipelineTeardownActivity } from './pipeline-teardown.js'
+import { createReconcileCleanupActivity } from './reconcile-cleanup.js'
 import type { PipelineStore } from '../../lib/stores.js'
 
 export function createActivities(opts: { engineUrl: string; pipelineStore: PipelineStore }) {
@@ -15,6 +16,7 @@ export function createActivities(opts: { engineUrl: string; pipelineStore: Pipel
     pipelineSync: createPipelineSyncActivity(context),
     pipelineTeardown: createPipelineTeardownActivity(context),
     updatePipelineStatus: createUpdatePipelineStatusActivity(context),
+    reconcileCleanup: createReconcileCleanupActivity(context),
   }
 }
 
