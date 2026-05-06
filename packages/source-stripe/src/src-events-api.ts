@@ -74,7 +74,7 @@ export async function* pollEvents(opts: {
 
   let latestEventCreated = cursor
   for (const event of events) {
-    yield* processStripeEvent(event, config, catalog, registry, streamNames, accountId)
+    yield* processStripeEvent(event, catalog, registry, streamNames, accountId)
     if (event.created > latestEventCreated) {
       latestEventCreated = event.created
     }

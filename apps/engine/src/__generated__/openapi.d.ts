@@ -321,8 +321,6 @@ export interface components {
             poll_events?: boolean;
             /** @description Port for built-in webhook HTTP listener (e.g. 4242) */
             webhook_port?: number;
-            /** @description Object types to re-fetch from Stripe API on webhook (e.g. ["subscription"]) */
-            revalidate_objects?: string[];
             /** @description Max objects to backfill per stream (useful for testing) */
             backfill_limit?: number;
             /** @description Override max requests per second (default: auto-derived from API key mode — 20 live, 10 test). */

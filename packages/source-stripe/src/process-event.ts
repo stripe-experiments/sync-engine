@@ -4,12 +4,11 @@ import type {
   RecordMessage,
   SourceStateMessage,
 } from '@stripe/sync-protocol'
+import { resolveTableName } from '@stripe/sync-openapi'
 import type { StripeEvent } from './spec.js'
-import type { Config } from './index.js'
 import { msg } from './index.js'
 import { log } from './logger.js'
 import type { ResourceConfig } from './types.js'
-import { normalizeStripeObjectName } from './resourceRegistry.js'
 
 // MARK: - Delete event detection
 
@@ -58,7 +57,7 @@ export function fromStripeEvent(
     | undefined
   if (!dataObject?.object) return null
 
-  const objectType = normalizeStripeObjectName(dataObject.object)
+  const objectType = resolveTableName(dataObject.object)
   const config = registry[objectType]
   if (!config) return null
 
@@ -93,15 +92,13 @@ export function fromStripeEvent(
 
 /**
  * Process a single verified StripeEvent through the full pipeline:
- * entitlements, registry filter, delete detection, revalidation,
- * subscription items.
+ * entitlements, registry filter, delete detection, subscription items.
  *
  * This is the canonical function — all event paths (webhook, events API,
  * WebSocket) converge here once a StripeEvent is in hand.
  */
 export async function* processStripeEvent(
   event: StripeEvent,
-  config: Config,
   catalog: ConfiguredCatalog,
   registry: Record<string, ResourceConfig>,
   streamNames: Set<string>,
@@ -121,7 +118,7 @@ export async function* processStripeEvent(
   // 2. Entitlements special case — the summary object type doesn't map to a
   //    registry entry, so we must handle it before the registry lookup.
   if (event.type === 'entitlements.active_entitlement_summary.updated') {
-    if (!streamNames.has('active_entitlement')) return
+    if (!streamNames.has('entitlements_active_entitlement')) return
     const summary = dataObject as {
       customer: string
       entitlements: {
@@ -137,7 +134,7 @@ export async function* processStripeEvent(
     }
     for (const e of summary.entitlements.data) {
       yield msg.record({
-        stream: 'active_entitlement',
+        stream: 'entitlements_active_entitlement',
         emitted_at: new Date().toISOString(),
         data: {
           id: e.id,
@@ -146,7 +143,7 @@ export async function* processStripeEvent(
           customer: summary.customer,
           livemode: e.livemode,
           lookup_key: e.lookup_key,
-          [newerThanField('active_entitlement')]:
+          [newerThanField('entitlements_active_entitlement')]:
             typeof e.updated === 'number' ? e.updated : event.created,
           ...(accountId ? { _account_id: accountId } : {}),
         },
@@ -154,14 +151,14 @@ export async function* processStripeEvent(
     }
     yield msg.source_state({
       state_type: 'stream',
-      stream: 'active_entitlement',
+      stream: 'entitlements_active_entitlement',
       data: { eventId: event.id, eventCreated: event.created },
     })
     return
   }
 
   // 3. Filter by registry and catalog
-  const objectType = normalizeStripeObjectName(dataObject.object)
+  const objectType = resolveTableName(dataObject.object)
   const resourceConfig = registry[objectType]
   if (!resourceConfig) return
   if (!dataObject.id) return // skip preview/draft objects
@@ -189,19 +186,9 @@ export async function* processStripeEvent(
     return
   }
 
-  // 5. Revalidation — re-fetch from Stripe API if configured
-  let data: Record<string, unknown> = dataObject
-  if (
-    config.revalidate_objects?.some((r) => normalizeStripeObjectName(r) === objectType) &&
-    resourceConfig.isFinalState &&
-    !resourceConfig.isFinalState(dataObject)
-  ) {
-    data = (await resourceConfig.retrieveFn!(dataObject.id)) as Record<string, unknown>
-  }
-
-  // 6. Yield main record
+  // 5. Yield main record
   const recordData: Record<string, unknown> = {
-    ...data,
+    ...dataObject,
     [newerThanField(resourceConfig.tableName)]: _updated_at,
     ...(accountId ? { _account_id: accountId } : {}),
   }
@@ -211,12 +198,15 @@ export async function* processStripeEvent(
     emitted_at: new Date().toISOString(),
   })
 
-  // 7. Yield subscription items if applicable.
-  if (objectType === 'subscription' && (data as { items?: { data?: unknown[] } }).items?.data) {
+  // 6. Yield subscription items if applicable.
+  if (
+    objectType === 'subscription' &&
+    (dataObject as { items?: { data?: unknown[] } }).items?.data
+  ) {
     const subscriptionItemsNewerThanField =
       catalog.streams.find((cs) => cs.stream.name === 'subscription_item')?.stream
         .newer_than_field ?? newerThanField(resourceConfig.tableName)
-    for (const item of (data as { items: { data: Record<string, unknown>[] } }).items.data) {
+    for (const item of (dataObject as { items: { data: Record<string, unknown>[] } }).items.data) {
       yield msg.record({
         stream: 'subscription_item',
         data: {

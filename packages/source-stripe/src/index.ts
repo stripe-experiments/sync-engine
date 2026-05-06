@@ -322,7 +322,7 @@ export function createStripeSource(
                 )
               } else {
                 const event = stripeEventSchema.parse(input)
-                yield* processStripeEvent(event, config, catalog, registry, streamNames, accountId)
+                yield* processStripeEvent(event, catalog, registry, streamNames, accountId)
               }
             }
             return
@@ -359,7 +359,7 @@ export function createStripeSource(
               maxConcurrentStreams,
               signal,
               drainQueue: wsClient
-                ? () => inputQueue.drain(config, catalog, registry, streamNames, accountId)
+                ? () => inputQueue.drain(catalog, registry, streamNames, accountId)
                 : undefined,
             })
 
@@ -384,7 +384,7 @@ export function createStripeSource(
             // After backfill: stream live events from WebSocket and/or HTTP
             if (wsClient || httpServer) {
               // Drain anything that arrived during backfill
-              yield* inputQueue.drain(config, catalog, registry, streamNames, accountId)
+              yield* inputQueue.drain(catalog, registry, streamNames, accountId)
 
               // Block on new events (infinite loop until all live sources close)
               while (wsClient || httpServer) {
@@ -402,7 +402,6 @@ export function createStripeSource(
                   } else {
                     yield* processStripeEvent(
                       queued.data,
-                      config,
                       catalog,
                       registry,
                       streamNames,
@@ -438,7 +437,7 @@ export default createStripeSource()
 export { subdivideRanges } from '@stripe/sync-protocol'
 export { buildResourceRegistry, DEFAULT_SYNC_OBJECTS, EXCLUDED_TABLES } from './resourceRegistry.js'
 export { catalogFromOpenApi } from './catalog.js'
-export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES } from '@stripe/sync-openapi'
+export { SpecParser } from '@stripe/sync-openapi'
 export type { ParsedResourceTable, ParsedOpenApiSpec } from '@stripe/sync-openapi'
 export type { RateLimiter } from './rate-limiter.js'
 export { createInMemoryRateLimiter } from './rate-limiter.js'

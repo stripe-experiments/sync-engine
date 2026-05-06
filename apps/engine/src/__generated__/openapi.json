@@ -1081,13 +1081,6 @@
             "maximum": 9007199254740991,
             "description": "Port for built-in webhook HTTP listener (e.g. 4242)"
           },
-          "revalidate_objects": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Object types to re-fetch from Stripe API on webhook (e.g. [\"subscription\"])"
-          },
           "backfill_limit": {
             "type": "integer",
             "exclusiveMinimum": 0,

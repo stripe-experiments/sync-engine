@@ -1,5 +1,5 @@
 export type * from './types.js'
-export { SpecParser, OPENAPI_RESOURCE_TABLE_ALIASES, resolveTableName } from './specParser.js'
+export { SpecParser, resolveTableName } from './specParser.js'
 export type { CreateEndpoint, ListEndpoint, NestedEndpoint } from './specParser.js'
 
 export {

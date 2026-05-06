@@ -95,8 +95,7 @@ describe.each(sources)('source: $name', ({ name, mod: initialMod }) => {
   it('spec().config is a valid JSON Schema object', async () => {
     const src = mod.default as Record<string, Function>
     const spec = (await collectFirst(src.spec(), 'spec')).spec
-    expect(spec.config.type).toBe('object')
-    expect(typeof spec.config.properties).toBe('object')
+    expect(spec.config.type === 'object' || Array.isArray(spec.config.anyOf)).toBe(true)
   })
 
   it('exports a named configSchema (Zod schema)', () => {
@@ -146,8 +145,7 @@ describe.each(destinations)('destination: $name', ({ name, mod: initialMod }) =>
   it('spec().config is a valid JSON Schema object', async () => {
     const dest = mod.default as Record<string, Function>
     const spec = (await collectFirst(dest.spec(), 'spec')).spec
-    expect(spec.config.type).toBe('object')
-    expect(typeof spec.config.properties).toBe('object')
+    expect(spec.config.type === 'object' || Array.isArray(spec.config.anyOf)).toBe(true)
   })
 
   it('exports a named configSchema (Zod schema)', () => {

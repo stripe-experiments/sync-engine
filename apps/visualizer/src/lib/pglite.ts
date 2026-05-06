@@ -13,11 +13,7 @@
 
 import { PGlite } from '@electric-sql/pglite'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import {
-  SpecParser,
-  OPENAPI_RESOURCE_TABLE_ALIASES,
-  type ParsedResourceTable,
-} from '@stripe/sync-source-stripe/browser'
+import { SpecParser, type ParsedResourceTable } from '@stripe/sync-source-stripe/browser'
 
 type PGliteInstance = InstanceType<typeof PGlite>
 type QueryResult = Awaited<ReturnType<PGliteInstance['query']>>
@@ -154,13 +150,8 @@ function generateSchema(spec: Record<string, unknown>): {
   for (const schemaDef of Object.values(schemas)) {
     const resourceId = (schemaDef as Record<string, unknown>)['x-resourceId']
     if (!resourceId || typeof resourceId !== 'string') continue
-    const alias = OPENAPI_RESOURCE_TABLE_ALIASES[resourceId]
-    if (alias) {
-      allTableNames.add(alias)
-    } else {
-      const normalized = resourceId.toLowerCase().replace(/\./g, '_')
-      allTableNames.add(normalized.endsWith('s') ? normalized : `${normalized}s`)
-    }
+    const normalized = resourceId.toLowerCase().replace(/\./g, '_')
+    allTableNames.add(normalized.endsWith('s') ? normalized : `${normalized}s`)
   }
 
   const parser = new SpecParser()
