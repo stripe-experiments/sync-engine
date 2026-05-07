@@ -25,7 +25,7 @@ const ts = new Date()
   .toISOString()
   .replace(/[-:T.Z]/g, '')
   .slice(0, 15)
-const STREAM = 'customer'
+const STREAM = 'customers'
 const BACKFILL_LIMIT = 10
 
 function memoryPipelineStore() {
