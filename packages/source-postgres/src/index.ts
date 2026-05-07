@@ -234,6 +234,8 @@ export function createPostgresSource(deps: PostgresSourceDeps = {}): Source<Conf
       const name = streamName(config)
       if (!selected.has(name)) return
 
+      yield msg.stream_status({ stream: name, status: 'start' })
+
       const pool = await createPool(config)
       try {
         let currentState = state?.streams[name] as StreamState | undefined
@@ -260,6 +262,8 @@ export function createPostgresSource(deps: PostgresSourceDeps = {}): Source<Conf
 
           if (page.rows.length < config.page_size) break
         }
+
+        yield msg.stream_status({ stream: name, status: 'complete' })
       } finally {
         await pool.end()
       }

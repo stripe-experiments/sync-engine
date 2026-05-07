@@ -234,13 +234,19 @@ describe('source-postgres', () => {
     const messages = await collect(source.read({ config, catalog }))
 
     expect(messages.map((message) => message.type)).toEqual([
+      'stream_status',
       'record',
       'record',
       'source_state',
       'record',
       'source_state',
+      'stream_status',
     ])
-    expect(messages[2]).toMatchObject({
+    expect(messages[0]).toMatchObject({
+      type: 'stream_status',
+      stream_status: { stream: 'crm_customers', status: 'start' },
+    })
+    expect(messages[3]).toMatchObject({
       type: 'source_state',
       source_state: {
         state_type: 'stream',
@@ -248,11 +254,60 @@ describe('source-postgres', () => {
         data: { cursor: '2026-01-02T00:00:00.000Z', primary_key: ['crm_2'] },
       },
     })
-    expect(messages[4]).toMatchObject({
+    expect(messages[5]).toMatchObject({
       type: 'source_state',
       source_state: {
         data: { cursor: '2026-01-03T00:00:00.000Z', primary_key: ['crm_3'] },
       },
     })
+    expect(messages[6]).toMatchObject({
+      type: 'stream_status',
+      stream_status: { stream: 'crm_customers', status: 'complete' },
+    })
+  })
+
+  it('marks an empty selected stream complete without advancing source state', async () => {
+    const config = configSchema.parse({
+      url: 'postgres://example',
+      table: 'crm_customers',
+      primary_key: ['id'],
+      cursor_field: 'updated_at',
+      page_size: 100,
+    })
+    const catalog: ConfiguredCatalog = {
+      streams: [
+        {
+          stream: {
+            name: 'crm_customers',
+            primary_key: [['id']],
+            newer_than_field: 'updated_at',
+          },
+          sync_mode: 'incremental',
+          destination_sync_mode: 'append',
+        },
+      ],
+    }
+
+    const source = createPostgresSource({
+      createPool: () => ({
+        async query() {
+          return queryResult([])
+        },
+        async end() {},
+      }),
+    })
+
+    const messages = await collect(source.read({ config, catalog }))
+
+    expect(messages).toEqual([
+      {
+        type: 'stream_status',
+        stream_status: { stream: 'crm_customers', status: 'start' },
+      },
+      {
+        type: 'stream_status',
+        stream_status: { stream: 'crm_customers', status: 'complete' },
+      },
+    ])
   })
 })

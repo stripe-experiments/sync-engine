@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { resolveSpecifier, resolveBin, createConnectorResolver } from './resolver.js'
 import { sourceTest } from './source-test.js'
 import { destinationTest } from './destination-test.js'
@@ -103,5 +104,42 @@ describe('createConnectorResolver', () => {
   it('throws for unknown connector', async () => {
     const resolver = await createConnectorResolver({})
     await expect(resolver.resolveDestination('nonexistent')).rejects.toThrow(/not found/)
+  })
+
+  it('preserves non-object config schemas for validation', async () => {
+    const config = z.toJSONSchema(
+      z.union([
+        z.object({
+          url: z.string(),
+          table: z.string(),
+          cursor_field: z.string(),
+        }),
+        z.object({
+          url: z.string(),
+          query: z.string(),
+          stream: z.string(),
+          cursor_field: z.string(),
+        }),
+      ])
+    )
+    const resolver = await createConnectorResolver({
+      sources: {
+        postgres: {
+          async *spec() {
+            yield { type: 'spec' as const, spec: { config } }
+          },
+          async *check() {},
+          async *discover() {},
+          async *read() {},
+        },
+      },
+    })
+
+    const schema = resolver.sources().get('postgres')?.configSchema
+
+    expect(
+      schema?.parse({ url: 'postgres://localhost/db', table: 'users', cursor_field: 'id' })
+    ).toEqual({ url: 'postgres://localhost/db', table: 'users', cursor_field: 'id' })
+    expect(() => schema?.parse({})).toThrow()
   })
 })

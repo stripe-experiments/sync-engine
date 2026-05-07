@@ -347,7 +347,7 @@ describe('reverse ETL', () => {
     ]
     const second = await engine.pipeline_sync_batch(pipeline, {
       state: first.ending_state,
-      run_id: 'run_reverse_etl_custom_object_create_twice_test',
+      run_id: 'run_reverse_etl_custom_object_create_twice_test_next',
     })
 
     expect(first.ending_state?.source.streams.devices).toEqual({

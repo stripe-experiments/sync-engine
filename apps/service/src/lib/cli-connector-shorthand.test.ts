@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyConnectorShorthand,
-  assertNoAmbiguousConnectorNames,
+  extractConnectorOverrides,
   normalizeCliKey,
   parseCliValue,
   setNestedValue,
-  wrapPipelineConnectorShorthand,
 } from './cli-connector-shorthand.js'
 
 describe('cli connector shorthand', () => {
@@ -33,11 +32,11 @@ describe('cli connector shorthand', () => {
     expect(applyConnectorShorthand(args, 'source', ['stripe'])).toEqual(args)
   })
 
-  it('builds a source body from shorthand flags', () => {
+  it('builds a source body from scoped shorthand flags', () => {
     const result = applyConnectorShorthand(
       {
-        'stripe.api-key': 'sk_test_123',
-        'stripe.api-version': '2025-03-31.basil',
+        'source.stripe.api-key': 'sk_test_123',
+        'source.stripe.api-version': '2025-03-31.basil',
       },
       'source',
       ['stripe']
@@ -52,12 +51,12 @@ describe('cli connector shorthand', () => {
   it('supports nested shorthand keys and JSON values', () => {
     const result = applyConnectorShorthand(
       {
-        'postgres.url': 'postgres://localhost/db',
-        'postgres.schema': 'public',
-        'postgres.aws.region': 'us-west-2',
-        'postgres.aws.role-arn': 'arn:aws:iam::123:role/demo',
-        'postgres.aws.port': '6543',
-        'postgres.ssl-ca-pem': '{"pem":"value"}',
+        'destination.postgres.url': 'postgres://localhost/db',
+        'destination.postgres.schema': 'public',
+        'destination.postgres.aws.region': 'us-west-2',
+        'destination.postgres.aws.role-arn': 'arn:aws:iam::123:role/demo',
+        'destination.postgres.aws.port': '6543',
+        'destination.postgres.ssl-ca-pem': '{"pem":"value"}',
       },
       'destination',
       ['postgres', 'google_sheets']
@@ -82,7 +81,7 @@ describe('cli connector shorthand', () => {
     const result = applyConnectorShorthand(
       {
         destination: '{"type":"postgres","postgres":{"schema":"public"}}',
-        'postgres.url': 'postgres://localhost/db',
+        'destination.postgres.url': 'postgres://localhost/db',
       },
       'destination',
       ['postgres', 'google_sheets']
@@ -101,8 +100,8 @@ describe('cli connector shorthand', () => {
     expect(() =>
       applyConnectorShorthand(
         {
-          'postgres.schema': 'public',
-          'google_sheets.access-token': 'token',
+          'destination.postgres.schema': 'public',
+          'destination.google_sheets.access-token': 'token',
         },
         'destination',
         ['postgres', 'google_sheets']
@@ -115,7 +114,7 @@ describe('cli connector shorthand', () => {
       applyConnectorShorthand(
         {
           destination: '{"type":"google_sheets","google_sheets":{"access_token":"token"}}',
-          'postgres.schema': 'public',
+          'destination.postgres.schema': 'public',
         },
         'destination',
         ['postgres', 'google_sheets']
@@ -123,21 +122,18 @@ describe('cli connector shorthand', () => {
     ).toThrow('--destination type google_sheets conflicts with shorthand flags for postgres')
   })
 
-  it('rejects connector names that appear in both source and destination sets', () => {
-    expect(() =>
-      assertNoAmbiguousConnectorNames(
-        ['stripe', 'shared_connector'],
-        ['postgres', 'shared-connector']
-      )
-    ).toThrow('Connector names cannot exist in both source and destination sets')
-  })
+  it('lets the same connector name be used on both sides without ambiguity', () => {
+    const overrides = extractConnectorOverrides(
+      {
+        'source.postgres.url': 'postgres://src/db',
+        'destination.postgres.url': 'postgres://dst/db',
+      },
+      { sources: ['postgres'], destinations: ['postgres'] }
+    )
 
-  it('fails wrapper creation when source and destination connector names overlap', () => {
-    expect(() =>
-      wrapPipelineConnectorShorthand({} as any, {
-        sources: ['shared_connector'],
-        destinations: ['shared-connector'],
-      })
-    ).toThrow('Connector names cannot exist in both source and destination sets')
+    expect(overrides).toEqual({
+      source: { type: 'postgres', postgres: { url: 'postgres://src/db' } },
+      destination: { type: 'postgres', postgres: { url: 'postgres://dst/db' } },
+    })
   })
 })

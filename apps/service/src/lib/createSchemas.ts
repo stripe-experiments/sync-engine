@@ -64,6 +64,13 @@ export const LogEntry = z.object({
   timestamp: z.string().describe('ISO 8601 timestamp when the log entry was produced.'),
 })
 
+function schemaFromJsonSchema(jsonSchema: Record<string, unknown>): z.ZodType {
+  const schema = z.fromJSONSchema(jsonSchema)
+  // Preserve non-object schemas such as source-postgres anyOf unions. Falling
+  // back for all non-ZodObject values strips valid connector payload fields.
+  return schema instanceof z.ZodAny ? z.object({}) : schema
+}
+
 // MARK: - Dynamic schema factory (depends on registered connectors)
 
 /**
@@ -79,8 +86,7 @@ export const LogEntry = z.object({
 export function createSchemas(resolver: ConnectorResolver) {
   // Build source config discriminated union with .meta({ id }) for OAS component registration
   const sourceVariants = [...resolver.sources()].map(([name, r]) => {
-    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
+    const obj = schemaFromJsonSchema(r.rawConfigJsonSchema).meta({
       id: connectorSchemaName(name, 'Source'),
     })
     return z.object({ type: z.literal(name), [name]: obj })
@@ -96,8 +102,7 @@ export function createSchemas(resolver: ConnectorResolver) {
 
   // Build destination config discriminated union
   const destVariants = [...resolver.destinations()].map(([name, r]) => {
-    const base = z.fromJSONSchema(r.rawConfigJsonSchema)
-    const obj = (base instanceof z.ZodObject ? base : z.object({})).meta({
+    const obj = schemaFromJsonSchema(r.rawConfigJsonSchema).meta({
       id: connectorSchemaName(name, 'Destination'),
     })
     return z.object({ type: z.literal(name), [name]: obj })

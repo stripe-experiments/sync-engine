@@ -61,7 +61,15 @@ export const streamStateSpec = z.object({
 
 export type StreamState = z.infer<typeof streamStateSpec>
 
+function asObjectJsonSchema(jsonSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: {},
+    ...jsonSchema,
+  }
+}
+
 export default {
-  config: z.toJSONSchema(configSchema),
+  config: asObjectJsonSchema(z.toJSONSchema(configSchema)),
   source_state_stream: z.toJSONSchema(streamStateSpec),
 } satisfies ConnectorSpecification

@@ -652,6 +652,12 @@ export function createStripeDestination(deps: StripeDestinationDeps = {}): Desti
             continue
           }
           yield input
+        } else if (
+          input.type === 'stream_status' &&
+          failedStreams.has(input.stream_status.stream) &&
+          input.stream_status.status !== 'error'
+        ) {
+          continue
         } else {
           yield input
         }
