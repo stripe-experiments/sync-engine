@@ -8,7 +8,7 @@ All data flows as typed async iterables of messages (`RecordMessage`, `SourceSta
 
 ## 2. Connector isolation
 
-Sources never import destinations. Destinations never import sources. Both depend only on `@stripe/sync-protocol` and approved shared utilities (e.g. `@stripe/sync-util-postgres`). This is enforced by `e2e/layers.test.ts`.
+Sources never import destinations. Destinations never import sources. Both depend only on `@stripe/sync-protocol` and approved shared utilities (`@stripe/sync-logger`, `@stripe/sync-openapi`, `@stripe/sync-util-postgres`). This is enforced by `e2e/layers.test.ts`.
 
 ## 3. State is a message
 

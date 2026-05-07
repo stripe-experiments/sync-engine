@@ -97,4 +97,4 @@ Both target the same Postgres host with different schemas.
 | `scenarios.md`                      | This document                                        |
 | `ARCHITECTURE.md`                   | System layers, core model, source/destination types  |
 | `packages/protocol/src/protocol.ts` | Source, Destination interfaces; message types        |
-| `apps/service/src/lib/service.ts`   | `StatefulSync` class — credential + state management |
+| `apps/service/src/lib/stores.ts`    | Store interfaces — credential + state management     |

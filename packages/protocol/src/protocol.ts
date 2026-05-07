@@ -433,6 +433,7 @@ export const SyncState = z
   .meta({ id: 'SyncState' })
 export type SyncState = z.infer<typeof SyncState>
 
+/** @deprecated Legacy terminal payload. Prefer explicit request/response results via pipeline_sync_batch. */
 export const EofPayload = z
   .object({
     status: RunStatus.describe('Terminal run status derived from stream outcomes.'),
@@ -451,8 +452,11 @@ export const EofPayload = z
     ),
     request_progress: ProgressPayload.describe('Progress for this specific request only.'),
   })
-  .describe('Terminal message signaling end of this request.')
+  .describe(
+    'Deprecated terminal message signaling end of this request. Prefer explicit request/response results via pipeline_sync_batch.'
+  )
   .meta({ id: 'EofPayload' })
+/** @deprecated Legacy terminal payload. Prefer explicit request/response results via pipeline_sync_batch. */
 export type EofPayload = z.infer<typeof EofPayload>
 
 // MARK: - Envelope messages (the wire format)
@@ -532,10 +536,12 @@ export const ControlMessage = MessageBase.extend({
 }).meta({ id: 'ControlMessage' })
 export type ControlMessage = z.infer<typeof ControlMessage>
 
+/** @deprecated Legacy terminal message. Prefer explicit request/response results via pipeline_sync_batch. */
 export const EofMessage = MessageBase.extend({
   type: z.literal('eof'),
   eof: EofPayload,
 }).meta({ id: 'EofMessage' })
+/** @deprecated Legacy terminal message. Prefer explicit request/response results via pipeline_sync_batch. */
 export type EofMessage = z.infer<typeof EofMessage>
 
 // MARK: - Pipeline params
@@ -578,10 +584,12 @@ export type PipelineConfig = z.infer<typeof PipelineConfig>
 /**
  * Extended message types (engine-level, not emitted by connectors directly).
  */
+/** @deprecated Legacy push-input envelope. Prefer explicit event handling without a message wrapper. */
 export const SourceInputMessage = MessageBase.extend({
   type: z.literal('source_input'),
   source_input: z.unknown(),
 }).meta({ id: 'SourceInputMessage' })
+/** @deprecated Legacy push-input envelope. Prefer explicit event handling without a message wrapper. */
 export type SourceInputMessage = z.infer<typeof SourceInputMessage>
 
 /**

@@ -207,7 +207,7 @@ for await (const msg of engine.run()) {
 }
 ```
 
-`createEngine` lives in `@stripe/sync-engine`. Pipeline utilities (`forward`, `collect`, `filterDataMessages`) also live there.
+`createEngine` lives in `@stripe/sync-engine`. Pipeline utilities (`pipe`, `collect`, `filterType`, `enforceCatalog`) also live there.
 
 ### Validation boundary
 

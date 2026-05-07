@@ -1,0 +1,3 @@
+{"type":"record","record":{"stream":"demo_customers","data":{"id":"cus_demo_1","email":"alice@example.com"},"emitted_at":"2026-01-01T00:00:00.000Z"}}
+{"type":"record","record":{"stream":"demo_customers","data":{"id":"cus_demo_2","email":"bob@example.com"},"emitted_at":"2026-01-01T00:00:01.000Z"}}
+{"type":"source_state","source_state":{"state_type":"stream","stream":"demo_customers","data":{"cursor":"cus_demo_2"}}}

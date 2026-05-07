@@ -2,7 +2,7 @@
 # locked-down environments (e.g. corp machines with restricted exec policies).
 # We work around this by doing a full static build inside Docker where esbuild
 # can run freely, then serving the output with a plain HTTP server.
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json .
 RUN npm install --legacy-peer-deps
@@ -11,7 +11,7 @@ COPY ${SLIDES} slides.md
 COPY style.css .
 RUN NODE_OPTIONS="--max-old-space-size=4096" ./node_modules/.bin/slidev build --base / slides.md
 
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 RUN npm install -g serve
 COPY --from=build /app/dist .
