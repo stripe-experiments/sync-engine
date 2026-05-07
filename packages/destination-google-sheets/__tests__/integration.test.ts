@@ -27,7 +27,7 @@ describeWithEnv(
     function stripUpdatedAt(rows: unknown[][]): unknown[][] {
       const header = rows[0] ?? []
       const indexes = new Set(
-        ['_updated_at', '_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
+        ['_updated_at', '_last_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
       )
       if (indexes.size === 0) return rows
       return rows.map((row) => row.filter((_, i) => !indexes.has(i)))

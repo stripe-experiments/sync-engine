@@ -846,10 +846,14 @@ export function createDestination(
               }
             }
 
-            const headers = await ensureHeadersForRecord(stream, cleanData)
+            const syncedData: Record<string, unknown> = {
+              ...cleanData,
+              _last_synced_at: new Date().toISOString(),
+            }
+            const headers = await ensureHeadersForRecord(stream, syncedData)
             const tsFields = streamTimestampFields.get(stream)
             const row = headers.map((header) => {
-              const value = cleanData[header]
+              const value = syncedData[header]
               if (tsFields?.has(header) && typeof value === 'number') {
                 return unixToIso(value)
               }
@@ -998,11 +1002,11 @@ export function createDestination(
 
         const headers = (rows[0] as unknown[]).map((h) => String(h ?? ''))
         const idIdx = headers.indexOf('id')
-        const syncedAtIdx = headers.indexOf('_synced_at')
+        const syncedAtIdx = headers.indexOf('_last_synced_at')
         if (idIdx < 0 || syncedAtIdx < 0) {
           log.warn(
             { stream: streamName, headers },
-            'getStaleRecords: missing id or _synced_at column — skipping stream'
+            'getStaleRecords: missing id or _last_synced_at column — skipping stream'
           )
           continue
         }

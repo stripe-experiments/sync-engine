@@ -125,7 +125,7 @@ describeWithEnv(
 
       try {
         // Backfill-only sync (no websocket, no event polling) — both rows
-        // land in postgres with `_synced_at ≈ T0`.
+        // land in postgres with `_last_synced_at ≈ T0`.
         await drain(engine.pipeline_sync(pipeline))
 
         const seeded = await pool.query<{ id: string }>(
@@ -139,8 +139,8 @@ describeWithEnv(
         await stripe.customers.del(doomed.id)
         cleanupIds.delete(doomed.id)
 
-        // `_synced_at` is set with millisecond precision by the destination,
-        // so a small forward skew guarantees `syncRunStartedAt > _synced_at`.
+        // `_last_synced_at` is set with millisecond precision by the destination,
+        // so a small forward skew guarantees `syncRunStartedAt > _last_synced_at`.
         await new Promise((r) => setTimeout(r, 50))
         const syncRunStartedAt = new Date().toISOString()
 
@@ -268,7 +268,7 @@ describeWithEnv(
       const cleanupIds = new Set<string>([survivor.id, doomed.id])
 
       try {
-        // Backfill seeds both customers with `_synced_at ≈ T0`.
+        // Backfill seeds both customers with `_last_synced_at ≈ T0`.
         await drain(engine.pipeline_sync(pipeline))
 
         const seededRows = await readSheet(sheetsClient, spreadsheetId, STREAM)

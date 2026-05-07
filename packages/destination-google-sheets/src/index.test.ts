@@ -20,14 +20,14 @@ import { createMemorySheets } from '../__tests__/memory-sheets.js'
 /**
  * Strip metadata timestamp columns from a 2D rows array.
  *
- * The destination stamps `_synced_at`; the source may stamp `_updated_at`.
+ * The destination stamps `_last_synced_at`; the source may stamp `_updated_at`.
  * Most tests only care about source data, so drop both at assertion sites.
  */
 function stripUpdatedAt(rows: unknown[][] | undefined): unknown[][] {
   if (!rows || rows.length === 0) return rows ?? []
   const header = rows[0] as unknown[]
   const indexes = new Set(
-    ['_updated_at', '_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
+    ['_updated_at', '_last_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
   )
   if (indexes.size === 0) return rows
   return rows.map((row) => row.filter((_, i) => !indexes.has(i)))
@@ -1786,9 +1786,9 @@ describe('_updated_at column (source-owned, passthrough)', () => {
     )
 
     const rows = getData(getSpreadsheetIds()[0], 'users')!
-    expect(rows[0]).toEqual(['id', 'name', '_synced_at'])
+    expect(rows[0]).toEqual(['id', 'name', '_last_synced_at'])
     expect(rows[0]).not.toContain('_updated_at')
-    const syncedAtIdx = (rows[0] as string[]).indexOf('_synced_at')
+    const syncedAtIdx = (rows[0] as string[]).indexOf('_last_synced_at')
     expect(syncedAtIdx).toBeGreaterThanOrEqual(0)
     expect(Date.parse(String(rows[1][syncedAtIdx]))).not.toBeNaN()
   })
@@ -2062,7 +2062,7 @@ describe('getStaleRecords', () => {
     ],
   }
 
-  it('returns ids whose _synced_at predates syncRunStartedAt', async () => {
+  it('returns ids whose _last_synced_at predates syncRunStartedAt', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
 
@@ -2091,7 +2091,7 @@ describe('getStaleRecords', () => {
     expect(batches).toEqual([{ stream: 'customer', ids: ['cus_1', 'cus_2'] }])
   })
 
-  it('does not return rows whose _synced_at is at or after syncRunStartedAt', async () => {
+  it('does not return rows whose _last_synced_at is at or after syncRunStartedAt', async () => {
     const { sheets, getSpreadsheetIds } = createMemorySheets()
     const dest = createDestination(sheets)
 
