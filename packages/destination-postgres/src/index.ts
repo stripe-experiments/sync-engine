@@ -117,6 +117,7 @@ export async function upsertMany(
       skipped_count: 0,
     }
 
+  const syncedAt = new Date().toISOString()
   const records = entries.map((e) => {
     const ts = e[newerThanField] as unknown
     if (typeof ts !== 'number' || !Number.isFinite(ts)) {
@@ -124,7 +125,11 @@ export async function upsertMany(
         `upsertMany: record missing source-stamped "${newerThanField}" (table=${schema}.${table}, id=${String(e.id)}). See DDR-009.`
       )
     }
-    return { _raw_data: e, _updated_at: new Date(ts * 1000).toISOString() }
+    return {
+      _raw_data: e,
+      _last_synced_at: syncedAt,
+      _updated_at: new Date(ts * 1000).toISOString(),
+    }
   })
 
   return await upsertWithStats(pool, records, {
@@ -559,7 +564,7 @@ const destination = {
         const streamName = configuredStream.stream.name
         const filterEntries = Object.entries(filter ?? {})
         const filterClauses = filterEntries.map(([col], i) => `${ident(col)} = $${i + 2}`)
-        const whereClauses = ['_synced_at < $1', ...filterClauses].join(' AND ')
+        const whereClauses = ['_last_synced_at < $1', ...filterClauses].join(' AND ')
         const query = sql`SELECT id FROM ${qualifiedTable(config.schema, streamName)} WHERE ${whereClauses}`
         const params: unknown[] = [syncRunStartedAt, ...filterEntries.map(([, v]) => v)]
 
