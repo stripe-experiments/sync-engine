@@ -14,6 +14,7 @@ import {
   readEnumValidations,
   readSheet,
   type StreamBatchOps,
+  unixToIso,
 } from './writer.js'
 import { createMemorySheets } from '../__tests__/memory-sheets.js'
 
@@ -96,7 +97,7 @@ describe('destination-google-sheets', () => {
 
     const id = getSpreadsheetIds()[0]
     const rows = stripUpdatedAt(getData(id, 'users')!)
-    expect(rows[0]).toEqual(['id', 'name', 'email'])
+    expect(rows[0]).toEqual(['Id', 'Name', 'Email'])
     expect(rows[1]).toEqual(['u1', 'Alice', 'alice@test.invalid'])
   })
 
@@ -118,7 +119,7 @@ describe('destination-google-sheets', () => {
     const rows = stripUpdatedAt(getData(id, 'items')!)
     // header + 5 data rows (batch at 3, then remaining 2 flushed at end)
     expect(rows).toHaveLength(6)
-    expect(rows[0]).toEqual(['id'])
+    expect(rows[0]).toEqual(['Id'])
     expect(rows[5]).toEqual(['5'])
   })
 
@@ -243,11 +244,11 @@ describe('destination-google-sheets', () => {
     const id = getSpreadsheetIds()[0]
 
     const customerRows = stripUpdatedAt(getData(id, 'customers')!)
-    expect(customerRows[0]).toEqual(['id', 'name'])
+    expect(customerRows[0]).toEqual(['Id', 'Name'])
     expect(customerRows).toHaveLength(3) // header + 2
 
     const invoiceRows = stripUpdatedAt(getData(id, 'invoices')!)
-    expect(invoiceRows[0]).toEqual(['id', 'amount', 'customer'])
+    expect(invoiceRows[0]).toEqual(['Id', 'Amount', 'Customer'])
     expect(invoiceRows).toHaveLength(3) // header + 2
   })
 
@@ -329,7 +330,7 @@ describe('destination-google-sheets', () => {
     for (const name of streamNames) {
       const rows = getData(id, name)
       expect(rows, `tab "${name}" should exist`).toBeDefined()
-      expect(rows![0], `tab "${name}" should have correct headers`).toEqual(['id', 'value'])
+      expect(rows![0], `tab "${name}" should have correct headers`).toEqual(['Id', 'Value'])
     }
 
     // Overview tab must exist and start with the spreadsheet title, not stream headers
@@ -376,7 +377,7 @@ describe('destination-google-sheets', () => {
 
     const id = getSpreadsheetIds()[0]
     const rows = stripUpdatedAt(getData(id, 'types')!)
-    expect(rows[1]).toEqual(['hello', '42', 'true', '', '{"nested":true}'])
+    expect(rows[1]).toEqual(['hello', '42', 'true', '', 'nested: true'])
   })
 
   it('readSheet helper — reads back data through the fake client', async () => {
@@ -394,7 +395,7 @@ describe('destination-google-sheets', () => {
       (await readSheet(sheets, getSpreadsheetIds()[0], 'test')) as unknown[][]
     )
     expect(rows).toEqual([
-      ['a', 'b'],
+      ['A', 'B'],
       ['1', '2'],
       ['3', '4'],
     ])
@@ -508,7 +509,7 @@ describe('check', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice Updated'],
       ['cus_2', 'Bob'],
     ])
@@ -549,7 +550,7 @@ describe('check', () => {
     )
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
-    expect(rows[0]).toEqual(['id', 'name', 'email'])
+    expect(rows[0]).toEqual(['Id', 'Name', 'Email'])
     expect(rows[1]).toEqual(['cus_1', 'Alice'])
     expect(rows[2]).toEqual(['cus_2', 'Bob', 'bob@test.invalid'])
   })
@@ -597,7 +598,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice Updated'],
     ])
   })
@@ -623,7 +624,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice'],
       ['cus_2', 'Bob'],
     ])
@@ -647,7 +648,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice Updated'],
     ])
   })
@@ -670,7 +671,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice Updated'],
     ])
   })
@@ -701,7 +702,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice Updated'],
     ])
   })
@@ -779,7 +780,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice'],
       ['cus_1', 'Alice Overwrite'], // overwrote row 3 (Bob's row) per explicit _row_number
     ])
@@ -802,7 +803,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name'],
+      ['Id', 'Name'],
       ['cus_1', 'Alice'],
       ['cus_1', 'Alice Again'],
     ])
@@ -825,7 +826,7 @@ describe('native upsert', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     // id should be first column despite being last in the record
-    expect(rows[0]).toEqual(['id', 'name', 'email'])
+    expect(rows[0]).toEqual(['Id', 'Name', 'Email'])
   })
 })
 
@@ -906,7 +907,7 @@ describe('delete handling', () => {
     )
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
-    expect(rows).toEqual([['id', 'name', 'deleted']])
+    expect(rows).toEqual([['Id', 'Name', 'Deleted']])
   })
 
   it('deleted:false is treated as a normal append (strict === true check)', async () => {
@@ -923,7 +924,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice', 'false'],
     ])
   })
@@ -952,7 +953,7 @@ describe('delete handling', () => {
     // Seeded rows are 2-wide; blank rows written by delete compaction are
     // 3-wide because the header was extended on the delete record's arrival.
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice'],
       ['cus_3', 'Charlie'], // was cus_2; donor (row 4) swapped in
       ['', '', ''], // donor row blanked
@@ -979,7 +980,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice'],
       ['cus_2', 'Bob'],
       ['', '', ''],
@@ -1013,7 +1014,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_d', 'Dave'], // was cus_a; donor (row 5)
       ['cus_e', 'Eve'], // was cus_b; donor (row 6)
       ['cus_c', 'Charlie'], // unchanged
@@ -1048,7 +1049,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_a', 'Alice'],
       ['cus_c', 'Charlie'], // was cus_b; donor (row 4)
       ['', '', ''], // donor row 4 blanked
@@ -1080,7 +1081,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['', '', ''],
       ['', '', ''],
       ['', '', ''],
@@ -1116,7 +1117,7 @@ describe('delete handling', () => {
     // rows stay 2-wide.
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice'],
       ['cus_4', 'Dave', 'false'], // donated into cus_2's slot
       ['cus_3', 'Charlie'],
@@ -1151,7 +1152,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice'],
       ['cus_4', 'Dave', 'false'], // donated into cus_2's slot (row 3)
       ['cus_3', 'Charlie'],
@@ -1183,7 +1184,7 @@ describe('delete handling', () => {
     )
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
-    expect(rows).toEqual([['id', 'name', 'deleted']])
+    expect(rows).toEqual([['Id', 'Name', 'Deleted']])
   })
 
   // MARK: - no-ops and edges
@@ -1209,7 +1210,7 @@ describe('delete handling', () => {
     // The delete record's `deleted: true` extends the header to 3 cols, but
     // the untouched seeded data rows stay 2-wide.
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_1', 'Alice'],
       ['cus_2', 'Bob'],
     ])
@@ -1234,7 +1235,7 @@ describe('delete handling', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_2', 'Bob'], // donor (row 3, seeded 2-wide) swapped into row 2
       ['', '', ''], // row 3 blanked
     ])
@@ -1293,14 +1294,14 @@ describe('delete handling', () => {
 
     const customers = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(customers).toEqual([
-      ['id', 'name', 'deleted'],
+      ['Id', 'Name', 'Deleted'],
       ['cus_2', 'Bob', 'false'], // donor swapped in
       ['', '', ''],
     ])
 
     const invoices = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'invoices')!)
     expect(invoices).toEqual([
-      ['id', 'amount', 'deleted'],
+      ['Id', 'Amount', 'Deleted'],
       ['inv_1', '100', 'false'], // unaffected by the customers delete
       ['inv_2', '200', 'false'],
     ])
@@ -1342,7 +1343,7 @@ describe('delete handling', () => {
     // Composite rowKey = '["cus_1","acct_A"]' matches the seeded row → tail blanked.
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', '_account_id', 'name', 'deleted'],
+      ['Id', '_account_id', 'Name', 'Deleted'],
       ['', '', '', ''],
     ])
   })
@@ -1664,8 +1665,8 @@ describe('newer_than_field stale write prevention', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'updated'],
-      ['cus_1', 'Alice v2', '200'],
+      ['Id', 'Name', 'Updated'],
+      ['cus_1', 'Alice v2', unixToIso(200)],
     ])
   })
 
@@ -1689,8 +1690,8 @@ describe('newer_than_field stale write prevention', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'updated'],
-      ['cus_1', 'Alice v2', '200'],
+      ['Id', 'Name', 'Updated'],
+      ['cus_1', 'Alice v2', unixToIso(200)],
     ])
   })
 
@@ -1710,8 +1711,8 @@ describe('newer_than_field stale write prevention', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'updated'],
-      ['cus_1', 'Alice v2', '200'],
+      ['Id', 'Name', 'Updated'],
+      ['cus_1', 'Alice v2', unixToIso(200)],
     ])
   })
 
@@ -1731,8 +1732,8 @@ describe('newer_than_field stale write prevention', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'updated'],
-      ['cus_1', 'Alice v2', '200'],
+      ['Id', 'Name', 'Updated'],
+      ['cus_1', 'Alice v2', unixToIso(200)],
     ])
   })
 
@@ -1759,8 +1760,8 @@ describe('newer_than_field stale write prevention', () => {
 
     const rows = stripUpdatedAt(getData(getSpreadsheetIds()[0], 'customers')!)
     expect(rows).toEqual([
-      ['id', 'name', 'updated'],
-      ['cus_1', 'Alice v1', '100'],
+      ['Id', 'Name', 'Updated'],
+      ['cus_1', 'Alice v1', unixToIso(100)],
     ])
   })
 })
@@ -1789,7 +1790,7 @@ describe('_updated_at column (source-owned, passthrough)', () => {
     )
 
     const rows = getData(getSpreadsheetIds()[0], 'users')!
-    expect(rows[0]).toEqual(['id', 'name'])
+    expect(rows[0]).toEqual(['Id', 'Name'])
     expect(rows[0]).not.toContain('_updated_at')
   })
 
@@ -1994,7 +1995,7 @@ describe('enum constraints on any column', () => {
     expect(
       out.find((m) => m.type === 'connection_status' && m.connection_status.status === 'failed')
     ).toBeUndefined()
-    expect(stripUpdatedAt(getData(spreadsheetId, 'invoices'))[1]).toEqual(['in_1', '42'])
+    expect(stripUpdatedAt(getData(spreadsheetId, 'invoices'))[1]).toEqual(['in_1', '42', ''])
   })
 
   it('rejects setup when existing validation disagrees with catalog', async () => {

@@ -116,7 +116,7 @@ describeWithEnv(
 
       // Read back from the sheet
       const rows = await readSheet(sheets, GOOGLE_SPREADSHEET_ID, streamName)
-      expect(rows[0]).toEqual(['id', 'name', 'balance'])
+      expect(rows[0]).toEqual(['Id', 'Name', 'Balance'])
       expect(rows).toHaveLength(4) // header + 3 rows
       expect(rows[1]).toEqual(['cus_1', 'Alice', '100'])
       expect(rows[3]).toEqual(['cus_3', 'Charlie', '0'])
@@ -227,7 +227,7 @@ describeWithEnv(
       // Verify initial state
       let rows = stripUpdatedAt(await readSheet(sheets, GOOGLE_SPREADSHEET_ID, streamName))
       expect(rows).toHaveLength(4) // header + 3 rows
-      expect(rows[0]).toEqual(['id', 'name', 'balance']) // PK-first ordering
+      expect(rows[0]).toEqual(['Id', 'Name', 'Balance']) // PK-first ordering
 
       // Second write: update cus_1 and cus_3, add cus_4 — no _row_number provided
       const upsertRecords: DestinationInput[] = [
@@ -277,7 +277,7 @@ describeWithEnv(
       // Verify upsert results
       rows = stripUpdatedAt(await readSheet(sheets, GOOGLE_SPREADSHEET_ID, streamName))
       expect(rows).toHaveLength(5) // header + 3 original + 1 new
-      expect(rows[0]).toEqual(['id', 'name', 'balance'])
+      expect(rows[0]).toEqual(['Id', 'Name', 'Balance'])
       expect(rows[1]).toEqual(['cus_1', 'Alice Updated', '150']) // updated in place
       expect(rows[2]).toEqual(['cus_2', 'Bob', '250']) // unchanged
       expect(rows[3]).toEqual(['cus_3', 'Charlie Updated', '50']) // updated in place
