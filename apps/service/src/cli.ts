@@ -10,6 +10,7 @@ import { createConnectorResolver, startApiServer, type ApiServerHandle } from '@
 import sourceStripe from '@stripe/sync-source-stripe'
 import sourcePostgres from '@stripe/sync-source-postgres'
 import destinationPostgres from '@stripe/sync-destination-postgres'
+import destinationSqlite from '@stripe/sync-destination-sqlite'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import destinationStripe from '@stripe/sync-destination-stripe'
 import { createApp } from './api/app.js'
@@ -31,6 +32,7 @@ const resolverPromise = createConnectorResolver({
   sources: { stripe: sourceStripe, postgres: sourcePostgres },
   destinations: {
     postgres: destinationPostgres,
+    sqlite: destinationSqlite,
     google_sheets: destinationGoogleSheets,
     stripe: destinationStripe,
   },

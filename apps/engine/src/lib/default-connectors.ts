@@ -3,6 +3,7 @@ import sourcePostgres from '@stripe/sync-source-postgres'
 import sourceMetronome from '@stripe/sync-source-metronome'
 import destinationStripe from '@stripe/sync-destination-stripe'
 import destinationPostgres from '@stripe/sync-destination-postgres'
+import destinationSqlite from '@stripe/sync-destination-sqlite'
 import destinationGoogleSheets from '@stripe/sync-destination-google-sheets'
 import destinationRedis from '@stripe/sync-destination-redis'
 import type { RegisteredConnectors } from './resolver.js'
@@ -13,6 +14,7 @@ export const defaultConnectors: RegisteredConnectors = {
   destinations: {
     stripe: destinationStripe,
     postgres: destinationPostgres,
+    sqlite: destinationSqlite,
     google_sheets: destinationGoogleSheets,
     redis: destinationRedis,
   },
