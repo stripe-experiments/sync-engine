@@ -13,8 +13,7 @@ const BACKOFF_BASE_MS = 1000
 const BACKOFF_MAX_MS = 32000
 const MAX_RETRIES = 5
 
-// Sail design-system palette (RGB components 0–1)
-// Hue refs: https://sail.stripe.me/ui/tokens/color/
+// Stripe design-system palette
 const COLORS = {
   blurple:       { red: 0.325, green: 0.227, blue: 0.992 }, // #533AFD — brand, purple600
   white:         { red: 1.000, green: 1.000, blue: 1.000 }, // #ffffff
