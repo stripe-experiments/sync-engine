@@ -117,6 +117,7 @@ export async function upsertMany(
       skipped_count: 0,
     }
 
+  const syncedAt = new Date().toISOString()
   const records = entries.map((e) => {
     const ts = e[newerThanField] as unknown
     if (typeof ts !== 'number' || !Number.isFinite(ts)) {
@@ -124,7 +125,11 @@ export async function upsertMany(
         `upsertMany: record missing source-stamped "${newerThanField}" (table=${schema}.${table}, id=${String(e.id)}). See DDR-009.`
       )
     }
-    return { _raw_data: e, _updated_at: new Date(ts * 1000).toISOString() }
+    return {
+      _raw_data: e,
+      _last_synced_at: syncedAt,
+      _updated_at: new Date(ts * 1000).toISOString(),
+    }
   })
 
   return await upsertWithStats(pool, records, {
@@ -548,6 +553,42 @@ const destination = {
       }
     } finally {
       await endPool(pool, 'write')
+    }
+  },
+  async *getStaleRecords({ config, catalog, syncRunStartedAt, filter }) {
+    const pool = await createInstrumentedPool(config, 'getStaleRecords')
+    const BATCH_SIZE = 1000
+
+    try {
+      for (const configuredStream of catalog.streams) {
+        const streamName = configuredStream.stream.name
+        const filterEntries = Object.entries(filter ?? {})
+        const filterClauses = filterEntries.map(([col], i) => `${ident(col)} = $${i + 2}`)
+        const whereClauses = ['_last_synced_at < $1', ...filterClauses].join(' AND ')
+        const query = sql`SELECT id FROM ${qualifiedTable(config.schema, streamName)} WHERE ${whereClauses}`
+        const params: unknown[] = [syncRunStartedAt, ...filterEntries.map(([, v]) => v)]
+
+        try {
+          const result = await pool.query<{ id: string }>(query, params)
+          log.debug(
+            { stream: streamName, schema: config.schema, count: result.rows.length },
+            'getStaleRecords: query complete'
+          )
+          if (result.rows.length === 0) continue
+
+          for (let i = 0; i < result.rows.length; i += BATCH_SIZE) {
+            const batch = result.rows.slice(i, i + BATCH_SIZE).map((r) => r.id)
+            yield { stream: streamName, ids: batch }
+          }
+        } catch (err: unknown) {
+          const error = err as Error & { code?: string }
+          // 42P01 = undefined_table — ignore (first run before setup, or stream not yet created).
+          if (error.code === '42P01') continue
+          log.error({ stream: streamName, err }, 'getStaleRecords: query failed')
+        }
+      }
+    } finally {
+      await endPool(pool, 'getStaleRecords')
     }
   },
 } satisfies Destination<Config>

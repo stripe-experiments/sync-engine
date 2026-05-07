@@ -18,22 +18,19 @@ import {
 import { createMemorySheets } from '../__tests__/memory-sheets.js'
 
 /**
- * Strip the source-provided `_updated_at` column from a 2D rows array.
+ * Strip metadata timestamp columns from a 2D rows array.
  *
- * The source stamps every record with `_updated_at` (unix seconds, from
- * `event.created` for webhooks or the HTTP `Date` header for backfill);
- * the destination passes the value through verbatim. Most tests don't
- * care about its exact value and just want to assert on source data;
- * use this helper at the assertion site to drop the column before
- * comparing. Tests that exercise the column itself stay in the
- * `_updated_at column` describe block at the bottom of this file.
+ * The destination stamps `_last_synced_at`; the source may stamp `_updated_at`.
+ * Most tests only care about source data, so drop both at assertion sites.
  */
 function stripUpdatedAt(rows: unknown[][] | undefined): unknown[][] {
   if (!rows || rows.length === 0) return rows ?? []
   const header = rows[0] as unknown[]
-  const idx = header.indexOf('_updated_at')
-  if (idx < 0) return rows
-  return rows.map((row) => row.filter((_, i) => i !== idx))
+  const indexes = new Set(
+    ['_updated_at', '_last_synced_at'].map((name) => header.indexOf(name)).filter((idx) => idx >= 0)
+  )
+  if (indexes.size === 0) return rows
+  return rows.map((row) => row.filter((_, i) => !indexes.has(i)))
 }
 
 /** Collect all output from the destination's write() generator. */
@@ -1789,8 +1786,11 @@ describe('_updated_at column (source-owned, passthrough)', () => {
     )
 
     const rows = getData(getSpreadsheetIds()[0], 'users')!
-    expect(rows[0]).toEqual(['id', 'name'])
+    expect(rows[0]).toEqual(['id', 'name', '_last_synced_at'])
     expect(rows[0]).not.toContain('_updated_at')
+    const syncedAtIdx = (rows[0] as string[]).indexOf('_last_synced_at')
+    expect(syncedAtIdx).toBeGreaterThanOrEqual(0)
+    expect(Date.parse(String(rows[1][syncedAtIdx]))).not.toBeNaN()
   })
 
   it('passes the source-provided _updated_at through verbatim', async () => {
@@ -2048,5 +2048,178 @@ describe('enum constraints on any column', () => {
     expect(
       out.find((m) => m.type === 'connection_status' && m.connection_status.status === 'failed')
     ).toBeUndefined()
+  })
+})
+
+describe('getStaleRecords', () => {
+  const catalog: ConfiguredCatalog = {
+    streams: [
+      {
+        stream: { name: 'customer', primary_key: [['id']], newer_than_field: '_updated_at' },
+        sync_mode: 'incremental',
+        destination_sync_mode: 'append_dedup',
+      },
+    ],
+  }
+
+  it('returns ids whose _last_synced_at predates syncRunStartedAt', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    await collect(
+      dest.write(
+        { config: cfg(), catalog },
+        toAsyncIter([
+          record('customer', { id: 'cus_1', name: 'Alice', _account_id: 'acct_A' }),
+          record('customer', { id: 'cus_2', name: 'Bob', _account_id: 'acct_A' }),
+        ])
+      )
+    )
+
+    const spreadsheetId = getSpreadsheetIds()[0]
+    const syncRunStartedAt = new Date(Date.now() + 60_000).toISOString()
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog,
+      syncRunStartedAt,
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches).toEqual([{ stream: 'customer', ids: ['cus_1', 'cus_2'] }])
+  })
+
+  it('does not return rows whose _last_synced_at is at or after syncRunStartedAt', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    await collect(
+      dest.write(
+        { config: cfg(), catalog },
+        toAsyncIter([record('customer', { id: 'cus_1', name: 'Alice', _account_id: 'acct_A' })])
+      )
+    )
+
+    const spreadsheetId = getSpreadsheetIds()[0]
+    const syncRunStartedAt = new Date(0).toISOString()
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog,
+      syncRunStartedAt,
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches).toEqual([])
+  })
+
+  it('scopes results to rows matching the filter (e.g. _account_id)', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    await collect(
+      dest.write(
+        { config: cfg(), catalog },
+        toAsyncIter([
+          record('customer', { id: 'cus_a1', name: 'Alice', _account_id: 'acct_A' }),
+          record('customer', { id: 'cus_b1', name: 'Bob', _account_id: 'acct_B' }),
+          record('customer', { id: 'cus_a2', name: 'Carol', _account_id: 'acct_A' }),
+        ])
+      )
+    )
+
+    const spreadsheetId = getSpreadsheetIds()[0]
+    const syncRunStartedAt = new Date(Date.now() + 60_000).toISOString()
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog,
+      syncRunStartedAt,
+      filter: { _account_id: 'acct_A' },
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches).toEqual([{ stream: 'customer', ids: ['cus_a1', 'cus_a2'] }])
+  })
+
+  it('skips streams whose tab is missing', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    await collect(
+      dest.write(
+        { config: cfg(), catalog },
+        toAsyncIter([record('customer', { id: 'cus_1', name: 'Alice', _account_id: 'acct_A' })])
+      )
+    )
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    const multiCatalog: ConfiguredCatalog = {
+      streams: [
+        ...catalog.streams,
+        {
+          stream: { name: 'invoice', primary_key: [['id']], newer_than_field: '_updated_at' },
+          sync_mode: 'incremental',
+          destination_sync_mode: 'append_dedup',
+        },
+      ],
+    }
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog: multiCatalog,
+      syncRunStartedAt: new Date(Date.now() + 60_000).toISOString(),
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches.map((b) => b.stream)).toEqual(['customer'])
+  })
+
+  it('batches results in chunks of 1000', async () => {
+    const { sheets, getSpreadsheetIds } = createMemorySheets()
+    const dest = createDestination(sheets)
+    const COUNT = 2_500
+
+    const records = Array.from({ length: COUNT }, (_, i) =>
+      record('customer', { id: `cus_${i}`, name: `n${i}`, _account_id: 'acct_A' })
+    )
+    await collect(dest.write({ config: cfg({ batch_size: 500 }), catalog }, toAsyncIter(records)))
+    const spreadsheetId = getSpreadsheetIds()[0]
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg({ spreadsheet_id: spreadsheetId }),
+      catalog,
+      syncRunStartedAt: new Date(Date.now() + 60_000).toISOString(),
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches.map((b) => b.ids.length)).toEqual([1000, 1000, 500])
+    expect(batches.flatMap((b) => b.ids)).toHaveLength(COUNT)
+  })
+
+  it('returns nothing when spreadsheet_id is unset', async () => {
+    const { sheets } = createMemorySheets()
+    const dest = createDestination(sheets)
+
+    const batches: { stream: string; ids: string[] }[] = []
+    for await (const batch of dest.getStaleRecords!({
+      config: cfg(),
+      catalog,
+      syncRunStartedAt: new Date().toISOString(),
+    })) {
+      batches.push(batch)
+    }
+
+    expect(batches).toEqual([])
   })
 })

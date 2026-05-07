@@ -6,6 +6,7 @@ import type {
   DiscoverOutput,
   SetupOutput,
   TeardownOutput,
+  StaleRecordsBatch,
 } from '@stripe/sync-protocol'
 import { createSourceMessageFactory, withAbortOnReturn } from '@stripe/sync-protocol'
 import defaultSpec from './spec.js'
@@ -13,7 +14,12 @@ import type { Config } from './spec.js'
 import type { StripeEvent } from './spec.js'
 import { buildResourceRegistry, EXCLUDED_TABLES } from './resourceRegistry.js'
 import { catalogFromOpenApi, stampAccountIdEnum } from './catalog.js'
-import { BUNDLED_API_VERSION, resolveOpenApiSpec, SpecParser } from '@stripe/sync-openapi'
+import {
+  BUNDLED_API_VERSION,
+  resolveOpenApiSpec,
+  SpecParser,
+  StripeApiRequestError,
+} from '@stripe/sync-openapi'
 import { processStripeEvent } from './process-event.js'
 import { processWebhookInput, createInputQueue, startWebhookServer } from './src-webhook.js'
 import { listApiBackfill, errorToConnectionStatus } from './src-list-api.js'
@@ -272,6 +278,106 @@ export function createStripeSource(
           await client.deleteWebhookEndpoint(target.id)
         }
       }
+    },
+
+    verifyRecords({ config, catalog }, $stdin) {
+      return withAbortOnReturn((signal) =>
+        (async function* () {
+          const apiVersion = config.api_version ?? BUNDLED_API_VERSION
+          const liveMode =
+            config.api_key.startsWith('sk_live_') || config.api_key.startsWith('rk_live_')
+          const maxRequestsPerSecond = config.rate_limit ?? (liveMode ? 50 : 10)
+          const rateLimiter = externalRateLimiter ?? createInMemoryRateLimiter(maxRequestsPerSecond)
+
+          const client = makeClient({ ...config, api_version: apiVersion }, undefined, signal)
+          const resolved = await resolveOpenApiSpec({ apiVersion }, makeApiFetch(signal))
+          const streamNames = new Set(catalog.streams.map((s) => s.stream.name))
+          const registry = buildResourceRegistry(
+            resolved.spec,
+            config.api_key,
+            resolved.apiVersion,
+            config.base_url,
+            streamNames,
+            signal
+          )
+
+          let accountId = config.account_id
+          if (!accountId) {
+            try {
+              accountId = (await resolveAccountMetadata(config, client)).accountId
+            } catch (err) {
+              log.warn({ err }, 'verifyRecords: failed to resolve account_id')
+            }
+          }
+
+          log.info(
+            { account_id: accountId, streams: catalog.streams.length },
+            'verifyRecords: started'
+          )
+
+          for await (const batch of $stdin) {
+            const resourceConfig = Object.values(registry).find(
+              (cfg) => cfg.tableName === batch.stream
+            )
+            if (!resourceConfig?.retrieveFn) {
+              log.warn(
+                { stream: batch.stream },
+                'verifyRecords: stream has no retrieveFn — skipping'
+              )
+              continue
+            }
+
+            const startedAt = Date.now()
+            let confirmedDeleted = 0
+
+            for (let i = 0; i < batch.ids.length; i += maxRequestsPerSecond) {
+              const chunk = batch.ids.slice(i, i + maxRequestsPerSecond)
+              const results = await Promise.all(
+                chunk.map(async (id) => {
+                  await rateLimiter()
+                  signal?.throwIfAborted()
+                  try {
+                    const result = (await resourceConfig.retrieveFn!(id)) as {
+                      deleted?: boolean
+                    } | null
+                    return result?.deleted === true ? id : null
+                  } catch (err: unknown) {
+                    if (err instanceof StripeApiRequestError && err.status === 404) return id
+                    log.warn({ id, stream: batch.stream, err }, 'verifyRecords: lookup failed')
+                    return null
+                  }
+                })
+              )
+
+              for (const id of results) {
+                if (!id) continue
+                confirmedDeleted++
+                const data: Record<string, unknown> = {
+                  id,
+                  _updated_at: Math.floor(Date.now() / 1000),
+                }
+                if (accountId) data._account_id = accountId
+                yield msg.record({
+                  stream: batch.stream,
+                  recordDeleted: true,
+                  data,
+                  emitted_at: new Date().toISOString(),
+                })
+              }
+            }
+
+            log.info(
+              {
+                stream: batch.stream,
+                checked: batch.ids.length,
+                deleted: confirmedDeleted,
+                elapsed_ms: Date.now() - startedAt,
+              },
+              'verifyRecords: stream done'
+            )
+          }
+        })()
+      )
     },
 
     read({ config, catalog, state }, $stdin?) {
