@@ -1,0 +1,40 @@
+{
+  "name": "@stripe/sync-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-ready bundle of Stripe Sync Engine (PGlite destination). Drop-in ESM for any project.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && cp src/index.d.ts dist/index.d.ts",
+    "prepack": "pnpm build"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": "^0.4.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
+    "@stripe/sync-destination-postgres": "workspace:*",
+    "@stripe/sync-engine": "workspace:*",
+    "@stripe/sync-protocol": "workspace:*",
+    "@stripe/sync-source-stripe": "workspace:*",
+    "buffer": "^6.0.3",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "stream-browserify": "^3.0.0",
+    "typescript": "^5",
+    "vite": "^6",
+    "vite-plugin-node-polyfills": "^0.26.0"
+  }
+}
