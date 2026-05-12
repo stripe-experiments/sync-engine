@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
-import spec, { configSchema, streamStateSpec } from './spec.js'
+import spec, { configSchema, stripeEventSchema, streamStateSpec } from './spec.js'
 import { BUNDLED_API_VERSION, SUPPORTED_API_VERSIONS } from '@stripe/sync-openapi'
 
 describe('configSchema api_version field', () => {
@@ -31,6 +31,34 @@ describe('configSchema api_version field', () => {
 
     expect(versions).toContain(BUNDLED_API_VERSION)
     expect(versions.length).toBeGreaterThan(0)
+  })
+})
+
+describe('stripeEventSchema', () => {
+  const baseEvent = {
+    id: 'evt_123',
+    object: 'event' as const,
+    api_version: '2024-06-20',
+    created: 1715500000,
+    type: 'invoice.created',
+    livemode: true,
+    pending_webhooks: 0,
+    data: { object: { id: 'in_123', object: 'invoice' } },
+  }
+
+  it('accepts request as a plain string (older API versions)', () => {
+    const event = { ...baseEvent, request: 'req_xxxxx' }
+    expect(stripeEventSchema.safeParse(event).success).toBe(true)
+  })
+
+  it('accepts request as an object (modern API versions)', () => {
+    const event = { ...baseEvent, request: { id: 'req_xxxxx', idempotency_key: null } }
+    expect(stripeEventSchema.safeParse(event).success).toBe(true)
+  })
+
+  it('accepts request as null', () => {
+    const event = { ...baseEvent, request: null }
+    expect(stripeEventSchema.safeParse(event).success).toBe(true)
   })
 })
 
