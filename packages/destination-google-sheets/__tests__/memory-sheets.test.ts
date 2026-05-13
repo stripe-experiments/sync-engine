@@ -49,10 +49,10 @@ describe('createMemorySheets', () => {
 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: id,
-      requestBody: { requests: [{ addSheet: { properties: { title: 'customer' } } }] },
+      requestBody: { requests: [{ addSheet: { properties: { title: 'customers' } } }] },
     })
 
-    expect(getData(id, 'customer')).toEqual([])
+    expect(getData(id, 'customers')).toEqual([])
   })
 
   it('batchUpdate addSheet — rejects duplicate tab names', async () => {
@@ -96,6 +96,36 @@ describe('createMemorySheets', () => {
     expect(getData(id, 'orders')).toEqual([])
   })
 
+  it('batchUpdate updateSheetProperties — non-title field mask preserves tab name', async () => {
+    const { sheets, getData } = createMemorySheets()
+
+    const { data } = await sheets.spreadsheets.create({
+      requestBody: { properties: { title: 'T' } },
+    })
+    const id = data.spreadsheetId!
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: id })
+    const sheetId = meta.data.sheets![0].properties!.sheetId!
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          {
+            updateSheetProperties: {
+              properties: {
+                sheetId,
+                gridProperties: { frozenRowCount: 1, frozenColumnCount: 1 },
+              },
+              fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount',
+            },
+          },
+        ],
+      },
+    })
+
+    expect(getData(id, 'Sheet1')).toEqual([])
+  })
+
   it('values.update — writes at range (header row)', async () => {
     const { sheets, getData } = createMemorySheets()
 
@@ -112,6 +142,28 @@ describe('createMemorySheets', () => {
     })
 
     expect(getData(id, 'Sheet1')).toEqual([['id', 'name', 'email']])
+  })
+
+  it('values.batchUpdate — respects the starting column', async () => {
+    const { sheets, getData } = createMemorySheets()
+
+    const { data } = await sheets.spreadsheets.create({
+      requestBody: { properties: { title: 'T' } },
+    })
+    const id = data.spreadsheetId!
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: [{ range: "'Sheet1'!C1", values: [['open']] }],
+      },
+    })
+
+    const row = getData(id, 'Sheet1')![0]
+    expect(row).toHaveLength(3)
+    expect(row[0]).toBeUndefined()
+    expect(row[2]).toBe('open')
   })
 
   it('values.append — appends rows after existing data', async () => {
