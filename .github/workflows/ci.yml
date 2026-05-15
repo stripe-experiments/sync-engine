@@ -854,10 +854,11 @@ jobs:
         run: '[ -f /tmp/vitest-skip-warnings.txt ] && cat /tmp/vitest-skip-warnings.txt || true'
 
   # ---------------------------------------------------------------------------
-  # Docs — deploy to Vercel (always, so e2e_cdn can test the live CDN)
+  # Docs — deploy to Vercel (disabled while Vercel project is unavailable)
   # ---------------------------------------------------------------------------
   docs:
     name: Deploy Docs
+    if: false
     runs-on: ubuntu-24.04-arm
     outputs:
       deployment_url: ${{ steps.deploy.outputs.url }}
@@ -963,7 +964,7 @@ jobs:
       # main → https://stripe-sync.dev/ | branch → unique preview URL
 
   # ---------------------------------------------------------------------------
-  # E2E CDN — verify stripe-sync.dev/stripe-api-specs after Vercel deploy
+  # E2E CDN — verify stripe-sync.dev/stripe-api-specs after Vercel deploy (disabled with docs)
   # ---------------------------------------------------------------------------
   e2e_cdn:
     name: E2E CDN
