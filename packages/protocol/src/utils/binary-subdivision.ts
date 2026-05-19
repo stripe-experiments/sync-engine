@@ -43,6 +43,10 @@ export function toIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString()
 }
 
+function cloneRange(range: Range): Range {
+  return { ...range }
+}
+
 // MARK: - Subdivision
 
 /** Default number of segments to split the older remainder into. */
@@ -84,7 +88,7 @@ export function subdivideRanges(
     const secondsLeft = newEnd - start
     const segments = Math.min(n, secondsLeft)
     const segmentDuration = Math.floor(secondsLeft / segments)
-    if (segmentDuration < 30) {
+    if (segmentDuration <= 1) {
       result.push(range)
       continue
     }
@@ -96,7 +100,7 @@ export function subdivideRanges(
       if (lastSegment) {
         // handle the edge case where there are multiple objects created in a same second
         //  but our fetch didn't return all of them because of the limit of 100.
-        result.push({ gte: toIso(segGte), lt: toIso(newEnd + 1), cursor: range.cursor })
+        result.push({ gte: toIso(segGte), lt: toIso(newEnd + 1), cursor: null })
       } else {
         result.push({ gte: toIso(segGte), lt: toIso(segLt), cursor: null })
       }
@@ -179,7 +183,7 @@ export async function* streamingSubdivide<T>(opts: {
 
   /** Snapshot of all ranges not yet fully fetched (queued + in flight). */
   function snapshotRemaining(): Range[] {
-    return [...inflightRanges.values(), ...queue]
+    return [...inflightRanges.values(), ...queue].map(cloneRange)
   }
 
   // Fill up to concurrency
@@ -211,15 +215,18 @@ export async function* streamingSubdivide<T>(opts: {
         queue.push(range)
       }
 
-      // Launch new work BEFORE yielding so fetches run while consumer processes
+      const eventRange = cloneRange(range)
+      const remaining = snapshotRemaining()
+
+      // Launch new work after snapshotting so checkpoints cannot observe later cursor mutation.
       while (launchNext()) {}
 
       yield {
-        range,
+        range: eventRange,
         data,
         hasMore,
         exhausted: !hasMore,
-        remaining: snapshotRemaining(),
+        remaining,
       }
     }
   } finally {
