@@ -531,8 +531,7 @@ async function* iterateStream(opts: {
           supportsLimit,
           supportsForwardPagination,
         }),
-      //concurrency: 100, // rate limiter is the real bottleneck
-      concurrency: 100, // serialized for reliability; parallelism re-enabled if data gaps are due to parallelism
+      concurrency: 100, // rate limiter is the real bottleneck
       subdivisionFactor,
     })
 

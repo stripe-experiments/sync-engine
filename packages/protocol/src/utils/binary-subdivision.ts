@@ -43,9 +43,6 @@ export function toIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString()
 }
 
-function cloneRange(range: Range): Range {
-  return { ...range }
-}
 
 // MARK: - Subdivision
 
@@ -183,7 +180,7 @@ export async function* streamingSubdivide<T>(opts: {
 
   /** Snapshot of all ranges not yet fully fetched (queued + in flight). */
   function snapshotRemaining(): Range[] {
-    return [...inflightRanges.values(), ...queue].map(cloneRange)
+    return [...inflightRanges.values(), ...queue]
   }
 
   // Fill up to concurrency
@@ -215,18 +212,15 @@ export async function* streamingSubdivide<T>(opts: {
         queue.push(range)
       }
 
-      const eventRange = cloneRange(range)
-      const remaining = snapshotRemaining()
-
-      // Launch new work after snapshotting so checkpoints cannot observe later cursor mutation.
+      // Launch new work BEFORE yielding so fetches run while consumer processes
       while (launchNext()) {}
 
       yield {
-        range: eventRange,
+        range: { ...range },
         data,
         hasMore,
         exhausted: !hasMore,
-        remaining,
+        remaining: snapshotRemaining(),
       }
     }
   } finally {
