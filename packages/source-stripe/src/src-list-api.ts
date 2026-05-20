@@ -286,7 +286,8 @@ async function fetchPageForRange(opts: {
   const data: Record<string, unknown>[] = []
   for (const item of response.data) {
     const record = item as Record<string, unknown>
-    const created = record.created
+    // Invoice item is the only object that uses .date as created timestamp
+    const created = record.created ?? record.date
     if (typeof created === 'number') lastObserved = created
     data.push({
       ...record,
@@ -530,8 +531,7 @@ async function* iterateStream(opts: {
           supportsLimit,
           supportsForwardPagination,
         }),
-      //concurrency: 100, // rate limiter is the real bottleneck
-      concurrency: 1, // serialized for reliability; parallelism re-enabled if data gaps are due to parallelism 
+      concurrency: 100, // rate limiter is the real bottleneck
       subdivisionFactor,
     })
 
@@ -565,11 +565,11 @@ async function* iterateStream(opts: {
       } else if (event.hasMore && event.data.length > 0) {
         // Range was subdivided — the fetched head (from oldest record to range.lt)
         // is already accounted for. Emit range_complete so the progress bar fills.
-        const oldest = event.data.findLast((r) => typeof r.created === 'number') as
-          | { created: number }
-          | undefined
+        const oldest = event.data.findLast(
+          (r) => typeof r.created === 'number' || typeof r.date === 'number'
+        ) as { created?: number; date?: number } | undefined
         if (oldest) {
-          const headGte = toIso(oldest.created + 1)
+          const headGte = toIso((oldest.created ?? oldest.date)! + 1)
           if (headGte < event.range.lt) {
             yield msg.stream_status({
               stream: streamName,
